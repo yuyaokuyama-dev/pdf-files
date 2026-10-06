@@ -1,5 +1,5 @@
 // Service Worker: アプリ本体を端末に保存し、オフラインでも全機能を使えるようにする。
-const VERSION = "v1.2.0";
+const VERSION = "v1.3.0";
 const CORE = `apdf-core-${VERSION}`;
 const RUNTIME = `apdf-runtime-${VERSION}`;
 
