@@ -1173,6 +1173,16 @@ async function openDriveFile(id) {
   }
 }
 
+/** モーダルは最前面(top layer)に出るため、Googleの選択画面が裏に隠れる。選択中だけモーダルを外す */
+async function overDialog(d, fn) {
+  d.close();
+  try {
+    return await fn();
+  } finally {
+    if (d.isConnected && !d.open) d.showModal();
+  }
+}
+
 const FOLDER_KEY = "apdf_drive_folder_v1"; // 前回選んだ保存先フォルダ(端末ごと)
 const lastFolder = () => {
   try {
@@ -1201,18 +1211,14 @@ async function saveToDrive() {
       const show = () => (d.querySelector("#dfName").textContent = folder?.name || "マイドライブ");
       show();
       d.querySelector("#dfPick").onclick = async () => {
-        // モーダルは最前面(top layer)に出るため、Googleの選択画面が裏に隠れる。選択中だけモーダルを外す
-        d.close();
         try {
-          const f = await G.pickFolder();
+          const f = await overDialog(d, () => G.pickFolder());
           if (f) {
             folder = { id: f.id, name: f.name };
             show();
           }
         } catch (e) {
           googleErr(e);
-        } finally {
-          if (d.isConnected && !d.open) d.showModal();
         }
       };
       d.querySelector("#dfRoot").onclick = () => {
@@ -1495,6 +1501,9 @@ async function openSettings() {
       <label class="field">APIキー(ドライブのファイル選択に使用)<input type="text" id="stKey" value="${esc(cfg.apiKey)}" spellcheck="false" autocapitalize="off"></label>
       <label class="field">プロジェクト番号(任意・ファイル選択の精度向上)<input type="text" id="stApp" value="${esc(cfg.appId)}" inputmode="numeric"></label></details>
       <p class="note">取得方法は同梱の <code>SETUP.md</code> を参照してください(Google Cloud Console で無料・約10分)。承認済みのJavaScript生成元には <code>${esc(origin)}</code> を登録します。</p>
+      <div class="field"><b style="color:var(--ink)">ドライブの選択画面を開く場所</b>
+        <select id="stStart"><option value="home">マイドライブ(ホーム)</option><option value="last">前回保存したフォルダ</option><option value="fixed">指定したフォルダ</option></select>
+        <div class="row" id="stStartRow" style="display:none;gap:8px;align-items:center"><span id="stStartName"></span><button type="button" class="btn" id="stStartPick">フォルダを選ぶ…</button></div></div>
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stPalm"${S.settings.palm ? " checked" : ""}> ペン入力モード(描画はペン/マウスのみ、指はスクロール専用)</label>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stNotify"${S.settings.notify ? " checked" : ""}> オンライン復帰時に通知で知らせる</label>
@@ -1513,6 +1522,24 @@ async function openSettings() {
       return true;
     } }],
     onOpen: (d) => {
+      let st = G.getStart();
+      const selEl = d.querySelector("#stStart");
+      const showSt = () => {
+        selEl.value = st.mode;
+        d.querySelector("#stStartRow").style.display = st.mode === "fixed" ? "flex" : "none";
+        d.querySelector("#stStartName").textContent = st.id ? st.name || "指定済み" : "未指定(マイドライブ)";
+      };
+      showSt();
+      selEl.onchange = () => ((st = { ...st, mode: selEl.value }), G.setStart(st), showSt());
+      d.querySelector("#stStartPick").onclick = async () => {
+        try {
+          const f = await overDialog(d, () => G.pickFolder());
+          if (f) (st = { mode: "fixed", id: f.id, name: f.name }), G.setStart(st);
+        } catch (e) {
+          googleErr(e);
+        }
+        showSt();
+      };
       d.querySelector("#stPw").onclick = changePasswordDialog;
       d.querySelector("#stGout").onclick = () => {
         G.signOut();

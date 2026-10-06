@@ -134,6 +134,20 @@ async function loadPicker() {
   await new Promise((res) => gapi.load("picker", res));
 }
 
+/** Pickerを開く場所の設定: home(マイドライブ直下) / last(前回保存したフォルダ) / fixed(指定フォルダ) */
+const START_KEY = "apdf_drive_start_v1";
+export const getStart = () => ({ mode: "home", id: "", name: "", ...(ls((l) => JSON.parse(l.getItem(START_KEY) || "null")) || {}) });
+export const setStart = (v) => ls((l) => l.setItem(START_KEY, JSON.stringify(v)));
+function startParent() {
+  const st = getStart();
+  if (st.mode === "fixed" && st.id) return st.id;
+  if (st.mode === "last") {
+    const last = ls((l) => JSON.parse(l.getItem("apdf_drive_folder_v1") || "null"));
+    if (last?.id) return last.id;
+  }
+  return "root";
+}
+
 function openPicker(buildView, { title }) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -146,7 +160,8 @@ function openPicker(buildView, { title }) {
         .setDeveloperKey(cfg.apiKey)
         .setTitle(title)
         .setLocale("ja")
-        .addView(buildView())
+        .enableFeature(google.picker.Feature.SUPPORT_DRIVES) // 共有ドライブも選べる
+        .addView(buildView(startParent()))
         .setCallback((d) => {
           if (d.action === google.picker.Action.PICKED) resolve(d.docs[0]);
           else if (d.action === google.picker.Action.CANCEL) resolve(null);
@@ -160,11 +175,11 @@ function openPicker(buildView, { title }) {
 }
 
 export const pickPdf = () =>
-  openPicker(() => new google.picker.DocsView(google.picker.ViewId.DOCS).setMimeTypes("application/pdf").setIncludeFolders(true), { title: "Google ドライブから PDF を選択" });
+  openPicker((parent) => new google.picker.DocsView(google.picker.ViewId.DOCS).setMimeTypes("application/pdf").setIncludeFolders(true).setEnableDrives(true).setParent(parent), { title: "Google ドライブから PDF を選択" });
 
 export const pickFolder = () =>
   openPicker(
-    () => new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setMimeTypes("application/vnd.google-apps.folder"),
+    (parent) => new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setEnableDrives(true).setParent(parent).setMimeTypes("application/vnd.google-apps.folder"),
     { title: "保存先のフォルダを選択" },
   );
 
