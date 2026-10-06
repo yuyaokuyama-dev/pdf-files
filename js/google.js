@@ -82,7 +82,9 @@ export async function getToken({ prompt } = {}) {
   const cfg = getConfig();
   if (!cfg.clientId) throw new Error("Google連携が未設定です。「設定」でクライアントIDを入力してください");
   if (token && token.expiresAt > Date.now() + 60_000 && !prompt) return token.access_token;
-  await loadScript("https://accounts.google.com/gsi/client");
+  // iOSはタップ直後でないとログイン用ポップアップを開けない。スクリプト読込をawaitすると
+  // その間に「タップ操作」の扱いが切れるため、読込済みなら待たずに同期で進める(事前読込: preloadGoogle)
+  if (!globalThis.google?.accounts?.oauth2) await loadScript("https://accounts.google.com/gsi/client");
   return new Promise((resolve, reject) => {
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: cfg.clientId,
@@ -94,11 +96,20 @@ export async function getToken({ prompt } = {}) {
         ls((l) => l.setItem(GRANT_KEY, "1"));
         resolve(token.access_token);
       },
-      error_callback: (e) => reject(new Error(`Googleログインが完了しませんでした: ${e.type || e.message || "cancel"}`)),
+      error_callback: (e) => {
+        if (e?.type === "popup_failed_to_open") return reject(new Error("Googleのログイン画面を開けませんでした(ポップアップがブロックされています)。もう一度ボタンを押してください。改善しない場合は Safari の「ポップアップブロック」をオフにしてください"));
+        reject(new Error(`Googleログインが完了しませんでした: ${e.type || e.message || "cancel"}`));
+      },
     });
     // 初回だけ同意画面を出す。許可済みなら "" にして、アカウント選択も省く(前回と同じアカウントを自動選択)
     tokenClient.requestAccessToken({ prompt: prompt ?? (ls((l) => l.getItem(GRANT_KEY)) ? "" : "consent") });
   });
+}
+/** ログイン直後などに呼んでおく: Google側のスクリプトを先に読み込み、ボタンを押した瞬間にログイン画面を開けるようにする */
+export function preloadGoogle() {
+  if (!navigator.onLine || !getConfig().clientId) return;
+  loadScript("https://accounts.google.com/gsi/client").catch(() => {});
+  loadScript("https://apis.google.com/js/api.js").catch(() => {});
 }
 export const isSignedIn = () => !!(token && token.expiresAt > Date.now());
 export function signOut() {
@@ -130,7 +141,7 @@ async function api(url, opts = {}, retry = true) {
 
 /* ---------- Drive ---------- */
 async function loadPicker() {
-  await loadScript("https://apis.google.com/js/api.js");
+  if (!globalThis.gapi) await loadScript("https://apis.google.com/js/api.js");
   await new Promise((res) => gapi.load("picker", res));
 }
 
