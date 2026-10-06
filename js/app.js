@@ -233,7 +233,6 @@ function initUI() {
   inj("#btnRedo", "redo");
   inj("#btnZoomOut", "minus");
   inj("#btnZoomIn", "plus");
-  inj("#btnPages", "pages");
   inj("#btnUser", "user");
   $("#emptyOpen").innerHTML = `${icon("folder", 18)}PDFを開く`;
   $("#emptyDrive").innerHTML = `${icon("drive", 18)}Googleドライブから開く`;
@@ -271,11 +270,11 @@ function initUI() {
 
 function buildTools() {
   const nav = $("#tools");
-  nav.innerHTML = TOOLS.map((t) =>
+  nav.innerHTML = `<button class="tool" id="btnPages" title="ページ一覧を開く・閉じる">${icon("pages", 24)}<span>ページ</span></button><span class="tool-sep"></span>` + TOOLS.map((t) =>
     t.sep ? '<span class="tool-sep"></span>' : `<button class="tool" data-tool="${t.id}" title="${t.label}">${icon(t.icon, 24)}<span>${t.label}</span></button>`,
   ).join("");
   nav.addEventListener("click", (e) => {
-    const b = e.target.closest(".tool");
+    const b = e.target.closest(".tool[data-tool]");
     if (!b) return;
     const id = b.dataset.tool;
     if (id === "camera") return photoMenu(b);
@@ -516,30 +515,61 @@ async function renameDoc() {
 }
 
 /* ---------- ドラッグ&ドロップ ---------- */
+/** ドロップ位置(ページの間)を求める。index: 挿入するページ番号(0=先頭)、y: 表示する線の画面Y */
+function dropSlot(clientY) {
+  const els = [...document.querySelectorAll("#pages .page")];
+  if (!els.length) return null;
+  let index = els.length;
+  for (let i = 0; i < els.length; i++) {
+    const r = els[i].getBoundingClientRect();
+    if (clientY < r.top + r.height / 2) {
+      index = i;
+      break;
+    }
+  }
+  const rBefore = index > 0 ? els[index - 1].getBoundingClientRect() : null;
+  const rAfter = index < els.length ? els[index].getBoundingClientRect() : null;
+  const y = rBefore && rAfter ? (rBefore.bottom + rAfter.top) / 2 : rAfter ? rAfter.top - 6 : rBefore.bottom + 6;
+  const ref = rAfter || rBefore;
+  return { index, y, left: ref.left, width: ref.width };
+}
+
 function wireDrop() {
   const v = $("#viewer");
+  const line = document.createElement("div");
+  line.className = "drop-line";
+  line.hidden = true;
+  document.body.appendChild(line);
+  const hideLine = () => (line.hidden = true);
   ["dragenter", "dragover"].forEach((t) => v.addEventListener(t, (e) => {
-    if ([...(e.dataTransfer?.types || [])].includes("Files")) {
-      e.preventDefault();
-      v.classList.add("drop");
-    }
+    if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+    e.preventDefault();
+    const slot = S.model.pages.length ? dropSlot(e.clientY) : null;
+    v.classList.toggle("drop", !slot);
+    if (slot) {
+      Object.assign(line.style, { top: `${slot.y - 2}px`, left: `${slot.left}px`, width: `${slot.width}px` });
+      line.hidden = false;
+    } else hideLine();
   }));
-  ["dragleave", "drop"].forEach((t) => v.addEventListener(t, () => v.classList.remove("drop")));
+  v.addEventListener("dragleave", (e) => {
+    if (e.target === v || !v.contains(e.relatedTarget)) {
+      v.classList.remove("drop");
+      hideLine();
+    }
+  });
   v.addEventListener("drop", async (e) => {
+    v.classList.remove("drop");
+    hideLine();
     const f = [...(e.dataTransfer?.files || [])];
     if (!f.length) return;
     e.preventDefault();
     const pdfs = f.filter((x) => x.type === "application/pdf" || /\.pdf$/i.test(x.name));
     if (!pdfs.length && /^image\//.test(f[0].type)) return openLocalFile(f[0]);
     if (!pdfs.length) return toast("PDFファイルをドロップしてください", { error: true });
-    if (S.model.pages.length && pdfs.length) {
-      const r = await dialog({
-        title: "PDFの開き方",
-        body: "<p>すでに開いているPDFがあります。</p>",
-        buttons: [{ label: "キャンセル", value: null }, { label: "ページとして追加", value: "add" }, { label: "別のファイルとして開く", value: "open", primary: true }],
-      });
-      if (r === "add") return addPdfFiles(pdfs);
-      if (r !== "open") return;
+    if (S.model.pages.length) {
+      // 開いているPDFがあるときは、ドロップした位置(ページの間)にページとして挿入する
+      const slot = dropSlot(e.clientY);
+      return addPdfFiles(pdfs, slot ? slot.index : undefined);
     }
     await openLocalFile(pdfs[0]);
   });
@@ -1301,12 +1331,40 @@ async function saveToDrive() {
   }
 }
 
+/** メールソフト方式: 共有メニュー(スマホ)か、Gmailの作成画面+PDF保存(PC)で、添付してもらう */
+async function mailViaApp(msg, bytes, name) {
+  const file = new File([bytes], name, { type: "application/pdf" });
+  const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
+  if (mobile && navigator.canShare?.({ files: [file] })) {
+    try {
+      // 共有メニューから Gmail / メール を選ぶと、PDFが添付された状態で作成画面が開く
+      await navigator.share({ files: [file], title: msg.subject, text: `${msg.body}\n\n宛先: ${msg.to}` });
+      return "shared";
+    } catch (e) {
+      if (e?.name === "AbortError") return "cancel";
+    }
+  }
+  // PC: Gmailの作成画面を開き、PDFは端末に保存(作成画面へドラッグして添付する)
+  const q = new URLSearchParams({ view: "cm", fs: "1", to: msg.to, cc: msg.cc || "", su: msg.subject, body: msg.body });
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  window.open(`https://mail.google.com/mail/?${q}`, "_blank", "noopener");
+  return "gmail";
+}
+
 async function mailPdf() {
-  if (!G.isConfigured() && !(await ensureGoogle())) return;
+  const appMode = S.settings.mailMode === "app";
+  if (!appMode && !G.isConfigured() && !(await ensureGoogle())) return;
   const base = S.model.meta.name.replace(/\.pdf$/i, "");
   const o = await askExport({
-    title: "Gmailで送信",
-    ok: "送信",
+    title: appMode ? "メール(Gmail)で送る" : "Gmailで送信",
+    ok: appMode ? "メールを作成" : "送信",
     extraHtml: `<label class="field">宛先<input type="text" id="mlTo" inputmode="email" placeholder="name@example.com(複数はカンマ区切り)"></label>
       <label class="field">Cc(任意)<input type="text" id="mlCc" inputmode="email"></label>
       <label class="field">件名<input type="text" id="mlSub" value="${esc(base)}"></label>
@@ -1316,7 +1374,7 @@ async function mailPdf() {
   if (!o) return;
   if (!o.extra.to || !/@/.test(o.extra.to)) return toast("宛先のメールアドレスを入力してください", { error: true });
   const online = navigator.onLine;
-  if (online) {
+  if (online && !appMode) {
     try {
       await G.getToken();
     } catch (e) {
@@ -1325,6 +1383,11 @@ async function mailPdf() {
   }
   const res = await runExport(o.level);
   if (!res) return;
+  if (appMode) {
+    const r = await mailViaApp(o.extra, res.bytes, o.name);
+    if (r === "gmail") toast("Gmailの作成画面を開きました。保存したPDFを作成画面にドラッグして添付してください", { ms: 9000 });
+    return;
+  }
   const msg = { ...o.extra, attachments: [{ name: o.name, bytes: res.bytes, type: "application/pdf" }] };
   if (res.bytes.length > G.MAX_MAIL_BYTES) return toast(`添付が大きすぎます(${fmtBytes(res.bytes.length)}/上限 約24MB)。「最小」で最適化し直してください`, { error: true });
   if (!online) {
@@ -1538,6 +1601,8 @@ async function openSettings() {
         <select id="stStart"><option value="home">マイドライブ(ホーム)</option><option value="last">前回保存したフォルダ</option><option value="fixed">指定したフォルダ</option></select>
         <div class="row" id="stStartRow" style="display:none;gap:8px;align-items:center"><span id="stStartName"></span><button type="button" class="btn" id="stStartPick">フォルダを選ぶ…</button></div></div>
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
+      <div class="field"><b style="color:var(--ink)">メールの送り方</b>
+        <select id="stMail"><option value="api">アプリから直接送信(Gmail連携・自動で添付)</option><option value="app">Gmailを開いて添付する(スマホは共有メニューで添付済み)</option></select></div>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stPalm"${S.settings.palm ? " checked" : ""}> ペン入力モード(描画はペン/マウスのみ、指はスクロール専用)</label>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stNotify"${S.settings.notify ? " checked" : ""}> オンライン復帰時に通知で知らせる</label>
       <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1546,6 +1611,7 @@ async function openSettings() {
       <p class="note">ログイン中のID: <b>${esc(S.user)}</b> ・ データはこの端末内に保存されます。</p>`,
     buttons: [{ label: "キャンセル", value: null }, { label: "保存", value: true, primary: true, action: async (d) => {
       G.setConfig({ clientId: d.querySelector("#stCid").value.trim(), apiKey: d.querySelector("#stKey").value.trim(), appId: d.querySelector("#stApp").value.trim() });
+      S.settings.mailMode = d.querySelector("#stMail").value;
       S.settings.palm = d.querySelector("#stPalm").checked;
       S.settings.notify = d.querySelector("#stNotify").checked;
       S.editor.setPalm(S.settings.palm);
@@ -1555,6 +1621,7 @@ async function openSettings() {
       return true;
     } }],
     onOpen: (d) => {
+      d.querySelector("#stMail").value = S.settings.mailMode === "app" ? "app" : "api";
       let st = G.getStart();
       const selEl = d.querySelector("#stStart");
       const showSt = () => {
