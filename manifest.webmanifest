@@ -1,0 +1,21 @@
+{
+  "name": "PDF Files",
+  "short_name": "PDF Files",
+  "description": "PDFの閲覧・注釈・署名・寸法・計測ができるオリジナルPDFエディタ",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "ja",
+  "background_color": "#e8eaed",
+  "theme_color": "#e8eaed",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    { "action": "./", "accept": { "application/pdf": [".pdf"] } }
+  ]
+}

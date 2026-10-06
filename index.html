@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>PDF Files</title>
+  <meta name="theme-color" content="#e8eaed">
+  <meta name="description" content="PDFの閲覧・注釈・署名・寸法・計測ができるオリジナルPDFエディタ">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="PDF Files">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <!-- ログイン / 新規登録 -->
+  <section id="auth" class="auth" hidden>
+    <form id="authForm" class="auth-card" autocomplete="on">
+      <img class="auth-logo" src="icons/logo.svg" alt="PDF Files">
+      <div class="seg" role="tablist">
+        <button type="button" id="tabLogin" class="on" role="tab">ログイン</button>
+        <button type="button" id="tabRegister" role="tab">新規登録</button>
+      </div>
+      <label>ID<input id="authId" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label>パスワード<input id="authPw" name="password" type="password" autocomplete="current-password" required></label>
+      <label id="authPw2Row" hidden>パスワード(確認)<input id="authPw2" type="password" autocomplete="new-password"></label>
+      <label class="check"><input type="checkbox" id="authRemember" checked> ログイン状態を保持する</label>
+      <p id="authMsg" class="msg" role="alert"></p>
+      <button class="btn primary wide" id="authSubmit" type="submit">ログイン</button>
+      <p class="hint">アカウントはこの端末内に安全に保存されます(サーバーへは送信しません)。</p>
+    </form>
+  </section>
+
+  <!-- アプリ本体 -->
+  <div id="app" hidden>
+    <header class="topbar">
+      <img class="logo" src="icons/logo.svg" alt="PDF Files">
+      <div class="spacer"></div>
+      <span id="netBadge" class="badge" hidden title="オフライン">オフライン</span>
+      <span id="queueBadge" class="badge warn" hidden></span>
+      <button class="btn icon" id="btnUndo" title="元に戻す (Ctrl+Z)" aria-label="元に戻す"></button>
+      <button class="btn icon" id="btnRedo" title="やり直し (Ctrl+Y)" aria-label="やり直し"></button>
+      <button class="btn icon" id="btnZoomOut" title="縮小" aria-label="縮小"></button>
+      <button class="btn zoom" id="btnZoomFit" title="幅に合わせる">100%</button>
+      <button class="btn icon" id="btnZoomIn" title="拡大" aria-label="拡大"></button>
+      <button class="btn icon" id="btnPages" title="ページ一覧" aria-label="ページ一覧"></button>
+      <button class="btn" id="btnFile">ファイル</button>
+      <button class="btn primary" id="btnSave">保存・出力</button>
+      <button class="btn icon" id="btnUser" title="アカウント・設定" aria-label="アカウント・設定"></button>
+    </header>
+
+    <div class="workspace">
+      <aside id="thumbs" class="thumbs" hidden></aside>
+      <main id="viewer" class="viewer" tabindex="0">
+        <div id="pages" class="pages"></div>
+        <div id="empty" class="empty">
+          <img src="icons/logo.svg" alt="" class="empty-logo">
+          <p>PDFを開いて編集を始めましょう</p>
+          <div class="empty-actions">
+            <button class="btn primary" id="emptyOpen"></button>
+            <button class="btn" id="emptyDrive"></button>
+            <button class="btn" id="emptyBlank"></button>
+            <button class="btn" id="emptyCamera"></button>
+          </div>
+          <p class="hint">PDFをここにドラッグ&ドロップでも開けます</p>
+        </div>
+      </main>
+      <aside id="props" class="props" hidden></aside>
+    </div>
+
+    <nav id="tools" class="tools" aria-label="ツール"></nav>
+    <div id="toolHint" class="tool-hint" hidden></div>
+  </div>
+
+  <div id="menu" class="menu" hidden></div>
+  <div id="toast" class="toast" hidden role="status"></div>
+  <div id="banner" class="banner" hidden></div>
+  <div id="busy" class="busy" hidden><div class="busy-card"><div class="spinner"></div><p id="busyMsg">処理中…</p><div class="progress"><i id="busyBar"></i></div></div></div>
+  <input type="file" id="fileOpen" accept="application/pdf,.pdf" hidden>
+  <input type="file" id="fileAdd" accept="application/pdf,.pdf" multiple hidden>
+  <input type="file" id="fileImage" accept="image/*" hidden>
+  <input type="file" id="fileCamera" accept="image/*" capture="environment" hidden>
+  <input type="file" id="fileStamp" accept="image/*" hidden>
+  <input type="file" id="fileStampCamera" accept="image/*" capture="environment" hidden>
+  <div id="dialogs"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
