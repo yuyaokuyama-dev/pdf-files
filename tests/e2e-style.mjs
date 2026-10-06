@@ -30,6 +30,24 @@ await setK("dash", "dashdot2");
 const da2 = await page.evaluate(() => document.querySelector(".shape-line path:not(.hit)")?.getAttribute("stroke-dasharray"));
 check("二点鎖線が描画される", da2?.split(" ").length === 6, da2);
 
+/* ---- 矢印: サイズと線の太さを別々に調整 ---- */
+await tool(page, "arrow");
+await drag(page, 0, [60, 160], [260, 160]);
+let ar = (await shapes(page)).at(-1);
+check("矢印の既定サイズは10(新規は個別サイズを持つ)", ar.type === "arrow" && ar.headSize === 10, JSON.stringify(ar));
+await tool(page, "select");
+await click(page, 0, [110, 160]);
+await setK("headSize", 30);
+ar = (await shapes(page)).at(-1);
+check("矢印のサイズだけ変えられる(太さは変わらない)", ar.headSize === 30 && ar.style.width === 1, JSON.stringify(ar));
+await setK("width", 6);
+ar = (await shapes(page)).at(-1);
+check("線の太さを変えても矢印のサイズは変わらない", ar.headSize === 30 && ar.style.width === 6, JSON.stringify(ar));
+const headW = await page.evaluate(() => { const S = window.__apdf; const el = S.editor.els.get(S.model.pages[0].id); const polys = [...el.layer.querySelectorAll("path")]; return polys.length; });
+check("矢印が描画される", headW > 0);
+await tool(page, "select");
+await click(page, 0, [160, 100]);
+
 await setK("width", 4);
 await page.locator('#props .sw[data-c="#16a34a"]').click();
 await page.locator('#props [data-act="set-default"]').click();

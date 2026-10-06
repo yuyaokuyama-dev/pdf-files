@@ -39,6 +39,7 @@ export class Editor {
     this.textStyle = { size: 18, font: "gothic", bold: false, color: "#111827" };
     this.cloudPitch = 18;
     this.dimSize = 12;
+    this.arrowSize = 10; // 矢印の大きさ(線の太さとは別)
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
     this.loadDefaults();
     this.pendingStamp = null;
@@ -584,7 +585,7 @@ export class Editor {
       case "arrow":
       case "rect":
       case "ellipse":
-        return g.p1 ? { ...base, type: g.tool, pts: [g.p0, g.p1] } : null;
+        return g.p1 ? { ...base, type: g.tool, pts: [g.p0, g.p1], ...(g.tool === "arrow" ? { headSize: this.arrowSize } : {}) } : null;
       case "cloud":
         return g.p1 ? { ...base, type: "cloud", pts: rectPoints(g.p0, g.p1), pitch: this.cloudPitch } : null;
       case "dim":
@@ -646,7 +647,7 @@ export class Editor {
     switch (tool) {
       case "line":
       case "arrow":
-        this.addAndSelect(pageId, { type: tool, pts: [g.p0, p1], style: { ...this.style } });
+        this.addAndSelect(pageId, { type: tool, pts: [g.p0, p1], style: { ...this.style }, ...(tool === "arrow" ? { headSize: this.arrowSize } : {}) });
         break;
       case "rect":
       case "ellipse":
@@ -1080,13 +1081,14 @@ export class Editor {
       if (d.dimSize) this.dimSize = d.dimSize;
       if (d.dimEnd) Object.assign(this.dimEnd, d.dimEnd);
       if (d.cloudPitch) this.cloudPitch = d.cloudPitch;
+      if (d.arrowSize) this.arrowSize = d.arrowSize;
     } catch {
       /* 破損していたら既定のまま */
     }
   }
   saveDefaults() {
     try {
-      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch }));
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize }));
     } catch {
       /* 保存できなくてもこのセッションでは有効 */
     }
@@ -1100,6 +1102,7 @@ export class Editor {
       this.dimSize = sh.size;
       this.dimEnd = { style: sh.endStyle ?? "arrow", size: sh.endSize ?? (sh.size || 12) / 2 };
     }
+    if (sh.type === "arrow") this.arrowSize = sh.headSize ?? Math.max(10, (st.width ?? 1) * 4.5);
     if (sh.type === "cloud" && sh.pitch) this.cloudPitch = sh.pitch;
     this.saveDefaults();
   }

@@ -1,7 +1,7 @@
 // 編集内容をPDFに書き出す。図形はベクターのまま、文字は画像化(日本語・任意フォント対応)して焼き込む。
 import { PDFDocument, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
-  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, smoothPath,
+  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
   dimensionGeometry, rectPoints, dashArray, dimOpts,
 } from "./geometry.js";
 import { textMetrics, labelFor, serializeOverlay } from "./render.js";
@@ -133,7 +133,7 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
           path(linePath(sh.pts), strokeOpts);
           break;
         case "arrow": {
-          const size = Math.max(10, width * 4.5);
+          const size = arrowSizeOf(sh, width);
           const [a, b] = sh.pts;
           path(linePath(arrowShaft(a, b, size)), strokeOpts);
           path(polygonPath(arrowHead(a, b, size)), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: 1 });

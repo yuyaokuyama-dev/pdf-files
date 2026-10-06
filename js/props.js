@@ -2,7 +2,7 @@
 import { icon } from "./icons.js";
 import { FONTS, textMetrics, textCorners } from "./render.js";
 import { esc } from "./ui.js";
-import { DASH_TYPES, normDash } from "./geometry.js";
+import { DASH_TYPES, normDash, arrowSizeOf } from "./geometry.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
 const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "polygon", "cloud", "dim", "measure"]);
@@ -81,6 +81,8 @@ export class Props {
         return sh ? sh[key] : ed.textStyle[key];
       case "pitch":
         return sh ? sh.pitch : ed.cloudPitch;
+      case "headSize":
+        return sh ? arrowSizeOf(sh) : ed.arrowSize;
       case "angle":
         return sh?.angle || 0;
       case "endStyle":
@@ -125,6 +127,7 @@ export class Props {
             break;
           case "endStyle":
           case "endSize":
+          case "headSize":
             sh[key] = value;
             break;
           default:
@@ -160,6 +163,9 @@ export class Props {
           break;
         case "endSize":
           ed.dimEnd.size = value;
+          break;
+        case "headSize":
+          ed.arrowSize = value;
           break;
         default:
           break;
@@ -317,6 +323,7 @@ export class Props {
       parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
       parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
     }
+    if (t === "arrow") parts.push(num("headSize", "矢印のサイズ(線の太さとは別)", 3, 60, 0.5, (v) => Number(v).toFixed(1)));
     if (t === "cloud") parts.push(num("pitch", "雲のピッチ(円弧の大きさ)", 6, 80, 1));
     if (t === "text") {
       const size = g("size") || 18;
