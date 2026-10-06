@@ -1,7 +1,7 @@
 // テスト用PDFを生成(3ページ・図面風)。 node tests/make-fixtures.mjs
 import { createRequire } from "node:module";
 import { writeFileSync } from "node:fs";
-const require = createRequire("/opt/npm-tools/node_modules/");
+const require = createRequire((process.env.TOOLS_DIR || "/opt/npm-tools") + "/node_modules/");
 const { PDFDocument, StandardFonts, rgb, degrees } = require("pdf-lib");
 
 const doc = await PDFDocument.create();

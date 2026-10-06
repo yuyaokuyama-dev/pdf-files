@@ -201,7 +201,7 @@ check("選択して Delete で削除", (await shapes(page)).length === n0 - 1);
 await page.click("#btnUndo");
 check("削除も取り消せる", (await shapes(page)).length === n0);
 
-await page.screenshot({ path: "/tmp/claude-0/shot-draw.png" });
+await page.screenshot({ path: `${process.env.SHOT_DIR || "/tmp"}/shot-draw.png` });
 console.log("\nconsole errors:", errors.length ? "\n" + errors.join("\n") : "none");
 check("コンソールエラーなし", errors.length === 0, errors.join(" / "));
 const { pass, fail } = summary();
