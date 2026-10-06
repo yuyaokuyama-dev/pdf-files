@@ -1201,6 +1201,8 @@ async function saveToDrive() {
       const show = () => (d.querySelector("#dfName").textContent = folder?.name || "マイドライブ");
       show();
       d.querySelector("#dfPick").onclick = async () => {
+        // モーダルは最前面(top layer)に出るため、Googleの選択画面が裏に隠れる。選択中だけモーダルを外す
+        d.close();
         try {
           const f = await G.pickFolder();
           if (f) {
@@ -1209,6 +1211,8 @@ async function saveToDrive() {
           }
         } catch (e) {
           googleErr(e);
+        } finally {
+          if (d.isConnected && !d.open) d.showModal();
         }
       };
       d.querySelector("#dfRoot").onclick = () => {
