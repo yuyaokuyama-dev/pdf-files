@@ -2,6 +2,7 @@
 import { icon } from "./icons.js";
 import { FONTS } from "./render.js";
 import { esc } from "./ui.js";
+import { DASH_TYPES, normDash } from "./geometry.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
 const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "polygon", "cloud", "dim", "measure"]);
@@ -54,10 +55,11 @@ export class Props {
       case "color":
         if (ctx.type === "text") return sh ? sh.color || sh.style?.color : ed.textStyle.color;
         return sh ? sh.style?.color : ed.style.color;
+      case "dash":
+        return normDash((sh ? sh.style : ed.style)?.dash);
       case "width":
       case "fill":
       case "fillOpacity":
-      case "dash":
       case "opacity":
         return (sh ? sh.style : ed.style)?.[key];
       case "size":
@@ -158,6 +160,7 @@ export class Props {
       if (!isInput) this.ed.commitLive();
       return;
     }
+    if (key === "dash") v = v || false;
     if (t.type === "number" && (!Number.isFinite(v) || v <= 0)) return;
     // 入力中は履歴に積まずに反映(ライブ)、確定(change)で1操作として記録する
     this.apply(ctx, key, v, true);
@@ -199,6 +202,12 @@ export class Props {
       case "close":
         this.dismissed = true;
         this.refresh();
+        break;
+      case "set-default":
+        if (ctx.sel) {
+          ed.setDefaultsFrom(ctx.shape);
+          this.toast("この設定を、新しく作る線・図形・文字の初期設定にしました");
+        }
         break;
       case "dup": ed.duplicateSelected(); break;
       case "front": ed.reorderSelected(true); break;
@@ -250,7 +259,7 @@ export class Props {
       const cur = (g("color") || "#e11d48").toLowerCase();
       parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
     }
-    if (LINE_TYPES.has(t) && t !== "measure") parts.push(num("width", "線の太さ", 1, 24, 0.5));
+    if (LINE_TYPES.has(t) && t !== "measure") parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
     if (FILL_TYPES.has(t)) {
       const fill = g("fill");
       const on = fill && fill !== "none";
@@ -258,7 +267,7 @@ export class Props {
       if (on) parts.push(num("fillOpacity", "塗りの濃さ", 0.05, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
     }
     if (LINE_TYPES.has(t) && t !== "measure") {
-      parts.push(`<label class="field check" style="display:flex"><input type="checkbox" data-k="dash"${g("dash") ? " checked" : ""}> 破線</label>`);
+      parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
       parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
     }
     if (t === "cloud") parts.push(num("pitch", "雲のピッチ(円弧の大きさ)", 6, 80, 1));
@@ -282,6 +291,7 @@ export class Props {
     }
     if (t === "image") parts.push(`<p class="hint">四隅のハンドルで大きさを変更できます(縦横比は固定)。</p>`);
     if (ctx.sel) {
+      if (t !== "image" && t !== "stamp") parts.push(`<div class="actions"><button class="btn" data-act="set-default">${icon("check", 16)}この設定を初期設定にする</button></div>`);
       parts.push(`<div class="actions">
         <button class="btn" data-act="dup">${icon("copy", 16)}複製</button>
         <button class="btn" data-act="front">前面へ</button>

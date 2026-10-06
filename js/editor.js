@@ -35,10 +35,11 @@ export class Editor {
     this.els = new Map();
     this.handlers = {};
     this.tool = "select";
-    this.style = { color: "#e11d48", width: 3, fill: "none", fillOpacity: 0.25, dash: false, opacity: 1 };
+    this.style = { color: "#e11d48", width: 1, fill: "none", fillOpacity: 0.25, dash: false, opacity: 1 };
     this.textStyle = { size: 18, font: "gothic", bold: false, color: "#111827" };
     this.cloudPitch = 18;
     this.dimSize = 12;
+    this.loadDefaults();
     this.pendingStamp = null;
     this.sel = null;
     this.zoom = 1;
@@ -958,6 +959,36 @@ export class Editor {
     this.renderSelection();
     if (!same) this.emit("selection", sel);
   }
+  /* ---- 初期設定(新しく作る図形の既定値。端末に保存) ---- */
+  loadDefaults() {
+    try {
+      const d = JSON.parse(localStorage.getItem("apdf_defaults_v1") || "null");
+      if (!d) return;
+      Object.assign(this.style, d.style || {});
+      Object.assign(this.textStyle, d.textStyle || {});
+      if (d.dimSize) this.dimSize = d.dimSize;
+      if (d.cloudPitch) this.cloudPitch = d.cloudPitch;
+    } catch {
+      /* 破損していたら既定のまま */
+    }
+  }
+  saveDefaults() {
+    try {
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, cloudPitch: this.cloudPitch }));
+    } catch {
+      /* 保存できなくてもこのセッションでは有効 */
+    }
+  }
+  /** 選択中の図形の線・色・文字の設定を、新規作成時の初期設定にする */
+  setDefaultsFrom(sh) {
+    const st = sh.style || {};
+    if (sh.type !== "text") for (const k of ["color", "width", "fill", "fillOpacity", "dash", "opacity"]) if (st[k] !== undefined) this.style[k] = st[k];
+    if (sh.type === "text") Object.assign(this.textStyle, { size: sh.size, font: sh.font || "gothic", bold: !!sh.bold, color: sh.color || st.color });
+    if (sh.type === "dim" || sh.type === "measure") this.dimSize = sh.size;
+    if (sh.type === "cloud" && sh.pitch) this.cloudPitch = sh.pitch;
+    this.saveDefaults();
+  }
+
   selectedShape() {
     if (!this.sel) return null;
     const f = this.model.findShape(this.sel.shapeId);

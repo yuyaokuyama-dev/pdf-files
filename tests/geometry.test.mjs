@@ -103,3 +103,14 @@ test("矢じりの先端は tip と一致", () => {
 test("楕円パスは閉じている", () => {
   assert.ok(ellipsePath([0, 0], [100, 50]).endsWith("Z"));
 });
+
+test("線種: 実線/破線/一点鎖線/二点鎖線のパターン", async () => {
+  const { dashArray, normDash } = await import("../js/geometry.js");
+  assert.equal(dashArray(false, 1), null);
+  assert.equal(dashArray("", 1), null);
+  assert.deepEqual(dashArray(true, 2), [6, 4]); // 旧データ(boolean)は破線
+  assert.equal(normDash(true), "dash");
+  assert.equal(dashArray("dashdot", 1).length, 4);
+  assert.equal(dashArray("dashdot2", 1).length, 6);
+  assert.deepEqual(dashArray("dash", 0.5), [3, 2]); // 細い線でも潰れない
+});

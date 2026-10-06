@@ -2,7 +2,7 @@
 import { PDFDocument, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, smoothPath,
-  dimensionGeometry, rectPoints,
+  dimensionGeometry, rectPoints, dashArray,
 } from "./geometry.js";
 import { textMetrics, labelFor, serializeOverlay } from "./render.js";
 import { TEXT_LINE } from "./render.js";
@@ -121,7 +121,7 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
       const hasFill = st.fill && st.fill !== "none";
       const strokeOpts = {
         borderColor: color, borderWidth: width, borderOpacity: st.opacity ?? 1,
-        ...(st.dash ? { borderDashArray: [width * 3, width * 2] } : {}),
+        ...(dashArray(st.dash, width) ? { borderDashArray: dashArray(st.dash, width) } : {}),
       };
       const fillOpts = hasFill ? { color: hexToRgb(st.fill), opacity: st.fillOpacity ?? 0.25 } : {};
       switch (sh.type) {
