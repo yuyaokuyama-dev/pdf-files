@@ -94,6 +94,9 @@ export function arrowHead(from, tip, size) {
   ];
 }
 
+/** 矢じりの大きさ(pt)。個別指定(headSize)が無い従来の図形は、線の太さに比例した大きさのまま */
+export const arrowSizeOf = (shape, width) => shape.headSize ?? Math.max(10, (width ?? shape.style?.width ?? 1) * 4.5);
+
 /** 矢印の線分(軸)は矢じりの根元までにして、先が太く見えないようにする */
 export function arrowShaft(p0, p1, size) {
   const L = dist(p0, p1);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cloudPath, makeScale, measure, formatLength, dimensionGeometry, rectPoints, signedArea,
-  smoothPath, createPenFilter, simplify, pointInPolygon, distToSegment, arrowHead, ellipsePath,
+  smoothPath, createPenFilter, simplify, pointInPolygon, distToSegment, arrowHead, ellipsePath, arrowSizeOf,
 } from "../js/geometry.js";
 
 test("rectPoints は時計回り(画面)で面積が正", () => {
@@ -143,4 +143,11 @@ test("寸法線: 端部(黒丸/矢印)・縦寸法は下から上に読み文字
   assert.equal(mv.leader[1][0], mv.textBase[0]);
   assert.ok(mv.leader[0][0] >= 0 && mv.leader[0][0] <= 200, "引き出し線の起点は寸法線上");
   assert.equal(dimensionGeometry([0, 100], [200, 100], 24, 12, { textOff: [0, 0] }).leader, null);
+});
+
+test("矢印のサイズ: 個別指定が優先され、無い従来図形は線の太さに比例", () => {
+  assert.equal(arrowSizeOf({ headSize: 25, style: { width: 8 } }), 25);
+  assert.equal(arrowSizeOf({ style: { width: 1 } }), 10);
+  assert.equal(arrowSizeOf({ style: { width: 4 } }), 18);
+  assert.equal(arrowSizeOf({ headSize: 10, style: { width: 8 } }), 10);
 });

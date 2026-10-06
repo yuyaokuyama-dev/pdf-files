@@ -1,6 +1,6 @@
 // 図形データ → SVG 要素。画面表示・選択・画像化(書き出し)で共通利用する。
 import {
-  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, smoothPath,
+  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
   dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
 } from "./geometry.js";
 
@@ -135,7 +135,7 @@ export function renderShape(shape, parent, opts = {}) {
       break;
     }
     case "arrow": {
-      const size = Math.max(10, width * 4.5);
+      const size = arrowSizeOf(shape, width);
       const [a, b] = shape.pts;
       const [sa, sb] = arrowShaft(a, b, size);
       el("path", { d: linePath([sa, sb]), fill: "none", ...common }, g);
