@@ -9,9 +9,6 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    env:
-      TOOLS_DIR: ${{ runner.temp }}/tools
-      SHOT_DIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -19,6 +16,9 @@ jobs:
           node-version: 22
       - name: テスト用ツール(pdf-lib / Playwright)を導入
         run: |
+          echo "TOOLS_DIR=$RUNNER_TEMP/tools" >> "$GITHUB_ENV"
+          echo "SHOT_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          TOOLS_DIR="$RUNNER_TEMP/tools"
           mkdir -p "$TOOLS_DIR"
           cd "$TOOLS_DIR"
           npm init -y >/dev/null
