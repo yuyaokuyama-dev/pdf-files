@@ -68,6 +68,11 @@ export class Editor {
     viewer.addEventListener("pointermove", (e) => this.onViewerPointerMove(e), true);
     viewer.addEventListener("pointerup", (e) => this.onViewerPointerEnd(e), true);
     viewer.addEventListener("pointercancel", (e) => this.onViewerPointerEnd(e), true);
+    const nonPassive = { passive: false, capture: true };
+    viewer.addEventListener("touchstart", (e) => this.onViewerTouchStart(e), nonPassive);
+    viewer.addEventListener("touchmove", (e) => this.onViewerTouchMove(e), nonPassive);
+    viewer.addEventListener("touchend", (e) => this.onViewerTouchEnd(e), nonPassive);
+    viewer.addEventListener("touchcancel", (e) => this.onViewerTouchEnd(e), nonPassive);
     viewer.addEventListener("wheel", (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
@@ -317,7 +322,8 @@ export class Editor {
     el.svg.setAttribute("class", `overlay ${cls}`);
   }
   setPalm(on) {
-    this.palm = !!on;
+    // iPhoneにはApple Pencilが無いので、指で描けなくなるペン入力モードは適用しない
+    this.palm = !!on && !/iPhone|iPod/.test(navigator.userAgent);
     for (const el of this.els.values()) this.applyToolClass(el);
   }
 
@@ -337,37 +343,61 @@ export class Editor {
   }
 
   // 2本指: ピンチでズーム、移動でスクロール(描画中の操作は取り消す)
+  // pointerは「指の本数」の把握用、実際のピンチは touch イベント(iOSで確実にpreventDefaultできる)で行う。
+  // ピンチ中は #pages に CSS transform をかけるだけ(再レイアウトなし)にして、指を離したときに1回だけズームを確定する。
   onViewerPointerDown(e) {
     if (e.pointerType !== "touch") return;
     this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (this.touches.size === 2) {
-      this.cancelGesture();
-      const [a, b] = [...this.touches.values()];
-      this.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: this.zoom, m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ax: 0, ay: 0 };
-      const r = this.viewer.getBoundingClientRect();
-      this.pinch.ax = (this.viewer.scrollLeft + this.pinch.m0.x - r.left) / this.zoom;
-      this.pinch.ay = (this.viewer.scrollTop + this.pinch.m0.y - r.top) / this.zoom;
-    }
+    if (this.touches.size >= 2) this.cancelGesture();
   }
   onViewerPointerMove(e) {
     if (e.pointerType !== "touch" || !this.touches.has(e.pointerId)) return;
     this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (this.pinch && this.touches.size >= 2) {
-      const [a, b] = [...this.touches.values()];
-      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const z = Math.max(0.2, Math.min(6, this.pinch.z0 * (d / this.pinch.d0)));
-      const r = this.viewer.getBoundingClientRect();
-      this.setZoom(z);
-      this.viewer.scrollLeft = this.pinch.ax * z - (m.x - r.left);
-      this.viewer.scrollTop = this.pinch.ay * z - (m.y - r.top);
-      e.preventDefault();
-    }
   }
   onViewerPointerEnd(e) {
     if (e.pointerType !== "touch") return;
     this.touches.delete(e.pointerId);
-    if (this.touches.size < 2) this.pinch = null;
+  }
+  twoTouch(e) {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1, x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+  }
+  onViewerTouchStart(e) {
+    if (e.touches.length !== 2) return;
+    this.cancelGesture();
+    const t = this.twoTouch(e);
+    const pages = this.viewer.querySelector("#pages") || this.viewer.firstElementChild;
+    const r = this.viewer.getBoundingClientRect();
+    const ox = this.viewer.scrollLeft + t.x - r.left - (pages?.offsetLeft || 0);
+    const oy = this.viewer.scrollTop + t.y - r.top - (pages?.offsetTop || 0);
+    this.pinch = { d0: t.d, z0: this.zoom, m0: t, ax: (this.viewer.scrollLeft + t.x - r.left) / this.zoom, ay: (this.viewer.scrollTop + t.y - r.top) / this.zoom, z: this.zoom, m: t, pages };
+    if (pages) { pages.style.transformOrigin = `${ox}px ${oy}px`; pages.style.willChange = "transform"; }
+    e.preventDefault();
+  }
+  onViewerTouchMove(e) {
+    if (this.pinch && e.touches.length >= 2) {
+      const t = this.twoTouch(e);
+      const z = Math.max(0.2, Math.min(6, this.pinch.z0 * (t.d / this.pinch.d0)));
+      this.pinch.z = z;
+      this.pinch.m = t;
+      const s = z / this.pinch.z0;
+      if (this.pinch.pages) this.pinch.pages.style.transform = `translate(${t.x - this.pinch.m0.x}px, ${t.y - this.pinch.m0.y}px) scale(${s})`;
+      e.preventDefault();
+      return;
+    }
+    // 描画中は指の動きでスクロールさせない
+    if (this.g?.kind === "create") e.preventDefault();
+  }
+  onViewerTouchEnd(e) {
+    if (e.touches.length === 0) this.touches.clear();
+    if (!this.pinch || e.touches.length >= 2) return;
+    const { z, m, ax, ay, pages } = this.pinch;
+    this.pinch = null;
+    if (pages) { pages.style.transform = ""; pages.style.transformOrigin = ""; pages.style.willChange = ""; }
+    const r = this.viewer.getBoundingClientRect();
+    this.setZoom(z);
+    this.viewer.scrollLeft = ax * z - (m.x - r.left);
+    this.viewer.scrollTop = ay * z - (m.y - r.top);
   }
 
   /** 同じ対象(key)を短時間に2回タップしたか。別の操作を挟むと成立しない */

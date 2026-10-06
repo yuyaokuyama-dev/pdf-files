@@ -208,6 +208,7 @@ async function enterApp(user) {
   $("#app").hidden = false;
   if (!S.editor) initUI();
   S.editor.setPalm(S.settings.palm);
+  G.preloadGoogle();
   // 前回の続きを開く
   const last = await S.store.getSetting("lastProject", null);
   let restored = false;
