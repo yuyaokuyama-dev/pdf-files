@@ -234,6 +234,7 @@ const TOOLS = [
   { id: "hand", icon: "hand", label: "移動" },
   { sep: true },
   { id: "pen", icon: "pen", label: "ペン", hint: "指・ペン・マウスでなめらかに手書きできます" },
+  { id: "eraser", icon: "eraser", label: "消しゴム", hint: "ペンで書いた線の上をなぞると、その線が消えます(取り消しで戻せます)" },
   { id: "line", icon: "line", label: "線", hint: "ドラッグで線を引きます(Shiftで45°刻み)" },
   { id: "arrow", icon: "arrow", label: "矢印", hint: "ドラッグで矢印を引きます" },
   { id: "rect", icon: "rect", label: "四角", hint: "ドラッグで四角を描きます" },

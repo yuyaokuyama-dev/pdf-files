@@ -76,6 +76,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .page .pageno { position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%); font-size: 11px; color: #4b5563; }
 .page svg.overlay.t-draw { touch-action: none; cursor: crosshair; }
 .page svg.overlay.t-palm { touch-action: pan-x pan-y pinch-zoom; cursor: crosshair; }
+.page svg.overlay.t-erase { touch-action: none; cursor: cell; }
 .page svg.overlay.t-select { cursor: default; }
 .page svg.overlay.t-select .shape, .page svg.overlay .handle { touch-action: none; }
 .page svg.overlay.t-hand { cursor: grab; }
