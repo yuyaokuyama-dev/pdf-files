@@ -131,7 +131,8 @@ export class DocModel {
         const rot = ([x, y]) => [H - y, x]; // 時計回り90度(新しい幅=H)
         for (const sh of p.shapes) {
           sh.pts = sh.pts.map(rot);
-          if (sh.type === "text" || sh.type === "dim" || sh.type === "measure") sh.angle = ((sh.angle || 0) + 90) % 360;
+          if (sh.type === "text") sh.angle = ((sh.angle || 0) + 90) % 360;
+          if (sh.textOff) sh.textOff = [-sh.textOff[1], sh.textOff[0]]; // 寸法値の移動量(ベクトル)も回す
         }
         p.w = H;
         p.h = W;
