@@ -22,7 +22,7 @@ const PDF_OPTS = {
   wasmUrl: new URL("../vendor/wasm/", import.meta.url).href,
 };
 
-const S = { user: null, store: null, model: null, editor: null, thumbs: null, props: null, settings: { level: "small", palm: false, notify: false }, savedSrc: new Set(), deferredInstall: null };
+const S = { user: null, store: null, model: null, editor: null, thumbs: null, props: null, settings: { level: "small", palm: false, notify: false }, savedSrc: new Set(), openDocs: [], deferredInstall: null };
 window.__apdf = S; // 動作確認用
 S.exportPdf = exportPdf;
 S.G = G;
@@ -208,6 +208,7 @@ async function enterApp(user) {
   $("#app").hidden = false;
   if (!S.editor) initUI();
   S.editor.setPalm(S.settings.palm);
+  S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
   G.preloadGoogle();
   // 前回の続きを開く
   const last = await S.store.getSetting("lastProject", null);
@@ -410,6 +411,7 @@ function updateEmpty() {
  * ======================================================= */
 function setDoc(model, { fit = true } = {}) {
   S.model = model;
+  if (model.pages.length) trackOpen(model.meta.projectId);
   model.onChange(() => {
     updateUndoRedo();
     scheduleSave();
@@ -423,6 +425,83 @@ function setDoc(model, { fit = true } = {}) {
   $("#thumbs").hidden || S.thumbs.refresh(true);
   if (fit && model.pages.length) requestAnimationFrame(() => S.editor.fitWidth());
   S.editor.setTool("select");
+}
+
+/* ---------- 開いているファイル(切り替え) ---------- */
+function trackOpen(id) {
+  if (!id || S.openDocs.includes(id)) return;
+  S.openDocs.push(id);
+  S.store?.setSetting("openDocs", S.openDocs);
+}
+function untrackOpen(id) {
+  S.openDocs = S.openDocs.filter((x) => x !== id);
+  S.store?.setSetting("openDocs", S.openDocs);
+}
+async function deleteProjectData(id) {
+  const pr = await S.store.get("projects", id);
+  for (const src of pr?.sources || []) await S.store.del("projects", "src:" + src.id);
+  await S.store.del("projects", id);
+  await S.store.del("recents", id);
+  untrackOpen(id);
+}
+async function switchDoc(id) {
+  if (id === S.model.meta.projectId) return;
+  const b = busy("切り替えています…");
+  try {
+    await saveProjectNow();
+    await openProject(id);
+  } catch (err) {
+    toast(err.message, { error: true });
+  } finally {
+    b.close();
+  }
+}
+/** 保存しないで閉じる: このファイルの端末内データ(自動保存分)を破棄して閉じる。Googleドライブに保存済みのファイルは消えない */
+async function discardDoc(id) {
+  const isCur = id === S.model.meta.projectId;
+  const name = isCur ? S.model.meta.name : (await S.store.get("recents", id))?.name || "このファイル";
+  const ok = await confirmDialog(`「${name}」を保存しないで閉じますか?\n端末内の編集内容は破棄され、履歴にも残りません。\n(Googleドライブに保存済みのファイルは消えません)`, { ok: "保存しないで閉じる", danger: true });
+  if (!ok) return false;
+  clearTimeout(saveTimer);
+  await deleteProjectData(id);
+  if (isCur) {
+    const next = S.openDocs.filter((x) => x !== id).at(-1);
+    let opened = false;
+    if (next) {
+      try { opened = await openProject(next, { silent: true }); } catch { /* 開けなければ空の状態へ */ }
+    }
+    if (!opened) {
+      setDoc(new DocModel());
+      S.store.setSetting("lastProject", null);
+    }
+  }
+  toast("閉じました");
+  return true;
+}
+async function openDocsDialog() {
+  await saveProjectNow();
+  const cur = S.model.pages.length ? S.model.meta.projectId : null;
+  const recs = new Map((await S.store.getAll("recents")).map((r) => [r.id, r]));
+  const ids = S.openDocs.filter((id) => recs.has(id));
+  await dialog({
+    title: "開いているファイル",
+    width: "min(560px, 96vw)",
+    body: ids.length
+      ? `<div class="list">${ids.map((id) => { const r = recs.get(id); return `<div class="item"><img src="${r.thumb || "icons/icon-192.png"}" alt=""><div class="meta"><div class="name">${esc(r.name)}${id === cur ? "(表示中)" : ""}</div><div class="sub">${r.pages}ページ ・ ${fmtDate(r.updatedAt)}</div></div>${id === cur ? "" : `<button class="btn" data-sw="${id}">表示</button>`}<button class="btn danger icon" data-x="${id}" aria-label="保存しないで閉じる" title="保存しないで閉じる">${icon("trash", 18)}</button></div>`; }).join("")}</div><p class="note">ゴミ箱ボタンは「保存しないで閉じる」です。閉じたくないファイルは、そのままにしておけば裏に残ります。</p>`
+      : '<p class="note">開いているファイルはありません。</p>',
+    buttons: [{ label: "閉じる", value: true, primary: true }],
+    onOpen: (d, close) => {
+      d.addEventListener("click", async (e) => {
+        const sw = e.target.closest("[data-sw]");
+        const x = e.target.closest("[data-x]");
+        if (sw) { close(true); switchDoc(sw.dataset.sw); }
+        else if (x) {
+          close(true);
+          await discardDoc(x.dataset.x);
+        }
+      });
+    },
+  });
 }
 
 let saveTimer = 0;
@@ -627,6 +706,8 @@ function fileMenu(anchor) {
     { label: "PDFを開く(この端末)", icon: "folder", onClick: () => $("#fileOpen").click() },
     { label: "Googleドライブから開く", icon: "drive", onClick: openFromDrive },
     { label: "履歴から開く", icon: "history", onClick: openHistory },
+    { label: `開いているファイル(${Math.max(S.openDocs.length, S.model.pages.length ? 1 : 0)})…`, icon: "folder", onClick: openDocsDialog },
+    { label: "保存しないで閉じる", icon: "trash", onClick: () => discardDoc(S.model.meta.projectId), disabled: !S.model.pages.length },
     { sep: true },
     { label: "白紙から新規作成", icon: "blank", onClick: () => newBlank() },
     { label: "写真・スキャンから新規作成", icon: "camera", onClick: () => capturePhoto().then((p) => p && newDocFromImage(p)) },
@@ -1577,11 +1658,7 @@ async function openHistory() {
             b.close();
           }
         } else if (del && (await confirmDialog("この履歴と、端末内の編集データを削除しますか?\n(Googleドライブに保存済みのファイルは消えません)", { ok: "削除", danger: true }))) {
-          const id = del.dataset.del;
-          const pr = await S.store.get("projects", id);
-          for (const s of pr?.sources || []) await S.store.del("projects", "src:" + s.id);
-          await S.store.del("projects", id);
-          await S.store.del("recents", id);
+          await deleteProjectData(del.dataset.del);
           del.closest(".item").remove();
         }
       });

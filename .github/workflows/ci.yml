@@ -40,3 +40,4 @@ jobs:
           node tests/e2e-launch.mjs
           node tests/e2e-mobile.mjs
           node tests/e2e-eraser.mjs
+          node tests/e2e-docs.mjs
