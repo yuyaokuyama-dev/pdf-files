@@ -1,6 +1,6 @@
 // アプリ本体: 認証 → エディタ起動 → ファイル操作 / Google連携 / オフライン対応
 import * as pdfjs from "../vendor/pdf.min.mjs";
-import * as auth from "./auth.js";
+import * as auth from "./account.js";
 import { openStore, uid } from "./store.js";
 import { DocModel, A4 } from "./model.js";
 import { Editor } from "./editor.js";
@@ -55,10 +55,20 @@ async function boot() {
     e.preventDefault();
     S.deferredInstall = e;
   });
+  await auth.init();
   wireAuth();
   const u = auth.currentUser();
-  if (u) await enterApp(u);
-  else showAuth();
+  if (u) {
+    await enterApp(u);
+    // 共有アカウントはサーバー側の有効性を確認(オフラインなら確認せず続行)
+    auth.verifySession().then((ok) => {
+      if (!ok) {
+        auth.logout();
+        alert("ログインの有効期限が切れました。もう一度ログインしてください。");
+        location.reload();
+      }
+    });
+  } else showAuth();
 }
 
 function showAuth() {
@@ -71,18 +81,27 @@ function showAuth() {
 
 function wireAuth() {
   let mode = "login";
+  const shared = auth.mode() === "shared";
   const setMode = (m) => {
     mode = m;
     $("#tabLogin").classList.toggle("on", m === "login");
     $("#tabRegister").classList.toggle("on", m === "register");
     $("#authPw2Row").hidden = m !== "register";
+    $("#authNameRow").hidden = !(shared && m === "register");
+    $("#authForgot").hidden = !(shared && m === "login");
     $("#authSubmit").textContent = m === "login" ? "ログイン" : "登録してはじめる";
     $("#authPw").autocomplete = m === "login" ? "current-password" : "new-password";
     $("#authMsg").textContent = "";
   };
+  $("#authIdLabel").textContent = shared ? "メールアドレス" : "ID(メールアドレスなど)";
+  $("#authHint").textContent = shared
+    ? "アカウントは共有サーバー(Buildsと共通)に保存されます。一度ログインすれば、オフラインでも使えます。"
+    : "アカウントはこの端末内に安全に保存されます(サーバーへは送信しません)。";
   $("#tabLogin").onclick = () => setMode("login");
   $("#tabRegister").onclick = () => setMode("register");
+  $("#authForgot").onclick = () => forgotPasswordDialog($("#authId").value.trim());
   if (!auth.hasAnyUser()) setMode("register");
+  else setMode("login");
   $("#authForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const msg = $("#authMsg");
@@ -94,7 +113,7 @@ function wireAuth() {
     try {
       if (mode === "register") {
         if (pw !== $("#authPw2").value) throw new Error("確認用パスワードが一致しません");
-        await auth.register(id, pw);
+        await auth.register(id, pw, $("#authName").value);
       }
       const uid = await auth.login(id, pw, { remember: $("#authRemember").checked });
       $("#authPw").value = $("#authPw2").value = "";
@@ -105,6 +124,58 @@ function wireAuth() {
       btn.disabled = false;
     }
   });
+}
+
+/** パスワードの再設定(確認コードは管理者が発行して本人に伝える。Builds互換の表示方式のときは画面に出る) */
+async function forgotPasswordDialog(email = "") {
+  const display = auth.resetMode() === "display";
+  await dialog({
+    title: "パスワードの再設定",
+    body: `<p class="note">${display
+      ? "メールアドレスを入れて「コードを表示」を押し、表示された6桁のコードで再設定します。"
+      : "確認コードは<b>管理者が発行</b>します。管理者からコードを受け取ったら、下に入力してください。"}</p>
+      <label class="field">メールアドレス<input type="text" inputmode="email" id="fpEmail" autocapitalize="off" value="${esc(email)}"></label>
+      ${display ? `<button type="button" class="btn" id="fpReq">コードを表示</button><p id="fpShown" class="note"></p>` : ""}
+      <label class="field">確認コード(6桁)<input type="text" inputmode="numeric" id="fpCode" maxlength="6" autocomplete="one-time-code"></label>
+      <label class="field">新しいパスワード(8文字以上)<input type="password" id="fpPw" autocomplete="new-password"></label>
+      <p id="fpMsg" class="msg" role="alert"></p>`,
+    onOpen: (d) => {
+      d.querySelector("#fpReq")?.addEventListener("click", async () => {
+        try {
+          const r = await auth.requestReset(d.querySelector("#fpEmail").value);
+          d.querySelector("#fpShown").textContent = r.resetCode ? `確認コード: ${r.resetCode}(30分有効)` : r.notice || "";
+        } catch (e) {
+          d.querySelector("#fpMsg").textContent = e.message;
+        }
+      });
+    },
+    buttons: [{ label: "キャンセル", value: null }, { label: "再設定してログイン", value: true, primary: true, action: async (d) => {
+      const msg = d.querySelector("#fpMsg");
+      msg.textContent = "";
+      try {
+        const uid = await auth.confirmReset(d.querySelector("#fpEmail").value, d.querySelector("#fpCode").value, d.querySelector("#fpPw").value);
+        d.querySelector("#fpPw").value = "";
+        await enterApp(uid);
+        toast("パスワードを再設定しました");
+        return true;
+      } catch (e) {
+        msg.textContent = e.message;
+        return false;
+      }
+    } }],
+  });
+}
+
+/** 管理者: 利用者の確認コードを発行 */
+async function issueResetDialog() {
+  const email = await promptDialog({ title: "再設定コードの発行", label: "コードを発行するアカウントのメールアドレス", placeholder: "name@example.com", ok: "発行" });
+  if (!email) return;
+  try {
+    const r = await auth.issueReset(email);
+    await dialog({ title: "確認コード", body: `<p><b style="font-size:28px;letter-spacing:4px">${esc(r.resetCode)}</b></p><p class="note">${esc(r.email)} 用・30分有効。本人に直接伝えてください(5回間違えると無効になります)。</p>` });
+  } catch (e) {
+    toast(e.message, { error: true });
+  }
 }
 
 async function enterApp(user) {
@@ -512,10 +583,11 @@ function saveMenu(anchor) {
 
 function userMenu(anchor) {
   showMenu(anchor, [
-    { header: `ログイン中: ${S.user}` },
+    { header: `ログイン中: ${auth.currentProfile()?.displayName ? auth.currentProfile().displayName + " (" + S.user + ")" : S.user}` },
     { label: "設定", icon: "settings", onClick: openSettings },
     { label: "履歴", icon: "history", onClick: openHistory },
     { label: "使い方・ホーム画面に追加", icon: "info", onClick: installHelp },
+    ...(auth.isAdmin() ? [{ label: "再設定コードの発行(管理者)", icon: "settings", onClick: issueResetDialog }] : []),
     { sep: true },
     { label: "ログアウト", icon: "logout", onClick: async () => {
       await saveProjectNow();

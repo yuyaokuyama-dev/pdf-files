@@ -1,5 +1,5 @@
 // Service Worker: アプリ本体を端末に保存し、オフラインでも全機能を使えるようにする。
-const VERSION = "v1.1.0";
+const VERSION = "v1.2.0";
 const CORE = `apdf-core-${VERSION}`;
 const RUNTIME = `apdf-runtime-${VERSION}`;
 
@@ -8,7 +8,7 @@ const CORE_FILES = [
   "index.html",
   "manifest.webmanifest",
   "css/app.css",
-  "js/app.js", "js/auth.js", "js/editor.js", "js/export.js", "js/geometry.js", "js/google.js",
+  "js/account.js", "js/app.js", "js/auth.js", "js/editor.js", "js/export.js", "js/geometry.js", "js/google.js",
   "js/icons.js", "js/model.js", "js/pad.js", "js/props.js", "js/raster.js", "js/render.js",
   "js/store.js", "js/thumbs.js", "js/ui.js",
   "vendor/pdf.min.mjs", "vendor/pdf.worker.min.mjs", "vendor/pdf-lib.esm.min.js",
@@ -34,6 +34,7 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // Google等の外部通信は触らない
+  if (url.pathname.includes("/api/")) return; // 認証API: キャッシュしない(常にサーバーへ)
 
   // ページ遷移はオフラインでも index.html を返す
   if (req.mode === "navigate") {

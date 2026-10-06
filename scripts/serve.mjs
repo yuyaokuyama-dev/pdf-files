@@ -11,6 +11,11 @@ export function startServer(port = 0) {
   const server = http.createServer(async (req, res) => {
     try {
       let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
+      if (p === "/api/auth/config") {
+        // 開発用: 共有アカウントAPI(Vercel)は無いので端末内モード
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        return res.end(JSON.stringify({ ok: true, shared: false, resetMode: "admin" }));
+      }
       if (p.endsWith("/")) p += "index.html";
       const file = normalize(join(root, p));
       if (!file.startsWith(root)) throw new Error("forbidden");
