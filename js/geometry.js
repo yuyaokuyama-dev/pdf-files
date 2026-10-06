@@ -248,3 +248,22 @@ export function simplify(pts, eps = 0.4) {
   }
   return pts.filter((_, i) => keep[i]);
 }
+
+/** 線種。dash: false/"" = 実線, true/"dash" = 破線, "dashdot" = 一点鎖線, "dashdot2" = 二点鎖線 */
+export const DASH_TYPES = [
+  { id: "", label: "実線" },
+  { id: "dash", label: "破線" },
+  { id: "dashdot", label: "一点鎖線" },
+  { id: "dashdot2", label: "二点鎖線" },
+];
+export const normDash = (d) => (d === true ? "dash" : d || "");
+/** 線の太さに応じた点線パターン(pt)。実線は null */
+export function dashArray(dash, width = 1) {
+  const w = Math.max(width, 1); // 細い線でもパターンが潰れないように
+  switch (normDash(dash)) {
+    case "dash": return [3 * w, 2 * w];
+    case "dashdot": return [6 * w, 1.5 * w, 1 * w, 1.5 * w];
+    case "dashdot2": return [6 * w, 1.5 * w, 1 * w, 1.5 * w, 1 * w, 1.5 * w];
+    default: return null;
+  }
+}

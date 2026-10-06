@@ -1,7 +1,7 @@
 // 図形データ → SVG 要素。画面表示・選択・画像化(書き出し)で共通利用する。
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, smoothPath,
-  dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox,
+  dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray,
 } from "./geometry.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -107,7 +107,7 @@ export function renderShape(shape, parent, opts = {}) {
     "stroke-width": width,
     "stroke-linecap": "round",
     "stroke-linejoin": "round",
-    "stroke-dasharray": s.dash ? `${width * 3} ${width * 2}` : null,
+    "stroke-dasharray": dashArray(s.dash, width)?.join(" ") ?? null,
     opacity: s.opacity != null && s.opacity < 1 ? s.opacity : null,
   };
   const fill = s.fill && s.fill !== "none" ? s.fill : "none";
