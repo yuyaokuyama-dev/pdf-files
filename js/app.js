@@ -178,6 +178,28 @@ async function issueResetDialog() {
   }
 }
 
+/* ---------- 「このアプリで開く」(Windows等: インストール後、PDFをダブルクリック/右クリック→プログラムから開く) ---------- */
+const launchPending = [];
+function flushLaunch() {
+  if (!S.user || !S.editor || !launchPending.length) return;
+  const files = launchPending.splice(0);
+  (async () => {
+    try {
+      await openLocalFile(files[0]);
+      if (files.length > 1) await addPdfFiles(files.slice(1));
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+  })();
+}
+if ("launchQueue" in window) {
+  window.launchQueue.setConsumer(async (p) => {
+    if (!p.files?.length) return;
+    for (const h of p.files) launchPending.push(await h.getFile());
+    flushLaunch(); // ログイン前なら、ログイン後に enterApp から開く
+  });
+}
+
 async function enterApp(user) {
   S.user = user;
   S.store = openStore(user);
@@ -200,6 +222,7 @@ async function enterApp(user) {
   updateNet();
   refreshQueueBadge();
   if (G.isConfigured() && navigator.onLine) G.preload?.();
+  flushLaunch();
 }
 
 /* =========================================================
