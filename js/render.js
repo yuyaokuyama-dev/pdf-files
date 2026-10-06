@@ -1,7 +1,7 @@
 // 図形データ → SVG 要素。画面表示・選択・画像化(書き出し)で共通利用する。
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, smoothPath,
-  dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray,
+  dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
 } from "./geometry.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -40,16 +40,27 @@ export function textMetrics(shape) {
   return { w: Math.max(w, size * 0.6), h: lines.length * size * TEXT_LINE, lines };
 }
 
+/** 回転したテキストボックスの四隅(左上を軸に時計回り) */
+export function textCorners(shape, m = textMetrics(shape)) {
+  const [x, y] = shape.pts[0];
+  const a = ((shape.angle || 0) * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return [[0, 0], [m.w, 0], [m.w, m.h], [0, m.h]].map(([u, v]) => [x + u * c - v * s, y + u * s + v * c]);
+}
+
 /** 図形のバウンディングボックス(選択枠・当たり判定用) */
 export function shapeBounds(shape, page) {
   switch (shape.type) {
     case "text": {
       const m = textMetrics(shape);
-      return { x: shape.pts[0][0], y: shape.pts[0][1], w: m.w, h: m.h };
+      const [x, y] = shape.pts[0];
+      if (!shape.angle) return { x, y, w: m.w, h: m.h };
+      return bbox(textCorners(shape, m));
     }
     case "dim": {
-      const g = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, shape.size || 12);
-      return bbox([...shape.pts, g.line[0], g.line[1], g.textPos]);
+      const g = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, shape.size || 12, dimOpts(shape));
+      return bbox([...shape.pts, g.line[0], g.line[1], g.textPos, ...(g.leader || [])]);
     }
     case "cloud": {
       const b = bbox(shape.pts);
@@ -166,6 +177,7 @@ export function renderShape(shape, parent, opts = {}) {
       const m = textMetrics(shape);
       const size = shape.size || 18;
       const [x, y] = shape.pts[0];
+      if (shape.angle) g.setAttribute("transform", `rotate(${shape.angle} ${x} ${y})`); // 左上を軸に時計回り
       if (shape.bg) el("rect", { x, y, width: m.w, height: m.h, fill: shape.bg }, g);
       const t = el("text", {
         x, y: y + size * TEXT_ASCENT, "font-size": size,
@@ -185,16 +197,17 @@ export function renderShape(shape, parent, opts = {}) {
       const label = labelFor(shape, opts.page);
       let geo;
       if (shape.type === "dim") {
-        geo = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, size);
+        geo = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, size, dimOpts(shape));
         el("path", { d: linePath(geo.ext0), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
         el("path", { d: linePath(geo.ext1), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
       } else {
-        geo = dimensionGeometry(shape.pts[0], shape.pts[1], 0, size);
+        geo = dimensionGeometry(shape.pts[0], shape.pts[1], 0, size, dimOpts(shape));
         // 計測は測点上に線を引き、両端に小さな縦棒(エンドマーク)
       }
       const [a0, a1] = geo.line;
       el("path", { d: linePath([a0, a1]), fill: "none", ...common }, g);
-      for (const h of [geo.head0, geo.head1]) el("path", { d: polygonPath(h), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
+      for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
+      if (geo.leader) el("path", { d: linePath(geo.leader), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
       const t = el("text", {
         x: geo.textPos[0], y: geo.textPos[1] + size * 0.35, "text-anchor": "middle", "font-size": size,
         "font-family": fontCss(shape.font), fill: shape.color || color,

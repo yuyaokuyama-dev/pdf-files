@@ -104,9 +104,12 @@ export function arrowShaft(p0, p1, size) {
 
 /**
  * 寸法線の幾何。p0,p1: 測点、off: 法線方向へのオフセット(pt)。
- * 返り値: 補助線2本・寸法線・矢じり2つ・文字位置と角度
+ * opts.endStyle: "dot"(黒丸) | "arrow"(矢印)  opts.endSize: 端部のサイズ(pt)  opts.textOff: 寸法値を動かしたときの移動量
+ * 文字は常に寸法線の「上側」(文字の向きから見て寸法線が文字の下に来る側)に置く。縦寸法は下から上へ読む向き。
+ * 返り値: 補助線2本・寸法線・端部・文字位置と角度・引き出し線
  */
-export function dimensionGeometry(p0, p1, off, size = 12) {
+export function dimensionGeometry(p0, p1, off, size = 12, opts = {}) {
+  const { endStyle = "arrow", endSize = 6, textOff = null } = opts;
   const L = dist(p0, p1);
   const ux = L ? (p1[0] - p0[0]) / L : 1;
   const uy = L ? (p1[1] - p0[1]) / L : 0;
@@ -121,25 +124,50 @@ export function dimensionGeometry(p0, p1, off, size = 12) {
   const gap = 2 * sgn; // 測点から少し離して始める
   const s0 = [p0[0] + nx * gap, p0[1] + ny * gap];
   const s1 = [p1[0] + nx * gap, p1[1] + ny * gap];
+  // 文字の角度は [-90, 90) に正規化(縦は -90° = 下から上へ読む)
   let ang = (Math.atan2(uy, ux) * 180) / Math.PI;
-  if (ang > 90) ang -= 180;
-  if (ang <= -90) ang += 180;
+  if (ang >= 90) ang -= 180;
+  if (ang < -90) ang += 180;
+  const r = (ang * Math.PI) / 180;
+  const up = [Math.sin(r), -Math.cos(r)]; // 文字の「上」方向(常に寸法線の文字側)
   const m = mid(a0, a1);
-  // 文字は寸法線の「上側」(画面上で上に来る側)に置く
-  const up = ang === 0 || Math.abs(ang) < 90 ? [-Math.sin((ang * Math.PI) / 180), Math.cos((ang * Math.PI) / 180)] : [0, 1];
-  const side = up[1] > 0 ? -1 : 1;
-  const textPos = [m[0] + up[0] * side * (size * 0.6), m[1] + up[1] * side * (size * 0.6)];
+  const moved = textOff && (textOff[0] || textOff[1]);
+  const base = moved ? [m[0] + textOff[0], m[1] + textOff[1]] : m;
+  const textPos = [base[0] + up[0] * size * 0.6, base[1] + up[1] * size * 0.6];
+  let leader = null;
+  if (moved) {
+    // 引き出し線: 寸法線上の最寄り点 → 移動した寸法値の下端
+    const lenA = dist(a0, a1) || 1;
+    const t = Math.max(0, Math.min(1, ((base[0] - a0[0]) * (a1[0] - a0[0]) + (base[1] - a0[1]) * (a1[1] - a0[1])) / (lenA * lenA)));
+    leader = [[a0[0] + (a1[0] - a0[0]) * t, a0[1] + (a1[1] - a0[1]) * t], base];
+  }
+  const es = Math.max(0.5, endSize);
+  const ends = [];
+  if (endStyle === "dot") {
+    const rad = Math.min(es / 2, L / 6);
+    for (const c of [a0, a1]) ends.push({ type: "dot", c, r: rad });
+  } else {
+    const hs = Math.min(es * 2, L / 3);
+    ends.push({ type: "arrow", poly: arrowHead(a1, a0, hs) }, { type: "arrow", poly: arrowHead(a0, a1, hs) });
+  }
   return {
     ext0: [s0, e0],
     ext1: [s1, e1],
     line: [a0, a1],
-    head0: arrowHead(a1, a0, Math.min(size, L / 3)),
-    head1: arrowHead(a0, a1, Math.min(size, L / 3)),
+    ends,
+    head0: ends[0]?.poly,
+    head1: ends[1]?.poly,
     textPos,
     textAngle: ang,
+    textBase: base,
+    textUp: up,
+    leader,
     length: L,
   };
 }
+
+/** 図形の寸法線オプション(未設定の既存データは従来どおり矢印) */
+export const dimOpts = (sh) => ({ endStyle: sh.endStyle ?? "arrow", endSize: sh.endSize ?? (sh.size || 12) / 2, textOff: sh.textOff ?? null });
 
 /* ---------- 縮尺・計測 ---------- */
 

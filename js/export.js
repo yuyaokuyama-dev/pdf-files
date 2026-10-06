@@ -2,7 +2,7 @@
 import { PDFDocument, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, smoothPath,
-  dimensionGeometry, rectPoints, dashArray,
+  dimensionGeometry, rectPoints, dashArray, dimOpts,
 } from "./geometry.js";
 import { textMetrics, labelFor, serializeOverlay } from "./render.js";
 import { TEXT_LINE } from "./render.js";
@@ -154,21 +154,22 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
           const m = textMetrics(sh);
           await placeText(
             { lines: m.lines, size: sh.size || 18, font: sh.font, bold: !!sh.bold, color: sh.color || st.color || "#e11d48", bg: sh.bg || null, w: m.w, h: m.h },
-            sh.pts[0], 0,
+            sh.pts[0], sh.angle || 0,
           );
           break;
         }
         case "dim":
         case "measure": {
           const size = sh.size || 12;
-          const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size);
+          const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size, dimOpts(sh));
           const thin = { ...strokeOpts, borderWidth: Math.max(0.6, width * 0.6) };
           if (sh.type === "dim") {
             path(linePath(geo.ext0), thin);
             path(linePath(geo.ext1), thin);
           }
           path(linePath(geo.line), strokeOpts);
-          for (const h of [geo.head0, geo.head1]) path(polygonPath(h), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          for (const e of geo.ends) path(e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          if (geo.leader) path(linePath(geo.leader), thin);
           const label = labelFor(sh, page);
           if (label) {
             const m = textMetrics({ text: label, size, font: sh.font });

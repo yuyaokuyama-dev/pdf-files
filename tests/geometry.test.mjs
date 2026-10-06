@@ -114,3 +114,33 @@ test("線種: 実線/破線/一点鎖線/二点鎖線のパターン", async () 
   assert.equal(dashArray("dashdot2", 1).length, 6);
   assert.deepEqual(dashArray("dash", 0.5), [3, 2]); // 細い線でも潰れない
 });
+
+test("寸法線: 端部(黒丸/矢印)・縦寸法は下から上に読み文字は常に線の上側", async () => {
+  const { dimensionGeometry } = await import("../js/geometry.js");
+  const h = dimensionGeometry([0, 100], [200, 100], 24, 12, { endStyle: "dot", endSize: 6 });
+  assert.equal(h.textAngle, 0);
+  assert.ok(h.textPos[1] < h.line[0][1], "水平: 文字は線の上");
+  assert.deepEqual(h.ends.map((e) => e.type), ["dot", "dot"]);
+  assert.equal(h.ends[0].r, 3);
+  const a = dimensionGeometry([0, 100], [200, 100], 24, 12, { endStyle: "arrow", endSize: 6 });
+  assert.deepEqual(a.ends.map((e) => e.type), ["arrow", "arrow"]);
+  // 縦(下向き・上向きどちらで描いても同じ向き)
+  for (const pts of [[[100, 0], [100, 200]], [[100, 200], [100, 0]]]) {
+    const v = dimensionGeometry(pts[0], pts[1], 24, 12, { endStyle: "dot" });
+    assert.equal(v.textAngle, -90);
+    // 文字の「上」(= 回転後の上方向)側に文字がある = 線から見て textUp 方向
+    const dx = v.textPos[0] - (v.line[0][0] + v.line[1][0]) / 2;
+    const dy = v.textPos[1] - (v.line[0][1] + v.line[1][1]) / 2;
+    assert.ok(dx * v.textUp[0] + dy * v.textUp[1] > 0, "縦: 文字は寸法線の上側(文字の下に線)");
+    assert.ok(Math.abs(v.textUp[0] + 1) < 1e-9, "縦: 文字の上は左向き");
+  }
+  // 斜めでも文字は読める向き(-90〜90°)で、常に上側
+  const d = dimensionGeometry([0, 0], [100, -100], 20, 12, {});
+  assert.ok(d.textAngle >= -90 && d.textAngle < 90);
+  // 寸法値の移動 → 引き出し線
+  const mv = dimensionGeometry([0, 100], [200, 100], 24, 12, { endStyle: "dot", textOff: [30, -40] });
+  assert.ok(mv.leader, "移動したら引き出し線");
+  assert.equal(mv.leader[1][0], mv.textBase[0]);
+  assert.ok(mv.leader[0][0] >= 0 && mv.leader[0][0] <= 200, "引き出し線の起点は寸法線上");
+  assert.equal(dimensionGeometry([0, 100], [200, 100], 24, 12, { textOff: [0, 0] }).leader, null);
+});

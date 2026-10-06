@@ -1,8 +1,8 @@
 // エディタ本体: ページ表示・ズーム・描画ツール・選択/移動/頂点編集・テキスト編集
 import {
-  dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, simplify,
+  dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, dimOpts, simplify,
 } from "./geometry.js";
-import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, fontCss, labelFor } from "./render.js";
+import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, textCorners, fontCss, labelFor } from "./render.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "cloud", "polygon", "text", "dim", "calib", "measure", "sign", "stamp"]);
@@ -39,6 +39,7 @@ export class Editor {
     this.textStyle = { size: 18, font: "gothic", bold: false, color: "#111827" };
     this.cloudPitch = 18;
     this.dimSize = 12;
+    this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
     this.loadDefaults();
     this.pendingStamp = null;
     this.sel = null;
@@ -505,11 +506,11 @@ export class Editor {
       case "cloud":
         return g.p1 ? { ...base, type: "cloud", pts: rectPoints(g.p0, g.p1), pitch: this.cloudPitch } : null;
       case "dim":
-        return g.p1 ? { ...base, type: "dim", pts: [g.p0, g.p1], off: 24, size: this.dimSize, text: "" } : null;
+        return g.p1 ? { ...base, type: "dim", pts: [g.p0, g.p1], off: 24, size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, text: "" } : null;
       case "calib":
-        return g.p1 ? { ...base, type: "dim", style: { ...style, color: "#2563eb", dash: true }, pts: [g.p0, g.p1], off: 24, size: this.dimSize, text: "?" } : null;
+        return g.p1 ? { ...base, type: "dim", style: { ...style, color: "#2563eb", dash: true }, pts: [g.p0, g.p1], off: 24, size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, text: "?" } : null;
       case "measure":
-        return g.p1 ? { ...base, type: "measure", pts: [g.p0, g.p1], size: this.dimSize } : null;
+        return g.p1 ? { ...base, type: "measure", pts: [g.p0, g.p1], size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size } : null;
       case "sign":
         return g.p1 ? { ...base, type: "rect", style: { color: "#2563eb", width: 1.5, dash: true, fill: "none" }, pts: [g.p0, g.p1] } : null;
       default:
@@ -575,7 +576,7 @@ export class Editor {
       case "dim":
         this.emit("dim-request", {
           pageId,
-          create: (text) => this.addAndSelect(pageId, { type: "dim", pts: [g.p0, p1], off: 24, size: this.dimSize, text, style: { ...this.style, width: Math.min(this.style.width, 2) } }),
+          create: (text) => this.addAndSelect(pageId, { type: "dim", pts: [g.p0, p1], off: 24, size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, text, style: { ...this.style, width: Math.min(this.style.width, 2) } }),
           length: dist(g.p0, p1),
           scale: page.scale,
         });
@@ -588,7 +589,7 @@ export class Editor {
           this.emit("need-scale");
           break;
         }
-        this.addAndSelect(pageId, { type: "measure", pts: [g.p0, p1], size: this.dimSize, style: { ...this.style, color: "#059669", width: 2 } }, false);
+        this.addAndSelect(pageId, { type: "measure", pts: [g.p0, p1], size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, style: { ...this.style, color: "#059669", width: 2 } }, false);
         break;
       default:
         break;
@@ -695,6 +696,8 @@ export class Editor {
       ta.style.fontWeight = shape.bold ? "bold" : "normal";
       ta.style.color = shape.color;
       ta.style.lineHeight = "1.25";
+      ta.style.transformOrigin = "0 0";
+      ta.style.transform = shape.angle ? `rotate(${shape.angle}deg)` : "";
     };
     place();
     ta.addEventListener("input", place);
@@ -877,11 +880,36 @@ export class Editor {
     const startCorners = corners ? rectPoints(shape.pts[0], shape.pts[1]) : null;
     this.g = { kind: "handle", pageId, id: e.pointerId, before: this.model.snapshot(), moved: false };
     el.svg.setPointerCapture?.(e.pointerId);
+    let rotM = null;
+    let rotCenter = null;
+    if (kind === "rot") {
+      rotM = textMetrics(shape);
+      const cs = textCorners(shape, rotM);
+      rotCenter = [(cs[0][0] + cs[2][0]) / 2, (cs[0][1] + cs[2][1]) / 2];
+    }
     const move = (ev) => {
       if (ev.pointerId !== e.pointerId) return;
       this.g.moved = true;
       let q = this.clampToPage(this.pt(ev, pageId), pageId);
-      if (kind === "off") {
+      if (kind === "rot") {
+        // 文字の回転: 箱の中心を固定して、ハンドルの向きから角度を決める(Shiftで15°刻み)
+        const c0 = rotCenter;
+        let th = (Math.atan2(q[1] - c0[1], q[0] - c0[0]) * 180) / Math.PI + 90;
+        th = ((th % 360) + 360) % 360;
+        th = ev.shiftKey ? Math.round(th / 15) * 15 % 360 : Math.round(th);
+        const r = (th * Math.PI) / 180;
+        shape.angle = th || undefined;
+        shape.pts[0] = [c0[0] - ((rotM.w / 2) * Math.cos(r) - (rotM.h / 2) * Math.sin(r)), c0[1] - ((rotM.w / 2) * Math.sin(r) + (rotM.h / 2) * Math.cos(r))];
+      } else if (kind === "txt") {
+        // 寸法値だけを動かす。元の位置の近くに戻したら引き出し線も消える
+        const g0 = dimensionGeometry(shape.pts[0], shape.pts[1], shape.type === "dim" ? shape.off ?? 24 : 0, shape.size || 12, { ...dimOpts(shape), textOff: null });
+        const sz = shape.size || 12;
+        const bx = q[0] - g0.textUp[0] * sz * 0.6;
+        const by = q[1] - g0.textUp[1] * sz * 0.6;
+        const off = [bx - g0.textBase[0], by - g0.textBase[1]];
+        if (Math.hypot(off[0], off[1]) < Math.max(3, sz * 0.4)) delete shape.textOff;
+        else shape.textOff = [+off[0].toFixed(2), +off[1].toFixed(2)];
+      } else if (kind === "off") {
         const [a, b] = shape.pts;
         const L = dist(a, b) || 1;
         const nx = -(b[1] - a[1]) / L;
@@ -967,6 +995,7 @@ export class Editor {
       Object.assign(this.style, d.style || {});
       Object.assign(this.textStyle, d.textStyle || {});
       if (d.dimSize) this.dimSize = d.dimSize;
+      if (d.dimEnd) Object.assign(this.dimEnd, d.dimEnd);
       if (d.cloudPitch) this.cloudPitch = d.cloudPitch;
     } catch {
       /* 破損していたら既定のまま */
@@ -974,7 +1003,7 @@ export class Editor {
   }
   saveDefaults() {
     try {
-      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, cloudPitch: this.cloudPitch }));
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch }));
     } catch {
       /* 保存できなくてもこのセッションでは有効 */
     }
@@ -984,7 +1013,10 @@ export class Editor {
     const st = sh.style || {};
     if (sh.type !== "text") for (const k of ["color", "width", "fill", "fillOpacity", "dash", "opacity"]) if (st[k] !== undefined) this.style[k] = st[k];
     if (sh.type === "text") Object.assign(this.textStyle, { size: sh.size, font: sh.font || "gothic", bold: !!sh.bold, color: sh.color || st.color });
-    if (sh.type === "dim" || sh.type === "measure") this.dimSize = sh.size;
+    if (sh.type === "dim" || sh.type === "measure") {
+      this.dimSize = sh.size;
+      this.dimEnd = { style: sh.endStyle ?? "arrow", size: sh.endSize ?? (sh.size || 12) / 2 };
+    }
     if (sh.type === "cloud" && sh.pitch) this.cloudPitch = sh.pitch;
     this.saveDefaults();
   }
@@ -1019,9 +1051,29 @@ export class Editor {
       el.ui.appendChild(c);
     });
     if (sh.type === "dim") {
-      const g = dimensionGeometry(sh.pts[0], sh.pts[1], sh.off ?? 24, sh.size || 12);
+      const g = dimensionGeometry(sh.pts[0], sh.pts[1], sh.off ?? 24, sh.size || 12, dimOpts(sh));
       const m = mid(g.line[0], g.line[1]);
       el.ui.appendChild(sv("rect", { class: "handle mid", x: m[0] - R, y: m[1] - R, width: R * 2, height: R * 2, rx: R / 3, "stroke-width": 1.6 / z, "data-kind": "off", "data-idx": 0 }));
+    }
+    if (sh.type === "dim" || sh.type === "measure") {
+      // 寸法値だけを動かすハンドル(文字の右端の外側)
+      const g = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, sh.size || 12, dimOpts(sh));
+      const w = textMetrics({ text: labelFor(sh, f.page), size: sh.size || 12, font: sh.font }).w;
+      const dir = [Math.cos((g.textAngle * Math.PI) / 180), Math.sin((g.textAngle * Math.PI) / 180)];
+      const hx = g.textPos[0] + dir[0] * (w / 2 + R * 1.6);
+      const hy = g.textPos[1] + dir[1] * (w / 2 + R * 1.6);
+      el.ui.appendChild(sv("circle", { class: "handle mid", cx: hx, cy: hy, r: R * 0.8, "stroke-width": 1.6 / z, "data-kind": "txt", "data-idx": 0 }));
+    }
+    if (sh.type === "text") {
+      // 回転ハンドル(箱の上辺中央から外側へ)
+      const cs = textCorners(sh);
+      const top = [(cs[0][0] + cs[1][0]) / 2, (cs[0][1] + cs[1][1]) / 2];
+      const ctr = [(cs[0][0] + cs[2][0]) / 2, (cs[0][1] + cs[2][1]) / 2];
+      const d = dist(top, ctr) || 1;
+      const k = (d + 22 / z) / d;
+      const hp = [ctr[0] + (top[0] - ctr[0]) * k, ctr[1] + (top[1] - ctr[1]) * k];
+      el.ui.appendChild(sv("line", { class: "sel-box", x1: top[0], y1: top[1], x2: hp[0], y2: hp[1], "stroke-width": 1.2 / z }));
+      el.ui.appendChild(sv("circle", { class: "handle rot", cx: hp[0], cy: hp[1], r: R * 0.9, "stroke-width": 1.6 / z, "data-kind": "rot", "data-idx": 0 }));
     }
   }
 

@@ -1,6 +1,6 @@
 // プロパティパネル: 選択中の図形(または現在のツールの初期値)の色・太さ・文字・雲ピッチなどを編集する
 import { icon } from "./icons.js";
-import { FONTS } from "./render.js";
+import { FONTS, textMetrics, textCorners } from "./render.js";
 import { esc } from "./ui.js";
 import { DASH_TYPES, normDash } from "./geometry.js";
 
@@ -8,6 +8,16 @@ const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed"
 const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "polygon", "cloud", "dim", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
 const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp" };
+
+/** 文字の回転: 箱の中心を動かさずに角度だけ変える */
+function rotateTextAbout(sh, deg) {
+  const m = textMetrics(sh);
+  const c = textCorners(sh, m);
+  const ctr = [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2];
+  const th = ((((Math.round(deg) % 360) + 360) % 360) * Math.PI) / 180;
+  sh.angle = th ? Math.round((th * 180) / Math.PI) : undefined;
+  sh.pts[0] = [ctr[0] - ((m.w / 2) * Math.cos(th) - (m.h / 2) * Math.sin(th)), ctr[1] - ((m.w / 2) * Math.sin(th) + (m.h / 2) * Math.cos(th))];
+}
 
 export class Props {
   constructor({ el, editor, getStamps, onPickStamp, onManageStamps, onToast }) {
@@ -70,6 +80,12 @@ export class Props {
         return sh ? sh[key] : ed.textStyle[key];
       case "pitch":
         return sh ? sh.pitch : ed.cloudPitch;
+      case "angle":
+        return sh?.angle || 0;
+      case "endStyle":
+        return sh ? sh.endStyle ?? "arrow" : ed.dimEnd.style;
+      case "endSize":
+        return sh ? sh.endSize ?? (sh.size || 12) / 2 : ed.dimEnd.size;
       case "text":
         return sh?.text ?? "";
       default:
@@ -103,6 +119,13 @@ export class Props {
           case "pitch":
             sh.pitch = value;
             break;
+          case "angle":
+            rotateTextAbout(sh, value);
+            break;
+          case "endStyle":
+          case "endSize":
+            sh[key] = value;
+            break;
           default:
             break;
         }
@@ -130,6 +153,12 @@ export class Props {
           break;
         case "pitch":
           ed.cloudPitch = value;
+          break;
+        case "endStyle":
+          ed.dimEnd.style = value;
+          break;
+        case "endSize":
+          ed.dimEnd.size = value;
           break;
         default:
           break;
@@ -161,7 +190,7 @@ export class Props {
       return;
     }
     if (key === "dash") v = v || false;
-    if (t.type === "number" && (!Number.isFinite(v) || v <= 0)) return;
+    if (t.type === "number" && (!Number.isFinite(v) || (key !== "angle" && v <= 0))) return;
     // 入力中は履歴に積まずに反映(ライブ)、確定(change)で1操作として記録する
     this.apply(ctx, key, v, true);
     if (!isInput) this.ed.commitLive();
@@ -208,6 +237,13 @@ export class Props {
           ed.setDefaultsFrom(ctx.shape);
           this.toast("この設定を、新しく作る線・図形・文字の初期設定にしました");
         }
+        break;
+      case "rot90":
+        if (ctx.sel) ed.updateSelected((sh) => rotateTextAbout(sh, (sh.angle || 0) + 90), { live: false });
+        break;
+      case "text-home":
+        if (ctx.sel) ed.updateSelected((sh) => delete sh.textOff, { live: false });
+        this.refresh();
         break;
       case "dup": ed.duplicateSelected(); break;
       case "front": ed.reorderSelected(true); break;
@@ -273,13 +309,20 @@ export class Props {
     if (t === "cloud") parts.push(num("pitch", "雲のピッチ(円弧の大きさ)", 6, 80, 1));
     if (t === "text") {
       const size = g("size") || 18;
-      parts.push(`<label class="field">文字サイズ<div class="row"><input type="range" data-k="size" min="8" max="120" value="${size}"><input type="number" data-k="size" min="6" max="400" value="${size}" style="width:70px;height:34px"></div></label>`);
+      parts.push(`<label class="field">文字サイズ<div class="row"><input type="range" data-k="size" min="3" max="120" step="0.5" value="${size}"><input type="number" data-k="size" min="3" max="400" step="0.5" value="${size}" style="width:70px;height:34px"></div></label>`);
       parts.push(`<label class="field">フォント<select data-k="font">${FONTS.map((f) => `<option value="${f.id}"${(g("font") || "gothic") === f.id ? " selected" : ""} style="font-family:${f.css.replace(/"/g, "'")}">${f.label}</option>`).join("")}</select></label>`);
       parts.push(`<label class="field check" style="display:flex"><input type="checkbox" data-k="bold"${g("bold") ? " checked" : ""}> 太字</label>`);
-      if (ctx.sel) parts.push(`<div class="actions"><button class="btn" data-act="edit-text">文字を編集</button></div>`);
+      if (ctx.sel) {
+        const ang = g("angle");
+        parts.push(`<label class="field">回転(度)<div class="row"><input type="range" data-k="angle" min="0" max="359" step="1" value="${ang}"><input type="number" data-k="angle" min="0" max="359" step="1" value="${ang}" style="width:70px;height:34px"></div></label>`);
+        parts.push(`<div class="actions"><button class="btn" data-act="edit-text">文字を編集</button><button class="btn" data-act="rot90">90°回す</button></div>`);
+      }
     }
     if (t === "dim" || t === "measure") {
-      parts.push(num("size", "文字サイズ", 6, 48, 1));
+      parts.push(num("size", "文字サイズ", 3, 48, 0.5));
+      parts.push(`<label class="field">寸法線の端部<select data-k="endStyle"><option value="dot"${g("endStyle") === "dot" ? " selected" : ""}>黒丸</option><option value="arrow"${g("endStyle") === "arrow" ? " selected" : ""}>矢印</option></select></label>`);
+      parts.push(num("endSize", "端部のサイズ", 1, 20, 0.5, (v) => Number(v).toFixed(1)));
+      if (ctx.sel && ctx.shape.textOff) parts.push(`<div class="actions"><button class="btn" data-act="text-home">寸法値を元の位置へ戻す</button></div>`);
       if (t === "dim" && ctx.sel) parts.push(`<label class="field">寸法の文字(自由に入力)<input type="text" data-k="text" value="${esc(g("text"))}" placeholder="例: 3,600"></label>`);
       if (t === "measure" && ctx.sel) parts.push(`<p class="hint">計測値: <b>${esc(this.ed.labelOf(ctx.shape, ctx.page))}</b>(縮尺に基づく参考値)</p>`);
     }
