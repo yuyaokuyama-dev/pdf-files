@@ -12,6 +12,11 @@ const setK = (k, v, nth = 0) => page.locator(`#props [data-k="${k}"]`).nth(nth).
 /* ---- 寸法線: 端部は黒丸が既定 ---- */
 await tool(page, "dim");
 await drag(page, 0, [100, 300], [400, 300]);
+check("寸法入力は数字キーパッド(inputmode=decimal)", (await page.getAttribute("#pdIn", "inputmode")) === "decimal");
+await page.click("#pdKb");
+check("切替で通常キーボード(text)になる", (await page.getAttribute("#pdIn", "inputmode")) === "text");
+await page.click("#pdKb");
+check("もう一度切替で数字キーパッドに戻る", (await page.getAttribute("#pdIn", "inputmode")) === "decimal");
 await page.fill("#pdIn", "3,600");
 await page.keyboard.press("Enter");
 await page.waitForFunction(() => window.__apdf.model.pages[0].shapes.at(-1)?.type === "dim");
