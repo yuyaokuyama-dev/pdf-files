@@ -24,13 +24,15 @@
         <button type="button" id="tabLogin" class="on" role="tab">ログイン</button>
         <button type="button" id="tabRegister" role="tab">新規登録</button>
       </div>
-      <label>ID<input id="authId" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label><span id="authIdLabel">メールアドレス</span><input id="authId" name="username" type="text" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="name@example.com" required></label>
+      <label id="authNameRow" hidden>名前<input id="authName" name="name" autocomplete="name" placeholder="山田 太郎"></label>
       <label>パスワード<input id="authPw" name="password" type="password" autocomplete="current-password" required></label>
       <label id="authPw2Row" hidden>パスワード(確認)<input id="authPw2" type="password" autocomplete="new-password"></label>
       <label class="check"><input type="checkbox" id="authRemember" checked> ログイン状態を保持する</label>
       <p id="authMsg" class="msg" role="alert"></p>
       <button class="btn primary wide" id="authSubmit" type="submit">ログイン</button>
-      <p class="hint">アカウントはこの端末内に安全に保存されます(サーバーへは送信しません)。</p>
+      <button type="button" class="linkbtn" id="authForgot" hidden>パスワードを忘れた場合</button>
+      <p class="hint" id="authHint">アカウントはこの端末内に安全に保存されます(サーバーへは送信しません)。</p>
     </form>
   </section>
 
