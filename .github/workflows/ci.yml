@@ -1,0 +1,34 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: テスト用ツール(pdf-lib / Playwright)を導入
+        run: |
+          echo "TOOLS_DIR=$RUNNER_TEMP/tools" >> "$GITHUB_ENV"
+          echo "SHOT_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          TOOLS_DIR="$RUNNER_TEMP/tools"
+          mkdir -p "$TOOLS_DIR"
+          cd "$TOOLS_DIR"
+          npm init -y >/dev/null
+          npm i playwright pdf-lib
+          npx playwright install --with-deps chromium
+      - name: 単体テスト
+        run: node --test tests/geometry.test.mjs tests/auth.test.mjs tests/google.test.mjs
+      - name: 画面操作テスト(E2E)
+        run: |
+          node tests/smoke.mjs
+          node tests/e2e-draw.mjs
+          node tests/e2e-doc.mjs
+          node tests/e2e-net.mjs

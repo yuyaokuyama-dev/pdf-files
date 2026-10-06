@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { startServer } from "../scripts/serve.mjs";
-const require = createRequire("/opt/npm-tools/node_modules/");
+const require = createRequire((process.env.TOOLS_DIR || "/opt/npm-tools") + "/node_modules/");
 export const { chromium, devices } = require("playwright");
 
 export async function launch({ mobile = false } = {}) {

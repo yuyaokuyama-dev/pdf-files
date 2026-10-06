@@ -150,7 +150,7 @@ await m.page.goto(m.base);
 await register(m.page, "mobile01");
 await openPdf(m.page, "tests/fixtures/sample.pdf");
 await m.page.waitForTimeout(600);
-await m.page.screenshot({ path: "/tmp/claude-0/shot-mobile.png" });
+await m.page.screenshot({ path: `${process.env.SHOT_DIR || "/tmp"}/shot-mobile.png` });
 const toolbarBottom = await m.page.evaluate(() => { const r = document.querySelector("#tools").getBoundingClientRect(); return [r.bottom, innerHeight]; });
 check("スマホではツールバーが画面下部に表示される", Math.abs(toolbarBottom[0] - toolbarBottom[1]) < 2, JSON.stringify(toolbarBottom));
 check("スマホはタッチ端末として認識(pointer: coarse)", await m.page.evaluate(() => matchMedia("(pointer: coarse)").matches));

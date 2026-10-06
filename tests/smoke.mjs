@@ -1,7 +1,7 @@
 // スモークテスト: 起動 → 登録 → PDFを開く、までのエラー確認
 import { createRequire } from "node:module";
 import { startServer } from "../scripts/serve.mjs";
-const require = createRequire("/opt/npm-tools/node_modules/");
+const require = createRequire((process.env.TOOLS_DIR || "/opt/npm-tools") + "/node_modules/");
 const { chromium } = require("playwright");
 
 const { server, port } = await startServer();
@@ -22,7 +22,7 @@ await page.waitForSelector("#app:not([hidden])", { timeout: 15000 });
 await page.setInputFiles("#fileOpen", "tests/fixtures/sample.pdf");
 await page.waitForSelector(".page canvas", { timeout: 15000 });
 await page.waitForFunction(() => document.querySelectorAll('.page[data-rendered="1"]').length >= 1, null, { timeout: 15000 });
-await page.screenshot({ path: "/tmp/claude-0/shot-smoke.png" });
+await page.screenshot({ path: `${process.env.SHOT_DIR || "/tmp"}/shot-smoke.png` });
 console.log("pages:", await page.locator(".page").count());
 console.log("errors:", errors.length ? "\n" + errors.join("\n") : "none");
 await browser.close();

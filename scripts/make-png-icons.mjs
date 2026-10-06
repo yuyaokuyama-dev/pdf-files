@@ -2,7 +2,7 @@
 //   node scripts/make-png-icons.mjs   (NODE_PATH に playwright がある環境で実行)
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
-const require = createRequire("/opt/npm-tools/node_modules/");
+const require = createRequire((process.env.TOOLS_DIR || "/opt/npm-tools") + "/node_modules/");
 const { chromium } = require("playwright");
 
 const jobs = [

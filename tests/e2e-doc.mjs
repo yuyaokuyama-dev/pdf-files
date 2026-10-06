@@ -132,7 +132,7 @@ check("矢印が出力される", out.rc[3] > 40, `n=${out.rc[3]}`);
 check("ペンの線が出力される", out.rc[4] > 60, `n=${out.rc[4]}`);
 
 // 画面表示と同じ位置に出ているか(エディタ上の四角の座標と同じ)
-await page.screenshot({ path: "/tmp/claude-0/shot-doc.png" });
+await page.screenshot({ path: `${process.env.SHOT_DIR || "/tmp"}/shot-doc.png` });
 
 /* ---------- 最適化(⑫): 大きな写真を入れてレベル別サイズ比較 ---------- */
 await page.evaluate(() => {
