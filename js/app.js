@@ -255,6 +255,7 @@ function initUI() {
     getStamps,
     onPickStamp: pickStamp,
     onManageStamps: manageStamps,
+    onStampWidth: setStampWidth,
     onToast: toast,
   });
 
@@ -321,6 +322,17 @@ function wireEditorEvents() {
     ed.setTool("calib");
   });
   ed.on("need-stamp", () => manageStamps());
+  ed.on("lock-request", async () => {
+    const ok = await confirmDialog(
+      "この印影を編集できないようにします。\n\n・アプリ内では動かしたり消したりできなくなります(ロック解除は書き出す前なら可能)\n・PDFに書き出すと、この印影があるページは1枚の画像になり、他のPDFソフトでも印影だけを消したり動かしたりできなくなります\n・画像化したページは文字の選択・検索ができなくなります",
+      { ok: "ロックする" },
+    );
+    if (ok) {
+      S.editor.setLocked(true);
+      S.props.refresh();
+      toast("ロックしました");
+    }
+  });
   ed.on("pages", () => updateEmpty());
   document.querySelector('.tool[data-tool="select"]').classList.add("on");
 }
@@ -762,6 +774,7 @@ async function signRequest({ pageId, rect }) {
   let chosen = null;
   const ok = await dialog({
     title: "署名",
+    width: "min(840px, 96vw)",
     body: `<canvas class="pad" id="sigPad"></canvas>
       <div class="field"><div class="row"><span>色</span>${["#111827", "#1d4ed8", "#b91c1c"].map((c, i) => `<button type="button" class="sw${i ? "" : " on"}" data-c="${c}" style="background:${c}"></button>`).join("")}
       <span style="margin-left:8px">太さ</span><input type="range" id="sigW" min="1.5" max="8" step="0.5" value="3.5"></div></div>
@@ -812,10 +825,21 @@ async function getStamps() {
   return list.map((s) => ({ ...s, imgId: "st_" + s.id }));
 }
 
+const MM = 72 / 25.4; // 1mm = 2.835pt
+const stampWidthPt = (s) => s.wPt || 64;
+
 function pickStamp(s) {
   if (!S.model.images.has(s.imgId)) S.model.images.set(s.imgId, s.url);
-  S.editor.setPendingStamp({ imgId: s.imgId, aspect: s.aspect });
+  S.editor.setPendingStamp({ imgId: s.imgId, aspect: s.aspect, w: stampWidthPt(s), id: s.id });
   S.editor.setTool("stamp");
+}
+
+/** 印影の「押す大きさ」を保存し、選択中の印影にも反映する */
+async function setStampWidth(id, wPt) {
+  const s = (await S.store.getAll("stamps")).find((x) => x.id === id);
+  if (!s) return;
+  await S.store.put("stamps", { ...s, wPt });
+  if (S.editor.pendingStamp?.id === id) S.editor.pendingStamp.w = wPt;
 }
 
 async function enterStampTool() {
@@ -830,7 +854,7 @@ async function manageStamps() {
   const render = async (d) => {
     const stamps = await getStamps();
     d.querySelector("#stList").innerHTML = stamps.length
-      ? stamps.map((s) => `<div class="item"><img src="${s.url}" alt=""><div class="meta"><div class="name">${esc(s.name)}</div><div class="sub">${fmtDate(s.createdAt)}</div></div><button class="btn" data-use="${s.id}">使う</button><button class="btn danger icon" data-del="${s.id}" aria-label="削除">${icon("trash", 18)}</button></div>`).join("")
+      ? stamps.map((s) => `<div class="item"><img src="${s.url}" alt=""><div class="meta"><div class="name">${esc(s.name)}</div><div class="sub">${fmtDate(s.createdAt)}</div><label class="sub" style="display:flex;gap:4px;align-items:center">押す大きさ 幅<input type="number" data-w="${s.id}" min="3" max="200" step="0.5" value="${+(stampWidthPt(s) / MM).toFixed(1)}" style="width:64px;height:30px"> mm</label></div><button class="btn" data-use="${s.id}">使う</button><button class="btn danger icon" data-del="${s.id}" aria-label="削除">${icon("trash", 18)}</button></div>`).join("")
       : '<p class="note">まだ印影が登録されていません。下の方法で登録してください。</p>';
   };
   await dialog({
@@ -848,11 +872,20 @@ async function manageStamps() {
       await render(d);
       const save = async (url, name) => {
         const img = await loadImage(url);
-        await S.store.put("stamps", { id: uid(), name, url, aspect: img.naturalWidth / img.naturalHeight, createdAt: Date.now() });
+        await S.store.put("stamps", { id: uid(), name, url, aspect: img.naturalWidth / img.naturalHeight, wPt: Math.round(18 * MM * 100) / 100, createdAt: Date.now() }); // 既定は幅18mm(後から変更可)
         await render(d);
         S.props.refresh();
         toast("印影を登録しました");
       };
+      d.querySelector("#stList").addEventListener("change", async (e) => {
+        const inp = e.target.closest("[data-w]");
+        if (!inp) return;
+        const mm = Math.min(200, Math.max(3, Number(inp.value) || 0));
+        if (!mm) return;
+        await setStampWidth(inp.dataset.w, mm * MM);
+        inp.value = +mm.toFixed(1);
+        toast(`この印影は幅 ${+mm.toFixed(1)}mm で押されます`);
+      });
       d.querySelector("#stList").addEventListener("click", async (e) => {
         const use = e.target.closest("[data-use]");
         const del = e.target.closest("[data-del]");

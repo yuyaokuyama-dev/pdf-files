@@ -757,7 +757,7 @@ export class Editor {
   placeStamp(pageId, p) {
     const st = this.pendingStamp;
     if (!st) return this.emit("need-stamp");
-    const w = 64;
+    const w = st.w || 64;
     const h = w / (st.aspect || 1);
     const c = this.clampToPage(p, pageId);
     this.addAndSelect(pageId, { type: "image", kind: "stamp", imgId: st.imgId, aspect: st.aspect, pts: [[c[0] - w / 2, c[1] - h / 2], [c[0] + w / 2, c[1] + h / 2]], style: {} });
@@ -826,6 +826,7 @@ export class Editor {
       if (shape.type === "polygon" || shape.type === "cloud") return this.insertVertex(pageId, shape, p);
     }
     if (!this.sel || this.sel.shapeId !== id) this.setSelection({ pageId, shapeId: id });
+    if (shape.locked) return; // ロック中は動かせない(選択だけできる)
     this.beginMove(e, pageId, shape, p);
   }
 
@@ -1045,6 +1046,13 @@ export class Editor {
     const pad = 4 / z;
     el.ui.appendChild(sv("rect", { class: "sel-box", x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad, "stroke-width": 1.2 / z, "stroke-dasharray": `${5 / z} ${4 / z}` }));
     const R = matchMedia("(pointer: coarse)").matches ? 10 / z : 6.5 / z;
+    if (sh.locked) {
+      // ロック中はハンドルを出さない(鍵マークだけ)
+      const t = sv("text", { x: b.x + b.w + pad, y: b.y - pad, "font-size": 14 / z, "text-anchor": "start" });
+      t.textContent = "🔒";
+      el.ui.appendChild(t);
+      return;
+    }
     const verts = shapeVertices(sh);
     verts.forEach((v, i) => {
       const c = sv("circle", { class: "handle", cx: v[0], cy: v[1], r: R, "stroke-width": 1.6 / z, "data-kind": "v", "data-idx": i });
@@ -1081,9 +1089,19 @@ export class Editor {
    * 編集操作(プロパティ・削除など)
    * ======================================================= */
   /** 選択中の図形を変更。live=true の間は履歴に積まず、commitLive() でまとめて確定 */
-  updateSelected(fn, { live = false } = {}) {
+  setLocked(lock) {
     const f = this.sel && this.model.findShape(this.sel.shapeId);
     if (!f) return;
+    this.model.mutate(() => {
+      if (lock) f.shape.locked = true;
+      else delete f.shape.locked;
+    });
+    this.refreshLayer(f.page);
+    this.renderSelection();
+  }
+  updateSelected(fn, { live = false } = {}) {
+    const f = this.sel && this.model.findShape(this.sel.shapeId);
+    if (!f || f.shape.locked) return;
     if (live) {
       if (!this.liveBefore) this.liveBefore = this.model.snapshot();
       fn(f.shape, f.page);
@@ -1100,7 +1118,7 @@ export class Editor {
     this.model.commit(b);
   }
   deleteSelected() {
-    if (!this.sel) return;
+    if (!this.sel || this.model.findShape(this.sel.shapeId)?.shape.locked) return;
     const { pageId, shapeId } = this.sel;
     this.sel = null;
     this.model.removeShape(pageId, shapeId);
@@ -1109,7 +1127,7 @@ export class Editor {
   }
   duplicateSelected() {
     const f = this.sel && this.model.findShape(this.sel.shapeId);
-    if (!f) return;
+    if (!f || f.shape.locked) return;
     const c = clone(f.shape);
     c.id = "h" + uid();
     c.pts = c.pts.map(([x, y]) => [x + 14, y + 14]);
@@ -1118,7 +1136,7 @@ export class Editor {
   }
   reorderSelected(toFront) {
     const f = this.sel && this.model.findShape(this.sel.shapeId);
-    if (!f) return;
+    if (!f || f.shape.locked) return;
     this.model.mutate(() => {
       const arr = f.page.shapes;
       const i = arr.indexOf(f.shape);

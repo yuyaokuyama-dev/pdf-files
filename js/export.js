@@ -58,12 +58,16 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
   let n = 0;
   for (const page of doc.pages) {
     onProgress?.(n++ / doc.pages.length, `ページ ${n}/${doc.pages.length}`);
-    if (cfg.rasterize) {
+    // ロックした印影があるページは画像化して、他のソフトで印影だけを消したり動かしたりできなくする
+    const flatten = page.shapes.some((sh) => sh.locked);
+    if (cfg.rasterize || flatten) {
+      const dpi = cfg.rasterize ? cfg.dpi : 200;
+      const quality = cfg.rasterize ? cfg.quality : 0.8;
       const src = page.srcId ? doc.sources.get(page.srcId) : null;
       const pdfPage = src ? await src.pdf.getPage(page.srcIndex + 1) : null;
       const overlaySvg = page.shapes.length ? serializeOverlay(page, doc.images, page.w, page.h) : null;
       const r = await renderPageJpeg({
-        pdfPage, rotation: ((page.baseRot || 0) + page.rot) % 360, w: page.w, h: page.h, overlaySvg, dpi: cfg.dpi, quality: cfg.quality,
+        pdfPage, rotation: ((page.baseRot || 0) + page.rot) % 360, w: page.w, h: page.h, overlaySvg, dpi, quality,
       });
       const pg = out.addPage([page.w, page.h]);
       const img = await out.embedJpg(r.bytes);

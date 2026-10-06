@@ -20,12 +20,13 @@ function rotateTextAbout(sh, deg) {
 }
 
 export class Props {
-  constructor({ el, editor, getStamps, onPickStamp, onManageStamps, onToast }) {
+  constructor({ el, editor, getStamps, onPickStamp, onManageStamps, onStampWidth, onToast }) {
     this.el = el;
     this.editor = editor;
     this.getStamps = getStamps;
     this.onPickStamp = onPickStamp;
     this.onManageStamps = onManageStamps;
+    this.onStampWidth = onStampWidth;
     this.toast = onToast;
     this.dismissed = false;
     editor.on("selection", () => ((this.dismissed = false), this.refresh()));
@@ -176,6 +177,13 @@ export class Props {
     if (t.type === "checkbox") v = t.checked;
     else if (t.type === "range" || t.type === "number") v = Number(t.value);
     else v = t.value;
+    if (key === "stampW") {
+      if (!isInput && v > 0) {
+        const mm = Math.min(200, Math.max(3, v));
+        this.onStampWidth?.(this.ed.pendingStamp?.id, mm * (72 / 25.4));
+      }
+      return;
+    }
     if (key === "fillOn") {
       if (isInput) return; // チェックボックスは change で1回だけ処理
       this.apply(ctx, "fill", v ? this.fillMemo || "#fde047" : "none", true);
@@ -245,6 +253,8 @@ export class Props {
         if (ctx.sel) ed.updateSelected((sh) => delete sh.textOff, { live: false });
         this.refresh();
         break;
+      case "lock": ed.emit("lock-request", { lock: true }); break;
+      case "unlock": ed.setLocked(false); this.refresh(); break;
       case "dup": ed.duplicateSelected(); break;
       case "front": ed.reorderSelected(true); break;
       case "back": ed.reorderSelected(false); break;
@@ -287,6 +297,7 @@ export class Props {
     if (t === "stamp") {
       const stamps = await this.getStamps();
       parts.push(`<div class="stamp-tray">${stamps.map((s) => `<button class="st${this.ed.pendingStamp?.imgId === s.imgId ? " on" : ""}" data-id="${s.id}" title="${esc(s.name || "")}"><img src="${s.url}" alt=""></button>`).join("")}</div>
+        ${this.ed.pendingStamp?.id ? `<label class="field">押す大きさ(幅 mm)<input type="number" data-k="stampW" min="3" max="200" step="0.5" value="${+((this.ed.pendingStamp.w || 64) / (72 / 25.4)).toFixed(1)}" style="width:90px;height:34px"></label>` : ""}
         <div class="actions"><button class="btn" data-act="stamps">${icon("stamp", 18)}印影の登録・管理</button></div>
         <p class="hint">${stamps.length ? "印影を選んでから、押したい位置をタップします。" : "まず「印影の登録・管理」から印影を登録してください。"}</p>`);
     }
@@ -332,7 +343,17 @@ export class Props {
       parts.push(`<div class="field"><b style="color:var(--ink)">このページの縮尺</b><span>${sc ? `設定済み: 1 ${sc.unit} = ${sc.ptsPerUnit.toFixed(3)} pt` : "未設定(「縮尺設定」ツールで基準の2点をなぞります)"}</span></div>
         ${sc ? `<div class="actions"><button class="btn" data-act="scale-all">全ページに適用</button><button class="btn danger" data-act="scale-clear">解除</button></div>` : ""}`);
     }
-    if (t === "image") parts.push(`<p class="hint">四隅のハンドルで大きさを変更できます(縦横比は固定)。</p>`);
+    const locked = !!(ctx.sel && ctx.shape.locked);
+    if (t === "image" && !locked) parts.push(`<p class="hint">四隅のハンドルで大きさを変更できます(縦横比は固定)。</p>`);
+    if (t === "image" && ctx.sel && ["stamp", "signature"].includes(ctx.shape.kind)) {
+      parts.push(locked
+        ? `<p class="hint">🔒 ロック中です。動かしたり消したりできません。書き出すとこのページは画像化され、他のソフトでも編集できなくなります。</p><div class="actions"><button class="btn" data-act="unlock">ロックを解除</button></div>`
+        : `<div class="actions"><button class="btn" data-act="lock">🔒 編集できないようにする</button></div>`);
+    }
+    if (locked) {
+      this.el.innerHTML = parts.join("");
+      return;
+    }
     if (ctx.sel) {
       if (t !== "image" && t !== "stamp") parts.push(`<div class="actions"><button class="btn" data-act="set-default">${icon("check", 16)}この設定を初期設定にする</button></div>`);
       parts.push(`<div class="actions">
