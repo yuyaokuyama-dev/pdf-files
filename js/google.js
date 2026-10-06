@@ -148,7 +148,8 @@ function startParent() {
   return "root";
 }
 
-function openPicker(buildView, { title }) {
+/** buildViews(parent) → [マイドライブ用ビュー, 共有ドライブ用ビュー]。タブで切り替えられる */
+function openPicker(buildViews, { title }) {
   return new Promise(async (resolve, reject) => {
     try {
       const cfg = getConfig();
@@ -161,11 +162,11 @@ function openPicker(buildView, { title }) {
         .setTitle(title)
         .setLocale("ja")
         .enableFeature(google.picker.Feature.SUPPORT_DRIVES) // 共有ドライブも選べる
-        .addView(buildView(startParent()))
         .setCallback((d) => {
           if (d.action === google.picker.Action.PICKED) resolve(d.docs[0]);
           else if (d.action === google.picker.Action.CANCEL) resolve(null);
         });
+      for (const v of buildViews(startParent())) b.addView(v);
       if (cfg.appId) b.setAppId(cfg.appId);
       b.build().setVisible(true);
     } catch (e) {
@@ -175,24 +176,40 @@ function openPicker(buildView, { title }) {
 }
 
 export const pickPdf = () =>
-  openPicker((parent) => new google.picker.DocsView(google.picker.ViewId.DOCS).setMimeTypes("application/pdf").setIncludeFolders(true).setEnableDrives(true).setParent(parent), { title: "Google ドライブから PDF を選択" });
+  openPicker(
+    (parent) => {
+      const mk = () => new google.picker.DocsView(google.picker.ViewId.DOCS).setMimeTypes("application/pdf").setIncludeFolders(true);
+      // 1つ目: マイドライブ(開始位置つき) / 2つ目: 共有ドライブ(一覧から入る)
+      const shared = mk().setEnableDrives(true);
+      try {
+        shared.setLabel("共有ドライブ");
+      } catch {
+        /* ラベル非対応の版では既定名のまま */
+      }
+      return [mk().setParent(parent), shared];
+    },
+    { title: "Google ドライブから PDF を選択" },
+  );
 
 export const pickFolder = () =>
   openPicker(
-    (parent) => new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setEnableDrives(true).setParent(parent).setMimeTypes("application/vnd.google-apps.folder"),
+    (parent) => {
+      const mk = () => new google.picker.DocsView(google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setMimeTypes("application/vnd.google-apps.folder");
+      return [mk().setParent(parent), mk().setEnableDrives(true)];
+    },
     { title: "保存先のフォルダを選択" },
   );
 
 export async function downloadFile(id) {
-  const meta = await (await api(`https://www.googleapis.com/drive/v3/files/${id}?fields=id,name,mimeType,modifiedTime,size,parents`)).json();
-  const r = await api(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
+  const meta = await (await api(`https://www.googleapis.com/drive/v3/files/${id}?supportsAllDrives=true&fields=id,name,mimeType,modifiedTime,size,parents`)).json();
+  const r = await api(`https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`);
   return { id, name: meta.name, modifiedTime: meta.modifiedTime, parents: meta.parents || [], bytes: new Uint8Array(await r.arrayBuffer()) };
 }
 
 /** このアプリで開いた/保存した PDF の一覧(drive.file スコープの範囲。別端末で保存した分も出る) */
 export async function listDriveFiles(pageSize = 30) {
   const q = encodeURIComponent("mimeType='application/pdf' and trashed=false");
-  const r = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime%20desc&pageSize=${pageSize}&fields=files(id,name,modifiedTime,size)`);
+  const r = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime%20desc&pageSize=${pageSize}&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives&fields=files(id,name,modifiedTime,size)`);
   return (await r.json()).files || [];
 }
 
@@ -207,8 +224,8 @@ export async function uploadPdf({ name, bytes, fileId, folderId }) {
   const metadata = fileId ? { name } : { name, mimeType: "application/pdf", ...(folderId ? { parents: [folderId] } : {}) };
   const { body, contentType } = multipartBody(metadata, bytes, "application/pdf");
   const url = fileId
-    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&fields=id,name,modifiedTime`
-    : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime";
+    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime`
+    : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime";
   const r = await api(url, { method: fileId ? "PATCH" : "POST", headers: { "Content-Type": contentType }, body });
   return r.json();
 }
