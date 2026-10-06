@@ -10,9 +10,6 @@ await openPdf(page, "tests/fixtures/sample.pdf");
 await setZoom1(page);
 
 // 印影を登録(名前から)
-await page.click("#btnFile").catch(() => {});
-await page.evaluate(() => {});
-await page.keyboard.press("Escape");
 await tool(page, "stamp");
 await page.waitForSelector("dialog[open] #stText");
 await page.click("#stText");

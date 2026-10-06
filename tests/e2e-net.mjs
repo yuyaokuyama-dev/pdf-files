@@ -169,7 +169,11 @@ await m.page.waitForTimeout(150);
 const ms = await shapes(m.page);
 check("タッチ(指)でなめらかに手書きできる", ms.some((s) => s.type === "pen" && s.pts.length > 5), JSON.stringify(ms.map((s) => [s.type, s.pts.length])));
 // ペン入力モード: 指では描かない
+// iPhoneではペン入力モードを設定しても無効(指で描けなくなるのを防ぐ)
 await m.page.evaluate(() => window.__apdf.editor.setPalm(true));
+check("iPhoneではペン入力モードが無効になる", await m.page.evaluate(() => window.__apdf.editor.palm === false));
+// ペン入力モード自体の動作(iPad等)は、フラグを直接立てて確認する
+await m.page.evaluate(() => { const e = window.__apdf.editor; e.palm = true; for (const el of e.els.values()) e.applyToolClass(el); });
 const cnt = (await shapes(m.page)).length;
 await touch("touchStart", x0, y0 + 100);
 for (let i = 1; i <= 10; i++) await touch("touchMove", x0 + i * 8, y0 + 100);
@@ -177,7 +181,7 @@ await touch("touchEnd");
 await m.page.waitForTimeout(150);
 check("ペン入力モードでは指で描画されない(スクロール用)", (await shapes(m.page)).length === cnt);
 // ピンチでズーム
-await m.page.evaluate(() => window.__apdf.editor.setPalm(false));
+await m.page.evaluate(() => { const e = window.__apdf.editor; e.palm = false; for (const el of e.els.values()) e.applyToolClass(el); });
 const z0 = await m.page.evaluate(() => window.__apdf.editor.zoom);
 const vr = await m.page.evaluate(() => { const r = document.querySelector("#viewer").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
 const cx = vr[0], cy = vr[1];

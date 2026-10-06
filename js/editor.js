@@ -318,7 +318,7 @@ export class Editor {
   }
   applyToolClass(el) {
     const t = this.tool;
-    const cls = t === "select" ? "t-select" : t === "hand" ? "t-hand" : this.palm ? "t-palm" : "t-draw";
+    const cls = t === "select" ? "t-select" : t === "hand" ? "t-hand" : this.palm ? "t-palm" : t === "eraser" ? "t-erase" : "t-draw";
     el.svg.setAttribute("class", `overlay ${cls}`);
   }
   setPalm(on) {
@@ -416,6 +416,11 @@ export class Editor {
     this.curPageId = pageId;
     const tool = this.tool;
     if (tool === "hand") return;
+    if (tool === "eraser") {
+      if (this.palm && e.pointerType === "touch") return;
+      e.preventDefault();
+      return this.eraseDown(e, pageId);
+    }
     if (this.palm && e.pointerType === "touch" && tool !== "select") return;
     const el = this.els.get(pageId);
     const p = this.pt(e, pageId);
@@ -454,6 +459,53 @@ export class Editor {
     el.svg.addEventListener("pointerup", up);
     el.svg.addEventListener("pointercancel", cancel);
     this.drawDraft();
+  }
+
+  /* ---------- 消しゴム(ペンで書いた線を、なぞった部分ごと1本単位で消す) ---------- */
+  eraseDown(e, pageId) {
+    const el = this.els.get(pageId);
+    const page = this.model.page(pageId);
+    if (!el || !page) return;
+    const before = this.model.snapshot();
+    let last = this.pt(e, pageId);
+    const hit = (a, b) => {
+      const r = 12 / this.zoom; // 画面上で約12pxの太さ
+      const keep = [];
+      let removed = false;
+      for (const s of page.shapes) {
+        if (s.type !== "pen" || s.locked) { keep.push(s); continue; }
+        const rr = r + (s.style?.width || 1) / 2;
+        const pts = s.pts;
+        let touched = pts.length === 1 && Math.hypot(pts[0][0] - b[0], pts[0][1] - b[1]) <= rr;
+        for (let i = 0; !touched && i < pts.length; i++) {
+          if (distToSegment(pts[i], a, b) <= rr) touched = true;
+          else if (i && distToSegment(a, pts[i - 1], pts[i]) <= rr) touched = true;
+        }
+        if (touched) removed = true; else keep.push(s);
+      }
+      if (removed) { page.shapes = keep; this.model.emit("change"); }
+    };
+    this.g = { kind: "erase", pageId, id: e.pointerId };
+    hit(last, last);
+    el.svg.setPointerCapture?.(e.pointerId);
+    const move = (ev) => {
+      const p = this.pt(ev, pageId);
+      hit(last, p);
+      last = p;
+    };
+    const stop = (commit) => {
+      el.svg.removeEventListener("pointermove", move);
+      el.svg.removeEventListener("pointerup", up);
+      el.svg.removeEventListener("pointercancel", cancel);
+      this.g = null;
+      if (commit) this.model.commit(before);
+    };
+    const up = () => stop(true);
+    const cancel = () => stop(true); // 途中まで消した分は残す
+    this.g.cleanup = () => stop(true);
+    el.svg.addEventListener("pointermove", move);
+    el.svg.addEventListener("pointerup", up);
+    el.svg.addEventListener("pointercancel", cancel);
   }
 
   cancelGesture() {
