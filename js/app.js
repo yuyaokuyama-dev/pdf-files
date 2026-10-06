@@ -1439,9 +1439,11 @@ async function openSettings() {
     title: "設定",
     width: "min(640px, 96vw)",
     body: `<div class="field"><b style="color:var(--ink)">Google連携(ドライブ・Gmail)</b></div>
+      ${G.serverProvided() ? `<p class="note">Google連携はサーバーで設定済みです。ドライブ/メールを使うときに「Googleでログイン」を一度行うだけで使えます。</p>` : ""}
+      <details${G.serverProvided() ? "" : " open"}><summary>手入力で設定する(通常は不要)</summary>
       <label class="field">OAuth クライアントID<input type="text" id="stCid" value="${esc(cfg.clientId)}" placeholder="xxxxxxxx.apps.googleusercontent.com" spellcheck="false" autocapitalize="off"></label>
       <label class="field">APIキー(ドライブのファイル選択に使用)<input type="text" id="stKey" value="${esc(cfg.apiKey)}" spellcheck="false" autocapitalize="off"></label>
-      <label class="field">プロジェクト番号(任意・ファイル選択の精度向上)<input type="text" id="stApp" value="${esc(cfg.appId)}" inputmode="numeric"></label>
+      <label class="field">プロジェクト番号(任意・ファイル選択の精度向上)<input type="text" id="stApp" value="${esc(cfg.appId)}" inputmode="numeric"></label></details>
       <p class="note">取得方法は同梱の <code>SETUP.md</code> を参照してください(Google Cloud Console で無料・約10分)。承認済みのJavaScript生成元には <code>${esc(origin)}</code> を登録します。</p>
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stPalm"${S.settings.palm ? " checked" : ""}> ペン入力モード(描画はペン/マウスのみ、指はスクロール専用)</label>
