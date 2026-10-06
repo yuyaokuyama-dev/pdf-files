@@ -111,6 +111,7 @@ check("オンライン復帰時に実行を提案するバナーが出る", /2�
 await page.locator("#banner button", { hasText: "今すぐ実行" }).click();
 await page.waitForFunction(() => document.querySelector("#queueBadge")?.hidden === true, null, { timeout: 20000 });
 check("待ち作業が実行され、キューが空になる", true);
+check("共有ドライブにも保存できる(supportsAllDrives=true)", calls.upload.every((c) => /supportsAllDrives=true/.test(c.url)), JSON.stringify(calls.upload.map((c) => c.url.slice(0, 120))));
 check("Driveへアップロードされた(Bearer認証・PDF本体付き)", calls.upload.length === 1 && calls.upload[0].auth === "Bearer tok" && calls.upload[0].size > 1000, JSON.stringify(calls.upload.map((c) => [c.method, c.auth, c.size])));
 const upBody = calls.upload[0].body.toString("latin1");
 check("アップロード本体が%PDFで始まるPDF", /%PDF-1\./.test(upBody) && /"name":"sample\.pdf"/.test(upBody));
