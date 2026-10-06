@@ -1039,7 +1039,7 @@ async function calibRequest({ pageId, p0, p1, length }) {
 /* =========================================================
  * 書き出し(最適化)・端末保存
  * ======================================================= */
-async function askExport({ title, ok = "作成", nameField = true, extraHtml = "", extraRead }) {
+async function askExport({ title, ok = "作成", nameField = true, extraHtml = "", extraRead, onOpen }) {
   let out = null;
   const lv = S.settings.level;
   const r = await dialog({
@@ -1061,6 +1061,7 @@ async function askExport({ title, ok = "作成", nameField = true, extraHtml = "
       out = { name: nameField ? name.replace(/[\\/:*?"<>|]/g, "_").replace(/\.pdf$/i, "") + ".pdf" : name, level: d.querySelector('input[name="exLv"]:checked').value, extra: extraRead?.(d) };
       return true;
     } }],
+    onOpen,
   });
   if (r !== true) return null;
   S.settings.level = out.level;
@@ -1172,14 +1173,59 @@ async function openDriveFile(id) {
   }
 }
 
+const FOLDER_KEY = "apdf_drive_folder_v1"; // 前回選んだ保存先フォルダ(端末ごと)
+const lastFolder = () => {
+  try {
+    return JSON.parse(localStorage.getItem(FOLDER_KEY) || "null");
+  } catch {
+    return null;
+  }
+};
+
 async function saveToDrive() {
   if (!G.isConfigured() && !(await ensureGoogle())) return;
   const m = S.model;
-  const extra = m.meta.driveId
-    ? `<div class="opts" style="margin-bottom:6px"><label class="opt"><input type="radio" name="exMode" value="overwrite" checked><div><b>上書き保存</b><span>Driveの元のファイルを更新します</span></div></label><label class="opt"><input type="radio" name="exMode" value="new"><div><b>別のファイルとして保存</b><span>新しいファイルを作ります</span></div></label></div>`
-    : "";
-  const o = await askExport({ title: "Googleドライブに保存", ok: "保存", extraHtml: extra, extraRead: (d) => d.querySelector('input[name="exMode"]:checked')?.value || "new" });
+  // 保存先: このPDFで選んだフォルダ > Driveから開いた場所 > 前回の選択 > マイドライブ
+  let folder = m.meta.driveFolder ? { id: m.meta.driveFolder, name: m.meta.driveFolderName || "元のフォルダ" } : lastFolder();
+  const extra = `${m.meta.driveId
+    ? `<div class="opts" style="margin-bottom:6px"><label class="opt"><input type="radio" name="exMode" value="overwrite" checked><div><b>上書き保存</b><span>Driveの元のファイルを更新します(保存先は元の場所のまま)</span></div></label><label class="opt"><input type="radio" name="exMode" value="new"><div><b>別のファイルとして保存</b><span>新しいファイルを作ります</span></div></label></div>`
+    : ""}
+    <div class="field">保存先フォルダ: <b id="dfName"></b></div>
+    <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn" id="dfPick">フォルダを選ぶ…</button><button type="button" class="btn" id="dfRoot">マイドライブに戻す</button></div>`;
+  const o = await askExport({
+    title: "Googleドライブに保存",
+    ok: "保存",
+    extraHtml: extra,
+    extraRead: (d) => ({ mode: d.querySelector('input[name="exMode"]:checked')?.value || "new", folder }),
+    onOpen: (d) => {
+      const show = () => (d.querySelector("#dfName").textContent = folder?.name || "マイドライブ");
+      show();
+      d.querySelector("#dfPick").onclick = async () => {
+        try {
+          const f = await G.pickFolder();
+          if (f) {
+            folder = { id: f.id, name: f.name };
+            show();
+          }
+        } catch (e) {
+          googleErr(e);
+        }
+      };
+      d.querySelector("#dfRoot").onclick = () => {
+        folder = null;
+        show();
+      };
+    },
+  });
   if (!o) return;
+  if (o.extra.mode !== "overwrite") {
+    folder = o.extra.folder;
+    try {
+      folder ? localStorage.setItem(FOLDER_KEY, JSON.stringify(folder)) : localStorage.removeItem(FOLDER_KEY);
+    } catch {}
+    m.meta.driveFolder = folder?.id || null;
+    m.meta.driveFolderName = folder?.name || null;
+  }
   const online = navigator.onLine;
   // ブラウザのポップアップ制限を避けるため、最初にログインを済ませる
   if (online) {
@@ -1191,7 +1237,7 @@ async function saveToDrive() {
   }
   const res = await runExport(o.level);
   if (!res) return;
-  const fileId = o.extra === "overwrite" ? m.meta.driveId : null;
+  const fileId = o.extra.mode === "overwrite" ? m.meta.driveId : null;
   m.meta.name = o.name;
   updateEmpty();
   if (!online) {

@@ -129,6 +129,7 @@ await page.click("#btnSave");
 await page.locator("#menu button", { hasText: "Googleドライブに保存" }).click();
 await page.waitForSelector("dialog[open] #exName");
 check("既存ファイルは上書き/別名を選べる", (await page.locator('input[name="exMode"]').count()) === 2);
+check("保存先フォルダの選択欄がある(既定はマイドライブ)", (await page.textContent("dialog[open] #dfName")) === "マイドライブ" && (await page.locator("dialog[open] #dfPick").count()) === 1);
 await page.click("dialog[open] .foot .btn.primary");
 await page.waitForFunction(() => document.querySelector("#toast") && /Googleドライブに保存しました/.test(document.querySelector("#toast").textContent), null, { timeout: 15000 });
 check("オンラインならその場でDriveへ上書き保存(PATCH)", calls.upload.length === 2 && calls.upload[1].method === "PATCH" && /files\/drive-file-1/.test(calls.upload[1].url), JSON.stringify(calls.upload.map((c) => [c.method, c.url.slice(0, 90)])));
