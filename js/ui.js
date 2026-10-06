@@ -95,16 +95,27 @@ export const confirmDialog = (message, { ok = "OK", danger = false, title } = {}
 export const alertDialog = (message, title) => dialog({ title, body: `<p>${esc(message).replace(/\n/g, "<br>")}</p>` });
 
 /** 1行入力。入力値(または null)を返す */
-export function promptDialog({ title, label, value = "", placeholder = "", type = "text", inputmode, ok = "OK", note }) {
+export function promptDialog({ title, label, value = "", placeholder = "", type = "text", inputmode, ok = "OK", note, switchable = false }) {
   let out = null;
   return dialog({
     title,
-    body: `<label class="field">${esc(label || "")}<input type="${type}" id="pdIn" value="${esc(value)}" placeholder="${esc(placeholder)}"${inputmode ? ` inputmode="${inputmode}"` : ""}></label>${note ? `<p class="note">${esc(note)}</p>` : ""}`,
+    body: `<label class="field">${esc(label || "")}<input type="${type}" id="pdIn" value="${esc(value)}" placeholder="${esc(placeholder)}"${inputmode ? ` inputmode="${inputmode}"` : ""}></label>${note ? `<p class="note">${esc(note)}</p>` : ""}${switchable ? `<button type="button" class="linkbtn" id="pdKb">文字入力(キーボード)に切り替え</button>` : ""}`,
     buttons: [
       { label: "キャンセル", value: null },
       { label: ok, value: true, primary: true, action: (d) => ((out = d.querySelector("#pdIn").value), true) },
     ],
-    onOpen: (d) => setTimeout(() => d.querySelector("#pdIn")?.focus(), 30),
+    onOpen: (d) => {
+      const inp = d.querySelector("#pdIn");
+      // 数字キーパッドで入力 ⇄ 通常キーボードを切り替える(フォーカスを保ったままキーボードだけ替える)
+      d.querySelector("#pdKb")?.addEventListener("click", (e) => {
+        const num = inp.getAttribute("inputmode") === "decimal";
+        inp.setAttribute("inputmode", num ? "text" : "decimal");
+        e.target.textContent = num ? "数字キーパッドに切り替え" : "文字入力(キーボード)に切り替え";
+        inp.blur();
+        inp.focus();
+      });
+      setTimeout(() => inp?.focus(), 30);
+    },
   }).then((v) => (v === true ? out : null));
 }
 

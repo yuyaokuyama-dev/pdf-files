@@ -1075,6 +1075,8 @@ async function dimRequest({ create, length, scale }) {
     label: "寸法(任意の数字・文字)",
     value: suggest,
     placeholder: "例: 3600",
+    inputmode: "decimal",
+    switchable: true,
     ok: "入力",
     note: scale ? "縮尺から計算した値を初期表示しています。自由に書き換えられます。" : "縮尺を設定していなくても、好きな数字を入力できます。",
   });
@@ -1083,7 +1085,7 @@ async function dimRequest({ create, length, scale }) {
 }
 
 async function dimEdit({ shape }) {
-  const v = await promptDialog({ title: "寸法の文字を編集", label: "寸法", value: shape.text || "", ok: "変更" });
+  const v = await promptDialog({ title: "寸法の文字を編集", label: "寸法", value: shape.text || "", inputmode: "decimal", switchable: true, ok: "変更" });
   if (v == null) return;
   S.editor.setSelection({ pageId: S.editor.model.findShape(shape.id).page.id, shapeId: shape.id });
   S.editor.updateSelected((s) => (s.text = v.trim()));
