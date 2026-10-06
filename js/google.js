@@ -58,7 +58,23 @@ export function preload() {
 }
 
 /* ---------- 認証(Google Identity Services のトークン方式) ---------- */
-let token = null; // { access_token, expiresAt }
+const TOK_KEY = "apdf_google_tok_v1"; // タブを開いている間だけ保持(閉じると消える)
+const GRANT_KEY = "apdf_google_granted_v1"; // 一度許可済みなら次回から同意画面を省く
+const ss = (fn) => {
+  try {
+    return fn(sessionStorage);
+  } catch {
+    return null;
+  }
+};
+const ls = (fn) => {
+  try {
+    return fn(localStorage);
+  } catch {
+    return null;
+  }
+};
+let token = ss((s) => JSON.parse(s.getItem(TOK_KEY) || "null")); // { access_token, expiresAt }
 let tokenClient = null;
 
 export async function getToken({ prompt } = {}) {
@@ -74,17 +90,22 @@ export async function getToken({ prompt } = {}) {
       callback: (r) => {
         if (r.error) return reject(new Error(`Googleログインに失敗しました: ${r.error_description || r.error}`));
         token = { access_token: r.access_token, expiresAt: Date.now() + (r.expires_in || 3600) * 1000 };
+        ss((s) => s.setItem(TOK_KEY, JSON.stringify(token)));
+        ls((l) => l.setItem(GRANT_KEY, "1"));
         resolve(token.access_token);
       },
       error_callback: (e) => reject(new Error(`Googleログインが完了しませんでした: ${e.type || e.message || "cancel"}`)),
     });
-    tokenClient.requestAccessToken({ prompt: prompt ?? (token ? "" : "consent") });
+    // 初回だけ同意画面を出す。許可済みなら "" にして、アカウント選択も省く(前回と同じアカウントを自動選択)
+    tokenClient.requestAccessToken({ prompt: prompt ?? (ls((l) => l.getItem(GRANT_KEY)) ? "" : "consent") });
   });
 }
 export const isSignedIn = () => !!(token && token.expiresAt > Date.now());
 export function signOut() {
   if (token && globalThis.google?.accounts?.oauth2) google.accounts.oauth2.revoke(token.access_token, () => {});
   token = null;
+  ss((s) => s.removeItem(TOK_KEY));
+  ls((l) => l.removeItem(GRANT_KEY));
 }
 
 async function api(url, opts = {}, retry = true) {
@@ -92,6 +113,7 @@ async function api(url, opts = {}, retry = true) {
   const r = await fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${t}` } });
   if (r.status === 401 && retry) {
     token = null;
+    ss((s) => s.removeItem(TOK_KEY));
     return api(url, opts, false);
   }
   if (!r.ok) {
