@@ -185,4 +185,7 @@ test("Drive ストア: 共有ドライブ上の Builds/_auth/users.json を読�
   assert.ok(builds, "Builds/ が共有ドライブのルート直下にある");
   assert.ok([...files.values()].some((f) => f.name === "_auth" && f.parent === builds[0]));
   assert.throws(() => createDriveStore({ env: {}, fetchFn }), { status: 503 });
+  assert.equal(store.secret, privateKey.replace(/\\n/g, "\n").trim(), "AUTH_SECRET が無ければサービスアカウントの秘密鍵で署名");
+  const withSecret = createDriveStore({ env: { ...env, AUTH_SECRET: "  shared-secret  " }, fetchFn });
+  assert.equal(withSecret.secret, "shared-secret", "AUTH_SECRET があれば優先(全アプリ共通の署名鍵にできる)");
 });

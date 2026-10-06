@@ -21,7 +21,8 @@ export function createDriveStore({ env = process.env, fetchFn = fetch } = {}) {
   }
 
   return {
-    secret: cfg.privateKey, // Builds と同じ署名鍵(トークンが相互に有効)
+    // 署名鍵: AUTH_SECRET(全アプリ共通にしたい場合)があればそれを使い、無ければ Builds と同じサービスアカウントの秘密鍵
+    secret: (env.AUTH_SECRET ?? "").trim() || cfg.privateKey,
     async read() {
       const c = await ready();
       const files = (await c.listFiles(folderId)).filter((f) => f.name === USERS_FILE);
