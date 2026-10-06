@@ -6,13 +6,18 @@ export const SCOPES = [
 ].join(" ");
 
 const CFG_KEY = "apdf_google_cfg_v1";
-export const getConfig = () => {
+const SRV_KEY = "apdf_google_srv_v1"; // サーバー(Vercel環境変数)から配布された値
+const nonEmpty = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v));
+const readLS = (k) => {
   try {
-    return { clientId: "", apiKey: "", appId: "", ...(globalThis.APDF_CONFIG || {}), ...JSON.parse(localStorage.getItem(CFG_KEY) || "{}") };
+    return JSON.parse(localStorage.getItem(k) || "{}");
   } catch {
-    return { clientId: "", apiKey: "", appId: "" };
+    return {};
   }
 };
+// 優先順位: 端末の手入力 > サーバー配布 > 埋め込み設定
+export const getConfig = () => ({ clientId: "", apiKey: "", appId: "", ...nonEmpty(globalThis.APDF_CONFIG), ...nonEmpty(readLS(SRV_KEY)), ...nonEmpty(readLS(CFG_KEY)) });
+export const serverProvided = () => !!readLS(SRV_KEY).clientId;
 export const setConfig = (c) => localStorage.setItem(CFG_KEY, JSON.stringify(c));
 export const isConfigured = () => !!getConfig().clientId;
 

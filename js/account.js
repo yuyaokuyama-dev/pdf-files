@@ -76,6 +76,8 @@ export async function init() {
     const j = await api("config", { method: "GET", timeout: 4000 });
     cfg = { shared: !!j.shared, resetMode: j.resetMode || "admin" };
     env.storage?.setItem(MODE_KEY, JSON.stringify(cfg));
+    // サーバー配布のGoogle連携設定(オフライン時は前回の値を使う)
+    if (j.google?.clientId) env.storage?.setItem("apdf_google_srv_v1", JSON.stringify(j.google));
   } catch {
     cfg = cached || { shared: false, resetMode: "admin" };
   }

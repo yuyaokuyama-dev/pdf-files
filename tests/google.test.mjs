@@ -45,3 +45,17 @@ test("OAuthスコープは最小権限(drive.file と gmail.send のみ)", () =>
     "https://www.googleapis.com/auth/gmail.send",
   ]);
 });
+
+test("Google設定: 手入力 > サーバー配布 > 空", async () => {
+  const store = {};
+  globalThis.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => (store[k] = v) };
+  const G = await import("../js/google.js?cfg");
+  assert.equal(G.isConfigured(), false);
+  store.apdf_google_srv_v1 = JSON.stringify({ clientId: "srv.apps", apiKey: "K", appId: "123" });
+  assert.equal(G.getConfig().clientId, "srv.apps");
+  assert.equal(G.serverProvided(), true);
+  G.setConfig({ clientId: "", apiKey: "", appId: "" }); // 空欄保存は配布値を消さない
+  assert.equal(G.getConfig().apiKey, "K");
+  G.setConfig({ clientId: "mine.apps", apiKey: "", appId: "" });
+  assert.equal(G.getConfig().clientId, "mine.apps");
+});
