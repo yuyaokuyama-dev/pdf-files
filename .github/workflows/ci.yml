@@ -35,3 +35,4 @@ jobs:
           node tests/e2e-auth.mjs
           node tests/e2e-style.mjs
           node tests/e2e-dim.mjs
+          node tests/e2e-stamp.mjs
