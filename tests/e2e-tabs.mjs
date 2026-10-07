@@ -1,4 +1,4 @@
-// E2E: 開いているファイルのタブ / タブを外へドラッグして別ウィンドウで開く(並べて見比べる)
+// E2E: 開いているファイルのタブ / タブを作業画面の外へドラッグして別ウィンドウで開く(並べて見比べる)
 import { launch, register, openPdf, check, summary } from "./e2e-lib.mjs";
 
 const env = await launch();
@@ -32,14 +32,25 @@ await page.mouse.up();
 check("タブを左右にドラッグして並べ替えられる", (await tabNames()).join() === `白紙.pdf,${name1}`, JSON.stringify(await tabNames()));
 check("並べ替えでは別ウィンドウは開かない", ctx.pages().length === 1);
 
-// タブを下(タブバーの外)へドラッグ → 別ウィンドウで開く
+// タブを作業画面の中(ページの上)へドラッグして離しても、別ウィンドウは開かない
+a = await box(name1);
+await page.mouse.move(a.x + 20, a.y + a.height / 2);
+await page.mouse.down();
+await page.mouse.move(a.x + 80, a.y + 300, { steps: 8 });
+check("ドラッグ中は「作業画面の外で離すと別ウィンドウ」と案内", (await page.locator(".tab-ghost .tab-ghost-hint").textContent()).includes("作業画面の外"));
+check("作業画面の中ではまだ別ウィンドウの対象にならない", (await page.locator(".tab-ghost.out").count()) === 0);
+await page.mouse.up();
+await page.waitForTimeout(400);
+check("作業画面の中で離しても別ウィンドウは開かない", ctx.pages().length === 1 && (await tabNames()).length === 2);
+
+// タブを作業画面(ウィンドウ)の外へドラッグ → 別ウィンドウで開く
 a = await box(name1);
 const popupP = ctx.waitForEvent("page");
 await page.mouse.move(a.x + 20, a.y + a.height / 2);
 await page.mouse.down();
-await page.mouse.move(a.x + 60, a.y + 120, { steps: 6 });
-check("外へドラッグ中は「離すと別ウィンドウ」の表示", await page.locator(".tab-ghost.out .tab-ghost-hint").isVisible());
-await page.mouse.move(a.x + 80, a.y + 300, { steps: 6 });
+await page.mouse.move(a.x + 60, a.y + 300, { steps: 6 });
+await page.mouse.move(1400, 300, { steps: 6 }); // 画面幅は1280
+check("作業画面の外では強調表示になる", (await page.locator(".tab-ghost.out").count()) === 1);
 await page.mouse.up();
 const popup = await popupP;
 const perr = [];

@@ -2,7 +2,7 @@
 import { esc } from "./ui.js";
 
 const DRAG_START = 8;   // これ以上動いたらドラッグ開始(px)
-const TEAR_OFF = 48;    // タブバーからこれ以上離して離すと「別ウィンドウで開く」(px)
+const REORDER_BAND = 40; // タブバーの上下この範囲で離すと並べ替え(px)
 
 /**
  * タブバー。ids と名前・表示中のファイルを受け取って描画し、操作はコールバックで返す。
@@ -32,7 +32,7 @@ export class TabBar {
     this.el.innerHTML = this.ids
       .map((id) => {
         const name = this.names.get(id) || "無題.pdf";
-        return `<div class="tab${id === current ? " on" : ""}" data-id="${id}" title="${esc(name)}\nタブを外へドラッグすると別ウィンドウで開きます"><span class="tab-name">${esc(name)}</span><button type="button" class="tab-x" data-close="${id}" aria-label="閉じる" title="閉じる(履歴に残ります)">×</button></div>`;
+        return `<div class="tab${id === current ? " on" : ""}" data-id="${id}" title="${esc(name)}\nタブを作業画面の外へドラッグすると別ウィンドウで開きます"><span class="tab-name">${esc(name)}</span><button type="button" class="tab-x" data-close="${id}" aria-label="閉じる" title="閉じる(履歴に残ります)">×</button></div>`;
       })
       .join("");
     this.el.hidden = this.ids.length < 2; // 1つだけなら画面を広く使う
@@ -55,7 +55,7 @@ export class TabBar {
       ev.preventDefault();
       const out = this.isOutside(ev);
       this.moveGhost(ev, out);
-      if (!out) this.markSlot(ev.clientX, id);
+      if (!out && this.nearBar(ev)) this.markSlot(ev.clientX, id);
       else this.clearSlot();
     };
     const up = (ev) => {
@@ -89,17 +89,20 @@ export class TabBar {
     tab.addEventListener("pointercancel", up);
   }
 
-  /** タブバーの外(下へ一定以上 / 上・左右の画面外)で離したか */
+  /** 作業画面(このウィンドウ)の外で離したか */
   isOutside(ev) {
+    return ev.clientX < 0 || ev.clientY < 0 || ev.clientX >= innerWidth || ev.clientY >= innerHeight;
+  }
+  /** タブバーの近く(並べ替えの対象範囲)か */
+  nearBar(ev) {
     const r = this.el.getBoundingClientRect();
-    if (ev.clientX < 0 || ev.clientY < 0 || ev.clientX > innerWidth || ev.clientY > innerHeight) return true;
-    return ev.clientY > r.bottom + TEAR_OFF || ev.clientY < r.top - TEAR_OFF;
+    return ev.clientY >= r.top - REORDER_BAND && ev.clientY <= r.bottom + REORDER_BAND;
   }
 
   startGhost(tab) {
     const g = document.createElement("div");
     g.className = "tab-ghost";
-    g.innerHTML = `<span class="tab-name">${esc(tab.querySelector(".tab-name").textContent)}</span><span class="tab-ghost-hint">離すと別ウィンドウで開きます</span>`;
+    g.innerHTML = `<span class="tab-name">${esc(tab.querySelector(".tab-name").textContent)}</span><span class="tab-ghost-hint">作業画面の外で離すと別ウィンドウで開きます</span>`;
     document.body.append(g);
     this.ghost = g;
   }

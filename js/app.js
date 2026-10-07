@@ -444,6 +444,7 @@ function updateEmpty() {
  * ドキュメントの切り替え・保存(端末内の自動保存)
  * ======================================================= */
 function setDoc(model, { fit = true } = {}) {
+  if (saveTimer && S.model && S.model !== model) saveProjectNow(); // 切り替える前のファイルの未保存の変更を保存
   S.model = model;
   if (model.pages.length) {
     trackOpen(model.meta.projectId);
@@ -590,6 +591,7 @@ async function discardDoc(id) {
   const ok = await confirmDialog(`「${name}」を保存しないで閉じますか?\n端末内の編集内容は破棄され、履歴にも残りません。\n(Googleドライブに保存済みのファイルは消えません)`, { ok: "保存しないで閉じる", danger: true });
   if (!ok) return false;
   clearTimeout(saveTimer);
+  saveTimer = 0;
   await deleteProjectData(id);
   if (isCur) await showNeighbor(id);
   else removeTab(id);
@@ -626,12 +628,15 @@ let saveTimer = 0;
 let saveWarned = false;
 function scheduleSave() {
   clearTimeout(saveTimer);
+  saveTimer = 0;
   saveTimer = setTimeout(saveProjectNow, 1200);
 }
 async function saveProjectNow() {
   clearTimeout(saveTimer);
+  saveTimer = 0;
   const m = S.model;
   if (!m || !S.store || !m.pages.length) return;
+  const thumb = S.thumbs.firstThumbDataUrl(); // 待っている間に表示が別のファイルに変わっても、このファイルの画像を使う
   try {
     const data = m.serialize();
     for (const s of data.sources) {
@@ -642,7 +647,7 @@ async function saveProjectNow() {
     }
     data.sources = data.sources.map((s) => ({ id: s.id, name: s.name }));
     await S.store.put("projects", data);
-    await S.store.put("recents", { id: m.meta.projectId, name: m.meta.name, driveId: m.meta.driveId, updatedAt: Date.now(), pages: m.pages.length, thumb: S.thumbs.firstThumbDataUrl() });
+    await S.store.put("recents", { id: m.meta.projectId, name: m.meta.name, driveId: m.meta.driveId, updatedAt: Date.now(), pages: m.pages.length, thumb });
     S.tabNames.set(m.meta.projectId, m.meta.name);
     if (!S.popupDoc) await S.store.setSetting("lastProject", m.meta.projectId); // 別ウィンドウは「前回の続き」を書き換えない
   } catch (e) {
@@ -744,9 +749,13 @@ async function renameDoc() {
 }
 
 /* ---------- ドラッグ&ドロップ ---------- */
-/** ドロップ位置(ページの間)を求める。index: 挿入するページ番号(0=先頭)、y: 表示する線の画面Y */
-function dropSlot(clientY) {
-  const els = [...document.querySelectorAll("#pages .page")];
+// 作業画面へのドロップ: 新しいタブで開く / 左のページ一覧へのドロップ: その位置にページとして追加
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+const isPdf = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+
+/** ページ一覧の挿入位置。index: 挿入するページ番号(0=先頭)、y: 表示する線の画面Y */
+function thumbSlot(clientY) {
+  const els = [...document.querySelectorAll("#thumbs .thumb")];
   if (!els.length) return null;
   let index = els.length;
   for (let i = 0; i < els.length; i++) {
@@ -758,50 +767,87 @@ function dropSlot(clientY) {
   }
   const rBefore = index > 0 ? els[index - 1].getBoundingClientRect() : null;
   const rAfter = index < els.length ? els[index].getBoundingClientRect() : null;
-  const y = rBefore && rAfter ? (rBefore.bottom + rAfter.top) / 2 : rAfter ? rAfter.top - 6 : rBefore.bottom + 6;
+  const y = rBefore && rAfter ? (rBefore.bottom + rAfter.top) / 2 : rAfter ? rAfter.top - 5 : rBefore.bottom + 5;
   const ref = rAfter || rBefore;
   return { index, y, left: ref.left, width: ref.width };
 }
 
+/** ドロップしたファイルを、1つずつ新しいタブで開く */
+async function openDroppedFiles(files) {
+  const ok = files.filter((f) => isPdf(f) || /^image\//.test(f.type));
+  if (!ok.length) return toast("PDFファイルをドロップしてください", { error: true });
+  for (const f of ok) {
+    try {
+      await openLocalFile(f);
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+  }
+}
+
 function wireDrop() {
   const v = $("#viewer");
+  const th = $("#thumbs");
   const line = document.createElement("div");
   line.className = "drop-line";
   line.hidden = true;
   document.body.appendChild(line);
   const hideLine = () => (line.hidden = true);
+
+  // ファイルを持ってきたら、ページを追加できるようにページ一覧を出しておく
+  document.addEventListener("dragenter", (e) => {
+    if (!hasFiles(e) || !S.model.pages.length || !th.hidden) return;
+    th.hidden = false;
+    $("#btnPages").classList.add("on");
+    S.thumbs.refresh(true);
+  });
+
   ["dragenter", "dragover"].forEach((t) => v.addEventListener(t, (e) => {
-    if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+    if (!hasFiles(e)) return;
     e.preventDefault();
-    const slot = S.model.pages.length ? dropSlot(e.clientY) : null;
-    v.classList.toggle("drop", !slot);
+    v.classList.add("drop");
+  }));
+  v.addEventListener("dragleave", (e) => {
+    if (e.target === v || !v.contains(e.relatedTarget)) v.classList.remove("drop");
+  });
+  v.addEventListener("drop", async (e) => {
+    v.classList.remove("drop");
+    const f = [...(e.dataTransfer?.files || [])];
+    if (!f.length) return;
+    e.preventDefault();
+    await openDroppedFiles(f);
+  });
+
+  ["dragenter", "dragover"].forEach((t) => th.addEventListener(t, (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation(); // ページ並べ替え用の処理には渡さない
+    const slot = S.model.pages.length ? thumbSlot(e.clientY) : null;
+    th.classList.toggle("drop", !slot);
     if (slot) {
       Object.assign(line.style, { top: `${slot.y - 2}px`, left: `${slot.left}px`, width: `${slot.width}px` });
       line.hidden = false;
     } else hideLine();
-  }));
-  v.addEventListener("dragleave", (e) => {
-    if (e.target === v || !v.contains(e.relatedTarget)) {
-      v.classList.remove("drop");
+  }, true));
+  th.addEventListener("dragleave", (e) => {
+    if (e.target === th || !th.contains(e.relatedTarget)) {
+      th.classList.remove("drop");
       hideLine();
     }
   });
-  v.addEventListener("drop", async (e) => {
-    v.classList.remove("drop");
+  th.addEventListener("drop", async (e) => {
+    th.classList.remove("drop");
     hideLine();
     const f = [...(e.dataTransfer?.files || [])];
     if (!f.length) return;
     e.preventDefault();
-    const pdfs = f.filter((x) => x.type === "application/pdf" || /\.pdf$/i.test(x.name));
-    if (!pdfs.length && /^image\//.test(f[0].type)) return openLocalFile(f[0]);
-    if (!pdfs.length) return toast("PDFファイルをドロップしてください", { error: true });
-    if (S.model.pages.length) {
-      // 開いているPDFがあるときは、ドロップした位置(ページの間)にページとして挿入する
-      const slot = dropSlot(e.clientY);
-      return addPdfFiles(pdfs, slot ? slot.index : undefined);
-    }
-    await openLocalFile(pdfs[0]);
-  });
+    e.stopPropagation();
+    const pdfs = f.filter(isPdf);
+    if (!pdfs.length) return toast("ページとして追加できるのはPDFファイルです", { error: true });
+    const slot = thumbSlot(e.clientY);
+    await addPdfFiles(pdfs, slot ? slot.index : undefined);
+  }, true);
+  document.addEventListener("dragend", hideLine);
 }
 
 /* 「移動」ツール: マウスのドラッグでスクロール */
