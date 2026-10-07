@@ -2,12 +2,12 @@
 import { icon } from "./icons.js";
 import { FONTS, textMetrics, textCorners } from "./render.js";
 import { esc } from "./ui.js";
-import { DASH_TYPES, normDash, arrowSizeOf } from "./geometry.js";
+import { DASH_TYPES, normDash, arrowSizeOf, dist, clampSweep, rotateAbout } from "./geometry.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
-const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "polygon", "cloud", "dim", "measure"]);
+const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "dim", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
-const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp" };
+const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp" };
 
 /** 文字の回転: 箱の中心を動かさずに角度だけ変える */
 function rotateTextAbout(sh, deg) {
@@ -17,6 +17,24 @@ function rotateTextAbout(sh, deg) {
   const th = ((((Math.round(deg) % 360) + 360) % 360) * Math.PI) / 180;
   sh.angle = th ? Math.round((th * 180) / Math.PI) : undefined;
   sh.pts[0] = [ctr[0] - ((m.w / 2) * Math.cos(th) - (m.h / 2) * Math.sin(th)), ctr[1] - ((m.w / 2) * Math.sin(th) + (m.h / 2) * Math.cos(th))];
+}
+
+const PT_MM = 25.4 / 72;
+const ARC_PRESETS = [{ s: 90, label: "1/4円" }, { s: 180, label: "半円" }, { s: 270, label: "3/4円" }];
+const arcAngle = (sh) => {
+  const [c, a] = sh.pts;
+  return ((Math.round((Math.atan2(a[1] - c[1], a[0] - c[0]) * 180) / Math.PI) % 360) + 360) % 360;
+};
+/** 円弧の向き: 中心を動かさずに始点を指定角度へ回す */
+function rotateArcTo(sh, deg) {
+  const [c] = sh.pts;
+  sh.pts[1] = rotateAbout(sh.pts[1], c, Math.round(deg) - arcAngle(sh));
+}
+/** 円弧の大きさ: 中心と向きはそのまま、半径だけ変える(常に正円) */
+function setArcRadius(sh, r) {
+  const [c, a] = sh.pts;
+  const r0 = dist(c, a) || 1;
+  sh.pts[1] = [c[0] + ((a[0] - c[0]) * r) / r0, c[1] + ((a[1] - c[1]) * r) / r0];
 }
 
 export class Props {
@@ -85,6 +103,15 @@ export class Props {
         return sh ? arrowSizeOf(sh) : ed.arrowSize;
       case "angle":
         return sh?.angle || 0;
+      case "sweep":
+        return sh ? sh.sweep : ed.arc.sweep;
+      case "r1":
+      case "r2":
+        return !!(sh ? sh[key] : ed.arc[key]);
+      case "arcRot":
+        return sh ? arcAngle(sh) : 0;
+      case "radiusMm":
+        return sh ? +(dist(sh.pts[0], sh.pts[1]) * PT_MM).toFixed(1) : 0;
       case "endStyle":
         return sh ? sh.endStyle ?? "arrow" : ed.dimEnd.style;
       case "endSize":
@@ -124,6 +151,20 @@ export class Props {
             break;
           case "angle":
             rotateTextAbout(sh, value);
+            break;
+          case "sweep":
+            sh.sweep = clampSweep(value);
+            break;
+          case "r1":
+          case "r2":
+            if (value) sh[key] = true;
+            else delete sh[key];
+            break;
+          case "arcRot":
+            rotateArcTo(sh, value);
+            break;
+          case "radiusMm":
+            setArcRadius(sh, value / PT_MM);
             break;
           case "endStyle":
           case "endSize":
@@ -167,6 +208,15 @@ export class Props {
         case "headSize":
           ed.arrowSize = value;
           break;
+        case "sweep":
+          ed.arc.sweep = clampSweep(value);
+          ed.saveDefaults();
+          break;
+        case "r1":
+        case "r2":
+          ed.arc[key] = !!value;
+          ed.saveDefaults();
+          break;
         default:
           break;
       }
@@ -204,7 +254,7 @@ export class Props {
       return;
     }
     if (key === "dash") v = v || false;
-    if (t.type === "number" && (!Number.isFinite(v) || (key !== "angle" && v <= 0))) return;
+    if (t.type === "number" && (!Number.isFinite(v) || (key !== "angle" && key !== "arcRot" && v <= 0))) return;
     // 入力中は履歴に積まずに反映(ライブ)、確定(change)で1操作として記録する
     this.apply(ctx, key, v, true);
     if (!isInput) this.ed.commitLive();
@@ -253,7 +303,13 @@ export class Props {
         }
         break;
       case "rot90":
-        if (ctx.sel) ed.updateSelected((sh) => rotateTextAbout(sh, (sh.angle || 0) + 90), { live: false });
+        if (ctx.sel && ctx.type === "arc") ed.updateSelected((sh) => rotateArcTo(sh, arcAngle(sh) + 90), { live: false });
+        else if (ctx.sel) ed.updateSelected((sh) => rotateTextAbout(sh, (sh.angle || 0) + 90), { live: false });
+        this.refresh();
+        break;
+      case "arc-preset":
+        if (ctx) this.apply(ctx, "sweep", +b.dataset.s, false);
+        this.refresh();
         break;
       case "text-home":
         if (ctx.sel) ed.updateSelected((sh) => delete sh.textOff, { live: false });
@@ -297,7 +353,7 @@ export class Props {
       return `<label class="field">${label}<div class="row"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v}"><span class="val" data-v="${k}">${fmt ? fmt(v) : v}</span></div></label>`;
     };
     const parts = [];
-    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ" }[t] || "";
+    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ" }[t] || "";
     parts.push(`<div style="display:flex;align-items:center"><h3 style="flex:1">${title}${ctx.sel ? "(選択中)" : "(次に描くもの)"}</h3><button class="btn icon" data-act="close" style="min-height:28px;width:28px" aria-label="閉じる">${icon("x", 16)}</button></div>`);
 
     if (t === "stamp") {
@@ -325,6 +381,18 @@ export class Props {
     }
     if (t === "arrow") parts.push(num("headSize", "矢印のサイズ(線の太さとは別)", 3, 60, 0.5, (v) => Number(v).toFixed(1)));
     if (t === "cloud") parts.push(num("pitch", "雲のピッチ(円弧の大きさ)", 6, 80, 1));
+    if (t === "arc") {
+      const sw = g("sweep");
+      parts.push(`<div class="field">開き角<div class="actions" style="margin:0">${ARC_PRESETS.map((p) => `<button class="btn${sw === p.s ? " primary" : ""}" data-act="arc-preset" data-s="${p.s}">${p.label}</button>`).join("")}</div>
+        <div class="row"><input type="range" data-k="sweep" min="1" max="359" step="1" value="${sw}"><input type="number" data-k="sweep" min="1" max="359" step="1" value="${sw}" style="width:70px;height:34px"><span>度</span></div></div>`);
+      parts.push(`<div class="field">半径の直線<label class="check"><input type="checkbox" data-k="r1"${g("r1") ? " checked" : ""}> 直線①(中心→始点)を表示</label><label class="check"><input type="checkbox" data-k="r2"${g("r2") ? " checked" : ""}> 直線②(中心→終点)を表示</label></div>`);
+      if (ctx.sel) {
+        const ang = g("arcRot");
+        parts.push(`<label class="field">半径(mm・用紙上)<input type="number" data-k="radiusMm" min="0.5" max="2000" step="0.5" value="${g("radiusMm")}" style="width:90px;height:34px"></label>`);
+        parts.push(`<label class="field">回転(度)<div class="row"><input type="range" data-k="arcRot" min="0" max="359" step="1" value="${ang}"><input type="number" data-k="arcRot" min="0" max="359" step="1" value="${ang}" style="width:70px;height:34px"></div></label>`);
+        parts.push(`<div class="actions"><button class="btn" data-act="rot90">90°回す</button></div>`);
+      }
+    }
     if (t === "text") {
       const size = g("size") || 18;
       parts.push(`<label class="field">文字サイズ<div class="row"><input type="range" data-k="size" min="3" max="120" step="0.5" value="${size}"><input type="number" data-k="size" min="3" max="400" step="0.5" value="${size}" style="width:70px;height:34px"></div></label>`);
@@ -369,6 +437,7 @@ export class Props {
         <button class="btn" data-act="back">背面へ</button>
         <button class="btn danger" data-act="del">${icon("trash", 16)}削除</button></div>`);
       if (t === "polygon" || t === "cloud") parts.push(`<p class="hint">頂点をドラッグで移動、辺をダブルタップで頂点を追加、頂点をダブルタップで削除できます。</p>`);
+      if (t === "arc") parts.push(`<p class="hint">両端の丸で開き角、弧の中央の四角で大きさ、外側の丸で回転できます。常に正円のままです。</p>`);
     }
     this.el.innerHTML = parts.join("");
   }

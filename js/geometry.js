@@ -55,6 +55,60 @@ export function ellipsePath(p0, p1) {
   return `M${f(cx - rx)} ${f(cy)} A${f(rx)} ${f(ry)} 0 1 0 ${f(cx + rx)} ${f(cy)} A${f(rx)} ${f(ry)} 0 1 0 ${f(cx - rx)} ${f(cy)} Z`;
 }
 
+/* ---------- 円弧(正円の一部) ----------
+ * c: 中心、a: 始点(中心からの距離が半径、向きが始まりの角度)、
+ * sweep: 開き角(度)。画面上で時計回りに測る(90=1/4円, 180=半円, 270=3/4円)。
+ * 半径は1つだけなので、どう操作しても楕円にはならない。 */
+export const ARC_MIN = 1;
+export const ARC_MAX = 359;
+export const clampSweep = (s) => Math.min(ARC_MAX, Math.max(ARC_MIN, Number.isFinite(+s) ? +s : 180));
+const rad = (d) => (d * Math.PI) / 180;
+const onCircle = (c, r, t) => [c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)];
+
+export function arcGeometry(c, a, sweep = 180) {
+  const r = dist(c, a);
+  const s = clampSweep(sweep);
+  const t0 = Math.atan2(a[1] - c[1], a[0] - c[0]);
+  const t1 = t0 + rad(s);
+  return { c, r, sweep: s, t0, t1, a: [a[0], a[1]], b: onCircle(c, r, t1), mid: onCircle(c, r, t0 + rad(s) / 2) };
+}
+
+/** 円弧のパス。r1/r2: 半径の直線①(中心→始点)・直線②(中心→終点)も描く */
+export function arcPath(c, a, sweep = 180, { r1 = false, r2 = false } = {}) {
+  const g = arcGeometry(c, a, sweep);
+  if (g.r < 0.01) return `M${f(c[0])} ${f(c[1])}`;
+  const large = g.sweep > 180 ? 1 : 0;
+  let d = r1 ? `M${f(c[0])} ${f(c[1])} L${f(g.a[0])} ${f(g.a[1])}` : `M${f(g.a[0])} ${f(g.a[1])}`;
+  d += ` A${f(g.r)} ${f(g.r)} 0 ${large} 1 ${f(g.b[0])} ${f(g.b[1])}`;
+  if (r2) d += ` L${f(c[0])} ${f(c[1])}`;
+  if (r1 && r2) d += " Z";
+  return d;
+}
+
+/** 円弧の外接枠(端点 + 弧が通る上下左右の頂点 + 直線を出していれば中心) */
+export function arcBounds(c, a, sweep = 180, { r1 = false, r2 = false } = {}) {
+  const g = arcGeometry(c, a, sweep);
+  const pts = [g.a, g.b];
+  for (let k = Math.ceil(g.t0 / (Math.PI / 2)); k * (Math.PI / 2) <= g.t1; k++) pts.push(onCircle(c, g.r, k * (Math.PI / 2)));
+  if (r1 || r2) pts.push(c);
+  return bbox(pts);
+}
+
+/** 点 q の向き(中心から見た角度)。始点からの時計回りの角度(0〜360度) */
+export function arcAngleOf(c, a, q) {
+  const t0 = Math.atan2(a[1] - c[1], a[0] - c[0]);
+  const t = Math.atan2(q[1] - c[1], q[0] - c[0]);
+  return ((((t - t0) * 180) / Math.PI) % 360 + 360) % 360;
+}
+
+/** 中心のまわりに点を回す(度, 時計回り) */
+export function rotateAbout(p, c, deg) {
+  const t = rad(deg);
+  const dx = p[0] - c[0];
+  const dy = p[1] - c[1];
+  return [c[0] + dx * Math.cos(t) - dy * Math.sin(t), c[1] + dx * Math.sin(t) + dy * Math.cos(t)];
+}
+
 /**
  * 雲マーク(リビジョンクラウド)。頂点列(閉多角形)の各辺を、ピッチ(円弧1つ分の弦長の目安)で
  * 分割し、外側に膨らむ円弧でつなぐ。
