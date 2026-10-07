@@ -22,7 +22,7 @@ const PDF_OPTS = {
   wasmUrl: new URL("../vendor/wasm/", import.meta.url).href,
 };
 
-const S = { user: null, store: null, model: null, editor: null, thumbs: null, props: null, settings: { level: "small", palm: false, notify: false }, savedSrc: new Set(), openDocs: [], deferredInstall: null };
+const S = { user: null, store: null, model: null, editor: null, thumbs: null, props: null, settings: { level: "small", palm: false, notify: false, sticky: true, uiSize: "auto" }, savedSrc: new Set(), openDocs: [], deferredInstall: null };
 window.__apdf = S; // 動作確認用
 S.exportPdf = exportPdf;
 S.G = G;
@@ -200,6 +200,13 @@ if ("launchQueue" in window) {
   });
 }
 
+/** 操作ボタンの大きさ(auto: iPadなど大きいタッチ画面では「大」) */
+function applyUiSize() {
+  let v = S.settings.uiSize || "auto";
+  if (v === "auto") v = matchMedia("(pointer: coarse)").matches && Math.min(innerWidth, innerHeight) >= 600 ? "large" : "normal";
+  document.documentElement.dataset.ui = v;
+}
+
 async function enterApp(user) {
   S.user = user;
   S.store = openStore(user);
@@ -208,6 +215,8 @@ async function enterApp(user) {
   $("#app").hidden = false;
   if (!S.editor) initUI();
   S.editor.setPalm(S.settings.palm);
+  S.editor.sticky = S.settings.sticky !== false;
+  applyUiSize();
   S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
   G.preloadGoogle();
   // 前回の続きを開く
@@ -1707,6 +1716,9 @@ async function openSettings() {
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <div class="field"><b style="color:var(--ink)">メールの送り方</b>
         <select id="stMail"><option value="api">アプリから直接送信(Gmail連携・自動で添付)</option><option value="app">Gmailを開いて添付する(スマホは共有メニューで添付済み)</option></select></div>
+      <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stSticky"${S.settings.sticky !== false ? " checked" : ""}> 線・図形・寸法などは、描いたあとも同じツールのまま続けて使う</label>
+      <div class="field"><b style="color:var(--ink)">ボタンの大きさ(ツールバーなど)</b>
+        <select id="stUi"><option value="auto">自動(iPadなどは大きめ)</option><option value="normal">標準</option><option value="large">大</option><option value="xlarge">特大</option></select></div>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stPalm"${S.settings.palm ? " checked" : ""}> ペン入力モード(描画はペン/マウスのみ、指はスクロール専用)</label>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stNotify"${S.settings.notify ? " checked" : ""}> オンライン復帰時に通知で知らせる</label>
       <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1717,6 +1729,10 @@ async function openSettings() {
       G.setConfig({ clientId: d.querySelector("#stCid").value.trim(), apiKey: d.querySelector("#stKey").value.trim(), appId: d.querySelector("#stApp").value.trim() });
       S.settings.mailMode = d.querySelector("#stMail").value;
       S.settings.palm = d.querySelector("#stPalm").checked;
+      S.settings.sticky = d.querySelector("#stSticky").checked;
+      S.settings.uiSize = d.querySelector("#stUi").value;
+      S.editor.sticky = S.settings.sticky;
+      applyUiSize();
       S.settings.notify = d.querySelector("#stNotify").checked;
       S.editor.setPalm(S.settings.palm);
       await S.store.setSetting("settings", S.settings);
@@ -1726,6 +1742,7 @@ async function openSettings() {
     } }],
     onOpen: (d) => {
       d.querySelector("#stMail").value = S.settings.mailMode === "app" ? "app" : "api";
+    d.querySelector("#stUi").value = S.settings.uiSize || "auto";
       let st = G.getStart();
       const selEl = d.querySelector("#stStart");
       const showSt = () => {

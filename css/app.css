@@ -179,6 +179,15 @@ dialog::backdrop { background: rgba(15, 23, 42, .5); }
   .tool-hint { bottom: calc(150px + var(--safe-b)); }
 }
 @media (max-width: 480px) { .topbar .logo { display: none; } }
+/* ---------- ボタンの大きさ(設定): iPadなどで押しやすく ---------- */
+html[data-ui="large"] .tool { width: 66px; font-size: 12px; padding: 8px 0 5px; }
+html[data-ui="large"] .tool svg { width: 28px; height: 28px; }
+html[data-ui="large"] .btn { min-height: 46px; font-size: 15px; }
+html[data-ui="large"] .btn.icon { width: 46px; }
+html[data-ui="xlarge"] .tool { width: 82px; font-size: 13.5px; padding: 10px 0 6px; }
+html[data-ui="xlarge"] .tool svg { width: 36px; height: 36px; }
+html[data-ui="xlarge"] .btn { min-height: 54px; font-size: 17px; }
+html[data-ui="xlarge"] .btn.icon { width: 54px; }
 @media print { body { display: none; } }
 
 /* ---------- ファイル名表示 ---------- */

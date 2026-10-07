@@ -39,6 +39,7 @@ export class Editor {
     this.textStyle = { size: 18, font: "gothic", bold: false, color: "#111827" };
     this.cloudPitch = 18;
     this.dimSize = 12;
+    this.sticky = true; // 作成後も同じツールのまま連続して使う
     this.arrowSize = 10; // 矢印の大きさ(線の太さとは別)
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
     this.loadDefaults();
@@ -681,7 +682,10 @@ export class Editor {
 
   addAndSelect(pageId, shape, select = true) {
     const s = this.model.addShape(pageId, shape);
-    if (select && s) {
+    if (select && s && this.sticky) {
+      // 連続作成: ツールはそのまま(選択はしない)。調整したいときは「選択」で図形を選ぶ
+      this.setSelection(null);
+    } else if (select && s) {
       this.tool = "select";
       for (const el of this.els.values()) this.applyToolClass(el);
       this.emit("tool", "select");

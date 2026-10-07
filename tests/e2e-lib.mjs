@@ -33,6 +33,8 @@ export async function register(page, id = "tester01", pw = "password-1234") {
 export async function openPdf(page, file) {
   await page.setInputFiles("#fileOpen", file);
   await page.waitForFunction(() => window.__apdf.model?.pages.length > 0 && document.querySelectorAll('.page[data-rendered="1"]').length >= 1, null, { timeout: 20000 });
+  // 既存テストは「作成後に自動で選択に戻る」前提。連続作成(既定)は e2e-sticky.mjs で別に検証する
+  await page.evaluate(() => { window.__apdf.editor.sticky = false; });
 }
 
 /** ページ座標(pt) → 画面座標。zoom=1 に固定して使う */
