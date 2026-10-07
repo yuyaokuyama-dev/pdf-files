@@ -14,6 +14,7 @@ import { makeScale, formatLength } from "./geometry.js";
 import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, loadImage } from "./raster.js";
 import { createPad } from "./pad.js";
 import { icon } from "./icons.js";
+import { TabBar, createWindowSync, sideBySideFeatures } from "./tabs.js";
 import { $, esc, toast, busy, dialog, confirmDialog, alertDialog, promptDialog, showMenu, showBanner, hideBanner, fmtBytes, fmtDate } from "./ui.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.min.mjs", import.meta.url).href;
@@ -24,7 +25,9 @@ const PDF_OPTS = {
   wasmUrl: new URL("../vendor/wasm/", import.meta.url).href,
 };
 
-const S = { user: null, store: null, model: null, editor: null, thumbs: null, props: null, settings: { level: "small", palm: false, notify: false, sticky: true, uiSize: "auto" }, savedSrc: new Set(), openDocs: [], deferredInstall: null };
+const S = { user: null, store: null, model: null, editor: null, thumbs: null, props: null, settings: { level: "small", palm: false, notify: false, sticky: true, uiSize: "auto" }, savedSrc: new Set(), openDocs: [], deferredInstall: null,
+  // タブ(このウィンドウで開いているファイル)と、別ウィンドウで開いた場合の対象ファイル
+  tabs: [], tabNames: new Map(), tabBar: null, win: null, winId: uid(), popupDoc: new URLSearchParams(location.search).get("doc") };
 window.__apdf = S; // 動作確認用
 S.exportPdf = exportPdf;
 S.G = G;
@@ -216,22 +219,33 @@ async function enterApp(user) {
   $("#auth").hidden = true;
   $("#app").hidden = false;
   if (!S.editor) initUI();
+  if (!S.model) setDoc(new DocModel()); // 前回の続きを開くまでの間も操作できるように
   S.editor.setPalm(S.settings.palm);
   S.editor.sticky = S.settings.sticky !== false;
   applyUiSize();
   S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
+  for (const r of await S.store.getAll("recents")) S.tabNames.set(r.id, r.name);
   G.preloadGoogle();
-  // 前回の続きを開く
-  const last = await S.store.getSetting("lastProject", null);
-  let restored = false;
-  if (last) {
+  S.win = createWindowSync({ user, winId: S.winId, getIds: () => S.tabs, onRemoteChange: remoteWindowChange, onFocusRequest: () => window.focus() });
+  await S.win.ready;
+  // 別ウィンドウ(タブを外へドラッグ)ならそのファイルだけ、通常は前回の続きを開く
+  const elsewhere = (id) => S.win.heldElsewhere(id);
+  const opened = S.tabs; // 待っている間に開いたファイル
+  S.tabs = S.popupDoc ? [] : S.openDocs.filter((id) => S.tabNames.has(id) && !elsewhere(id));
+  for (const id of opened) if (!S.tabs.includes(id)) S.tabs.push(id);
+  const last = S.popupDoc || (await S.store.getSetting("lastProject", null));
+  let restored = S.model.pages.length > 0;
+  for (const id of restored ? [] : [last, ...S.tabs.slice().reverse()]) {
+    if (!id || elsewhere(id)) continue;
     try {
-      restored = await openProject(last, { silent: true });
+      restored = await openProject(id, { silent: true });
     } catch (e) {
       console.warn("restore failed", e);
     }
+    if (restored || S.popupDoc) break;
   }
   if (!restored) setDoc(new DocModel());
+  renderTabs();
   updateNet();
   refreshQueueBadge();
   if (G.isConfigured() && navigator.onLine) G.preload?.();
@@ -251,6 +265,7 @@ const TOOLS = [
   { id: "arrow", icon: "arrow", label: "矢印", hint: "ドラッグで矢印を引きます" },
   { id: "rect", icon: "rect", label: "四角", hint: "ドラッグで四角を描きます" },
   { id: "ellipse", icon: "ellipse", label: "丸", hint: "ドラッグで丸(楕円)を描きます" },
+  { id: "arc", icon: "arc", label: "円弧", hint: "中心から外へドラッグして半径と始まりの向きを決めます。半円・1/4円・3/4円は右のパネルで切り替え" },
   { id: "polygon", icon: "polygon", label: "多角形", hint: "角をタップして点を打ち、最初の点をタップまたは「完了」で閉じます" },
   { id: "cloud", icon: "cloud", label: "雲", hint: "ドラッグで雲マークを描きます。ピッチは右のパネルで変更" },
   { id: "text", icon: "text", label: "文字", hint: "入れたい場所をタップして文字を入力します" },
@@ -283,13 +298,19 @@ function initUI() {
   $(".topbar .logo").after(dn);
   dn.onclick = renameDoc;
 
+  S.tabBar = new TabBar({
+    el: $("#tabbar"),
+    onSelect: (id) => switchDoc(id),
+    onClose: (id) => closeTab(id),
+    onPopOut: (id) => popOutDoc(id),
+    onReorder: (ids) => { S.tabs = ids; renderTabs(); },
+  });
   S.editor = new Editor({ model: new DocModel(), viewer: $("#viewer"), pagesEl: $("#pages"), getPdfPage });
   S.thumbs = new Thumbs({
     el: $("#thumbs"),
     editor: S.editor,
     getPdfPage,
     onAdd: (anchor) => addPageMenu(anchor),
-    onDropFiles: (files, at) => addPdfFiles(files, at),
     onExport: (ids) => exportPages(ids),
   });
   S.props = new Props({
@@ -422,14 +443,20 @@ function updateEmpty() {
   $("#pages").hidden = !has;
   $("#docName").textContent = has ? S.model.meta.name : "";
   $("#docName").hidden = !has;
+  if (has) S.tabNames.set(S.model.meta.projectId, S.model.meta.name);
+  renderTabs();
 }
 
 /* =========================================================
  * ドキュメントの切り替え・保存(端末内の自動保存)
  * ======================================================= */
 function setDoc(model, { fit = true } = {}) {
+  if (saveTimer && S.model && S.model !== model) saveProjectNow(); // 切り替える前のファイルの未保存の変更を保存
   S.model = model;
-  if (model.pages.length) trackOpen(model.meta.projectId);
+  if (model.pages.length) {
+    trackOpen(model.meta.projectId);
+    addTab(model.meta.projectId, model.meta.name);
+  }
   model.onChange(() => {
     updateUndoRedo();
     scheduleSave();
@@ -446,14 +473,104 @@ function setDoc(model, { fit = true } = {}) {
 }
 
 /* ---------- 開いているファイル(切り替え) ---------- */
-function trackOpen(id) {
-  if (!id || S.openDocs.includes(id)) return;
+// 一覧は別ウィンドウと共有しているので、書き込む直前に読み直す
+async function trackOpen(id) {
+  if (!id || !S.store) return;
+  S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
+  if (S.openDocs.includes(id)) return;
   S.openDocs.push(id);
-  S.store?.setSetting("openDocs", S.openDocs);
+  await S.store.setSetting("openDocs", S.openDocs);
 }
-function untrackOpen(id) {
-  S.openDocs = S.openDocs.filter((x) => x !== id);
-  S.store?.setSetting("openDocs", S.openDocs);
+async function untrackOpen(id) {
+  if (!S.store) return;
+  S.openDocs = ((await S.store.getSetting("openDocs", [])) || []).filter((x) => x !== id);
+  await S.store.setSetting("openDocs", S.openDocs);
+}
+
+/* ---------- タブ ---------- */
+function renderTabs() {
+  S.tabBar?.render({ ids: S.tabs, names: S.tabNames, current: S.model?.pages.length ? S.model.meta.projectId : null });
+}
+function addTab(id, name) {
+  if (name) S.tabNames.set(id, name);
+  if (!S.tabs.includes(id)) {
+    S.tabs.push(id);
+    S.win?.announce();
+  }
+  renderTabs();
+}
+function removeTab(id) {
+  S.tabs = S.tabs.filter((x) => x !== id);
+  S.win?.announce();
+  renderTabs();
+}
+/** 表示中のファイルをタブから外したあと、隣のタブ(無ければ空の画面)を表示する */
+async function showNeighbor(id) {
+  const i = S.tabs.indexOf(id);
+  const rest = S.tabs.filter((x) => x !== id);
+  const next = rest[Math.min(Math.max(i, 0), rest.length - 1)];
+  removeTab(id);
+  let opened = false;
+  if (next) {
+    try { opened = await openProject(next, { silent: true }); } catch { /* 開けなければ空の状態へ */ }
+  }
+  if (!opened) setDoc(new DocModel());
+  if (!S.popupDoc) S.store.setSetting("lastProject", opened ? next : null);
+}
+/** タブの×: 端末内の編集データは残したまま閉じる(履歴からまた開ける) */
+async function closeTab(id) {
+  if (id === S.model.meta.projectId) {
+    await saveProjectNow();
+    await showNeighbor(id);
+  } else removeTab(id);
+  await untrackOpen(id);
+}
+/** タブを外へドラッグ → このウィンドウから外して、別ウィンドウで開く */
+async function popOutDoc(id) {
+  const why = popOutBlocked();
+  if (why) return alertDialog(why);
+  const isCur = id === S.model.meta.projectId;
+  if (isCur) await saveProjectNow(); // 新しいウィンドウは端末内の保存データから開くので先に保存
+  const url = `${location.pathname}?doc=${encodeURIComponent(id)}`;
+  const w = window.open(url, `apdf-${id}`, sideBySideFeatures());
+  if (!w) {
+    showHint("ポップアップがブロックされました。アドレスバーの表示から、このサイトのポップアップを許可してください", 6000);
+    return;
+  }
+  if (isCur) await showNeighbor(id);
+  else removeTab(id);
+}
+/** 別ウィンドウで開けない環境なら、その理由(開ける場合は空) */
+function popOutBlocked() {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const phone = /iPhone|iPod|Android.+Mobile/.test(ua);
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  if (!S.win.supported) return "このブラウザでは別ウィンドウで開けません。ブラウザを最新にしてください。";
+  if (phone) return "スマートフォンでは画面を左右に並べられないため、別ウィンドウでは開けません。\n上のタブで切り替えて見比べてください。";
+  if (ios && standalone) return "ホーム画面に追加したアプリでは別ウィンドウを開けません。\nSafariでこのアプリを開くと、別ウィンドウ(Safariのタブ)で開いて Split View で左右に並べられます。";
+  return "";
+}
+/** 別ウィンドウの開閉: 閉じられたウィンドウのファイルは、このウィンドウのタブに戻す */
+function remoteWindowChange({ type, ids }) {
+  if (type === "held") {
+    // 別ウィンドウで開いたファイルは、表示中でなければこのウィンドウのタブから外す
+    const cur = S.model?.meta.projectId;
+    const drop = S.tabs.filter((id) => ids.includes(id) && id !== cur);
+    if (drop.length) {
+      S.tabs = S.tabs.filter((id) => !drop.includes(id));
+      S.win.announce();
+      renderTabs();
+    }
+  } else if (type === "bye" && !S.popupDoc) {
+    setTimeout(async () => {
+      S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
+      for (const r of await S.store.getAll("recents")) S.tabNames.set(r.id, r.name);
+      for (const id of ids) if (S.openDocs.includes(id) && !S.win.heldElsewhere(id) && S.tabNames.has(id) && !S.tabs.includes(id)) S.tabs.push(id);
+      S.win.announce();
+      renderTabs();
+    }, 300); // 閉じたウィンドウの最後の自動保存を待つ
+  }
 }
 async function deleteProjectData(id) {
   const pr = await S.store.get("projects", id);
@@ -481,18 +598,10 @@ async function discardDoc(id) {
   const ok = await confirmDialog(`「${name}」を保存しないで閉じますか?\n端末内の編集内容は破棄され、履歴にも残りません。\n(Googleドライブに保存済みのファイルは消えません)`, { ok: "保存しないで閉じる", danger: true });
   if (!ok) return false;
   clearTimeout(saveTimer);
+  saveTimer = 0;
   await deleteProjectData(id);
-  if (isCur) {
-    const next = S.openDocs.filter((x) => x !== id).at(-1);
-    let opened = false;
-    if (next) {
-      try { opened = await openProject(next, { silent: true }); } catch { /* 開けなければ空の状態へ */ }
-    }
-    if (!opened) {
-      setDoc(new DocModel());
-      S.store.setSetting("lastProject", null);
-    }
-  }
+  if (isCur) await showNeighbor(id);
+  else removeTab(id);
   toast("閉じました");
   return true;
 }
@@ -505,7 +614,7 @@ async function openDocsDialog() {
     title: "開いているファイル",
     width: "min(560px, 96vw)",
     body: ids.length
-      ? `<div class="list">${ids.map((id) => { const r = recs.get(id); return `<div class="item"><img src="${r.thumb || "icons/icon-192.png"}" alt=""><div class="meta"><div class="name">${esc(r.name)}${id === cur ? "(表示中)" : ""}</div><div class="sub">${r.pages}ページ ・ ${fmtDate(r.updatedAt)}</div></div>${id === cur ? "" : `<button class="btn" data-sw="${id}">表示</button>`}<button class="btn danger icon" data-x="${id}" aria-label="保存しないで閉じる" title="保存しないで閉じる">${icon("trash", 18)}</button></div>`; }).join("")}</div><p class="note">ゴミ箱ボタンは「保存しないで閉じる」です。閉じたくないファイルは、そのままにしておけば裏に残ります。</p>`
+      ? `<div class="list">${ids.map((id) => { const r = recs.get(id); return `<div class="item"><img src="${r.thumb || "icons/icon-192.png"}" alt=""><div class="meta"><div class="name">${esc(r.name)}${id === cur ? "(表示中)" : S.win?.heldElsewhere(id) ? "(別ウィンドウ)" : ""}</div><div class="sub">${r.pages}ページ ・ ${fmtDate(r.updatedAt)}</div></div>${id === cur ? "" : `<button class="btn" data-sw="${id}">表示</button>`}<button class="btn danger icon" data-x="${id}" aria-label="保存しないで閉じる" title="保存しないで閉じる">${icon("trash", 18)}</button></div>`; }).join("")}</div><p class="note">ゴミ箱ボタンは「保存しないで閉じる」です。閉じたくないファイルは、そのままにしておけば裏に残ります。</p>`
       : '<p class="note">開いているファイルはありません。</p>',
     buttons: [{ label: "閉じる", value: true, primary: true }],
     onOpen: (d, close) => {
@@ -526,12 +635,15 @@ let saveTimer = 0;
 let saveWarned = false;
 function scheduleSave() {
   clearTimeout(saveTimer);
+  saveTimer = 0;
   saveTimer = setTimeout(saveProjectNow, 1200);
 }
 async function saveProjectNow() {
   clearTimeout(saveTimer);
+  saveTimer = 0;
   const m = S.model;
   if (!m || !S.store || !m.pages.length) return;
+  const thumb = S.thumbs.firstThumbDataUrl(); // 待っている間に表示が別のファイルに変わっても、このファイルの画像を使う
   try {
     const data = m.serialize();
     for (const s of data.sources) {
@@ -542,8 +654,9 @@ async function saveProjectNow() {
     }
     data.sources = data.sources.map((s) => ({ id: s.id, name: s.name }));
     await S.store.put("projects", data);
-    await S.store.put("recents", { id: m.meta.projectId, name: m.meta.name, driveId: m.meta.driveId, updatedAt: Date.now(), pages: m.pages.length, thumb: S.thumbs.firstThumbDataUrl() });
-    await S.store.setSetting("lastProject", m.meta.projectId);
+    await S.store.put("recents", { id: m.meta.projectId, name: m.meta.name, driveId: m.meta.driveId, updatedAt: Date.now(), pages: m.pages.length, thumb });
+    S.tabNames.set(m.meta.projectId, m.meta.name);
+    if (!S.popupDoc) await S.store.setSetting("lastProject", m.meta.projectId); // 別ウィンドウは「前回の続き」を書き換えない
   } catch (e) {
     console.warn("autosave failed", e);
     if (!saveWarned) {
@@ -554,6 +667,12 @@ async function saveProjectNow() {
 }
 
 async function openProject(id, { silent = false } = {}) {
+  if (S.win?.heldElsewhere(id)) {
+    // 同じファイルを2つのウィンドウで編集すると保存が上書きし合うので、開いているウィンドウを前に出す
+    S.win.requestFocus(id);
+    if (!silent) toast("このファイルは別のウィンドウで開いています");
+    return false;
+  }
   const data = await S.store.get("projects", id);
   if (!data) {
     if (!silent) toast("この端末に編集データがありません", { error: true });
@@ -637,9 +756,13 @@ async function renameDoc() {
 }
 
 /* ---------- ドラッグ&ドロップ ---------- */
-/** ドロップ位置(ページの間)を求める。index: 挿入するページ番号(0=先頭)、y: 表示する線の画面Y */
-function dropSlot(clientY) {
-  const els = [...document.querySelectorAll("#pages .page")];
+// 作業画面へのドロップ: 新しいタブで開く / 左のページ一覧へのドロップ: その位置にページとして追加
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+const isPdf = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+
+/** ページ一覧の挿入位置。index: 挿入するページ番号(0=先頭)、y: 表示する線の画面Y */
+function thumbSlot(clientY) {
+  const els = [...document.querySelectorAll("#thumbs .thumb")];
   if (!els.length) return null;
   let index = els.length;
   for (let i = 0; i < els.length; i++) {
@@ -651,50 +774,87 @@ function dropSlot(clientY) {
   }
   const rBefore = index > 0 ? els[index - 1].getBoundingClientRect() : null;
   const rAfter = index < els.length ? els[index].getBoundingClientRect() : null;
-  const y = rBefore && rAfter ? (rBefore.bottom + rAfter.top) / 2 : rAfter ? rAfter.top - 6 : rBefore.bottom + 6;
+  const y = rBefore && rAfter ? (rBefore.bottom + rAfter.top) / 2 : rAfter ? rAfter.top - 5 : rBefore.bottom + 5;
   const ref = rAfter || rBefore;
   return { index, y, left: ref.left, width: ref.width };
 }
 
+/** ドロップしたファイルを、1つずつ新しいタブで開く */
+async function openDroppedFiles(files) {
+  const ok = files.filter((f) => isPdf(f) || /^image\//.test(f.type));
+  if (!ok.length) return toast("PDFファイルをドロップしてください", { error: true });
+  for (const f of ok) {
+    try {
+      await openLocalFile(f);
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+  }
+}
+
 function wireDrop() {
   const v = $("#viewer");
+  const th = $("#thumbs");
   const line = document.createElement("div");
   line.className = "drop-line";
   line.hidden = true;
   document.body.appendChild(line);
   const hideLine = () => (line.hidden = true);
+
+  // ファイルを持ってきたら、ページを追加できるようにページ一覧を出しておく
+  document.addEventListener("dragenter", (e) => {
+    if (!hasFiles(e) || !S.model.pages.length || !th.hidden) return;
+    th.hidden = false;
+    $("#btnPages").classList.add("on");
+    S.thumbs.refresh(true);
+  });
+
   ["dragenter", "dragover"].forEach((t) => v.addEventListener(t, (e) => {
-    if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+    if (!hasFiles(e)) return;
     e.preventDefault();
-    const slot = S.model.pages.length ? dropSlot(e.clientY) : null;
-    v.classList.toggle("drop", !slot);
+    v.classList.add("drop");
+  }));
+  v.addEventListener("dragleave", (e) => {
+    if (e.target === v || !v.contains(e.relatedTarget)) v.classList.remove("drop");
+  });
+  v.addEventListener("drop", async (e) => {
+    v.classList.remove("drop");
+    const f = [...(e.dataTransfer?.files || [])];
+    if (!f.length) return;
+    e.preventDefault();
+    await openDroppedFiles(f);
+  });
+
+  ["dragenter", "dragover"].forEach((t) => th.addEventListener(t, (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation(); // ページ並べ替え用の処理には渡さない
+    const slot = S.model.pages.length ? thumbSlot(e.clientY) : null;
+    th.classList.toggle("drop", !slot);
     if (slot) {
       Object.assign(line.style, { top: `${slot.y - 2}px`, left: `${slot.left}px`, width: `${slot.width}px` });
       line.hidden = false;
     } else hideLine();
-  }));
-  v.addEventListener("dragleave", (e) => {
-    if (e.target === v || !v.contains(e.relatedTarget)) {
-      v.classList.remove("drop");
+  }, true));
+  th.addEventListener("dragleave", (e) => {
+    if (e.target === th || !th.contains(e.relatedTarget)) {
+      th.classList.remove("drop");
       hideLine();
     }
   });
-  v.addEventListener("drop", async (e) => {
-    v.classList.remove("drop");
+  th.addEventListener("drop", async (e) => {
+    th.classList.remove("drop");
     hideLine();
     const f = [...(e.dataTransfer?.files || [])];
     if (!f.length) return;
     e.preventDefault();
-    const pdfs = f.filter((x) => x.type === "application/pdf" || /\.pdf$/i.test(x.name));
-    if (!pdfs.length && /^image\//.test(f[0].type)) return openLocalFile(f[0]);
-    if (!pdfs.length) return toast("PDFファイルをドロップしてください", { error: true });
-    if (S.model.pages.length) {
-      // 開いているPDFがあるときは、ドロップした位置(ページの間)にページとして挿入する
-      const slot = dropSlot(e.clientY);
-      return addPdfFiles(pdfs, slot ? slot.index : undefined);
-    }
-    await openLocalFile(pdfs[0]);
-  });
+    e.stopPropagation();
+    const pdfs = f.filter(isPdf);
+    if (!pdfs.length) return toast("ページとして追加できるのはPDFファイルです", { error: true });
+    const slot = thumbSlot(e.clientY);
+    await addPdfFiles(pdfs, slot ? slot.index : undefined);
+  }, true);
+  document.addEventListener("dragend", hideLine);
 }
 
 /* 「移動」ツール: マウスのドラッグでスクロール */
@@ -725,6 +885,7 @@ function fileMenu(anchor) {
     { label: "Googleドライブから開く", icon: "drive", onClick: openFromDrive },
     { label: "履歴から開く", icon: "history", onClick: openHistory },
     { label: `開いているファイル(${Math.max(S.openDocs.length, S.model.pages.length ? 1 : 0)})…`, icon: "folder", onClick: openDocsDialog },
+    { label: "別ウィンドウで開く(並べて表示)", icon: "pages", onClick: () => popOutDoc(S.model.meta.projectId), disabled: !S.model.pages.length },
     { label: "保存しないで閉じる", icon: "trash", onClick: () => discardDoc(S.model.meta.projectId), disabled: !S.model.pages.length },
     { sep: true },
     { label: "白紙から新規作成", icon: "blank", onClick: () => newBlank() },
@@ -1768,7 +1929,8 @@ async function openSettings() {
         <button class="btn" id="stGout">Googleの接続を解除</button></div>
       <div class="field"><b style="color:var(--ink)">アプリのバージョン</b>
         <div class="row" style="gap:10px;align-items:center"><span id="stVer" style="font-size:16px;color:var(--ink)">${APP_VERSION}</span><span class="note">(${APP_DATE})</span><button type="button" class="btn" id="stUpd">更新を確認</button></div>
-        <span class="note" id="stUpdMsg"></span></div>
+        <span class="note" id="stUpdMsg"></span>
+        <a class="note" href="licenses.html" target="_blank" rel="noopener">オープンソースライセンス</a></div>
       <p class="note">ログイン中のID: <b>${esc(S.user)}</b> ・ データはこの端末内に保存されます。</p>`,
     buttons: [{ label: "キャンセル", value: null }, { label: "保存", value: true, primary: true, action: async (d) => {
       G.setConfig({ clientId: d.querySelector("#stCid").value.trim(), apiKey: d.querySelector("#stKey").value.trim(), appId: d.querySelector("#stApp").value.trim() });

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>オープンソースライセンス - PDF Files</title>
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <style>
+    :root { --ink: #1b2430; --sub: #5b6573; --line: #d5d9df; --bg: #f5f6f8; --card: #fff; }
+    @media (prefers-color-scheme: dark) { :root { --ink: #e8eaed; --sub: #a3abb7; --line: #3a414c; --bg: #16191e; --card: #1f242b; } }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    p.note { color: var(--sub); font-size: 13px; margin: 0 0 18px; }
+    details { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin: 0 0 10px; padding: 10px 14px; }
+    summary { cursor: pointer; font-weight: 600; }
+    summary span { font-weight: 400; color: var(--sub); font-size: 13px; margin-left: 6px; }
+    .desc { color: var(--sub); font-size: 13px; margin: 8px 0 4px; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: var(--bg); border-radius: 6px; padding: 10px; max-height: 360px; overflow: auto; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>オープンソースライセンス</h1>
+  <p class="note">PDF Files は以下のオープンソースソフトウェア・フォントを使用しています。各ソフトウェアの著作権は各権利者に帰属します。項目を開くとライセンス全文を表示します。</p>
+  <div id="list"></div>
+</main>
+<script>
+  // [名前, ライセンス, 用途, ライセンス文のファイル]
+  const ITEMS = [
+    ["PDF.js", "Apache License 2.0 / © Mozilla Foundation", "PDFの表示", "vendor/pdfjs-LICENSE"],
+    ["pdf-lib", "MIT License / © Andrew Dillon(tslib © Microsoft、pako © Vitaly Puzrin ほかを含む)", "PDFの書き出し・編集", "vendor/pdf-lib-LICENSE.md"],
+    ["Adobe CMap", "BSD 3-Clause License / © Adobe Systems Incorporated", "日本語などの文字表示", "vendor/cmaps/LICENSE"],
+    ["Liberation Sans", "SIL Open Font License 1.1 / © Google, Red Hat", "PDF表示用の標準フォント", "vendor/standard_fonts/LICENSE_LIBERATION"],
+    ["PDFium 標準フォント(Foxit)", "BSD 3-Clause License / © PDFium Authors", "PDF表示用の標準フォント", "vendor/standard_fonts/LICENSE_FOXIT"],
+    ["OpenJPEG", "BSD 2-Clause License", "JPEG 2000 画像の表示", "vendor/wasm/LICENSE_OPENJPEG"],
+    ["PDF.js OpenJPEG decoder", "BSD 2-Clause License / © Mozilla Foundation", "JPEG 2000 画像の表示", "vendor/wasm/LICENSE_PDFJS_OPENJPEG"],
+    ["PDFium JBIG2", "BSD 3-Clause License / © PDFium Authors", "JBIG2 画像の表示", "vendor/wasm/LICENSE_JBIG2"],
+    ["PDF.js JBIG2 decoder", "Apache License 2.0 / © Mozilla Foundation", "JBIG2 画像の表示", "vendor/wasm/LICENSE_PDFJS_JBIG2"],
+    ["qcms", "MIT License / © Mozilla Corporation, Marti Maria", "色の変換", "vendor/wasm/LICENSE_QCMS"],
+    ["PDF.js qcms wrapper", "BSD 2-Clause License / © Mozilla Foundation", "色の変換", "vendor/wasm/LICENSE_PDFJS_QCMS"],
+    ["QuickJS", "MIT License / © Fabrice Bellard, Charlie Gordon", "PDF内のスクリプト処理", "vendor/wasm/LICENSE_QUICKJS"],
+  ];
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const list = document.getElementById("list");
+  list.innerHTML = ITEMS.map(([name, lic, use, file]) =>
+    `<details data-file="${esc(file)}"><summary>${esc(name)}<span>${esc(use)}</span></summary>
+      <div class="desc">${esc(lic)}</div><pre>読み込み中…</pre></details>`).join("");
+  list.querySelectorAll("details").forEach((d) => d.addEventListener("toggle", async () => {
+    const pre = d.querySelector("pre");
+    if (!d.open || pre.dataset.done) return;
+    try {
+      const r = await fetch(d.dataset.file);
+      if (!r.ok) throw new Error();
+      pre.textContent = await r.text();
+      pre.dataset.done = "1";
+    } catch {
+      pre.innerHTML = `読み込めませんでした(オフラインの可能性があります)。<a href="${esc(d.dataset.file)}">ライセンス文を開く</a>`;
+    }
+  }));
+</script>
+</body>
+</html>

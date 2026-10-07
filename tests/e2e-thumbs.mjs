@@ -35,7 +35,7 @@ await dropFile("drop");
 await page.waitForFunction((n) => window.__apdf.model.pages.length > n, ids0.length, { timeout: 15000 });
 const p1 = await page.evaluate(() => window.__apdf.model.pages.map((p) => ({ id: p.id, src: p.srcId })));
 const added = p1.length - ids0.length;
-check("別PDFのページが1ページ目の直後に入る", p1[0].id === ids0[0] && p1[1].src !== p1[0].src && p1[1 + added].id === ids0[1], JSON.stringify(p1.map((p) => p.id.slice(-4))));
+check("別PDFのページ(1ページ)が1回だけ、1ページ目の直後に入る", added === 1 && p1[0].id === ids0[0] && p1[1].src !== p1[0].src && p1[1 + added].id === ids0[1], JSON.stringify(p1.map((p) => p.id.slice(-4))));
 check("挿入線は消える", await page.evaluate(() => [...document.querySelectorAll(".drop-line")].every((l) => l.hidden)));
 await page.click("#btnUndo");
 check("取り消しで元に戻る", JSON.stringify(await ids()) === JSON.stringify(ids0));

@@ -1,0 +1,11 @@
+Copyright (c) 2026 yuyaokuyama-dev. All rights reserved.
+
+PDF Files のソースコード・ロゴ・アイコンの著作権は作者に帰属します。
+作者の許可なく複製・改変・再配布・販売することはできません。
+
+This software and its logo/icons are proprietary. No license is granted to
+copy, modify, redistribute or sell them without the author's written permission.
+
+同梱しているオープンソースのライブラリ・フォント(vendor/ 以下)は、それぞれのライセンスに従います。
+一覧は licenses.html(アプリの「設定」→「オープンソースライセンス」)を参照してください。
+Third-party components under vendor/ remain under their own licenses; see licenses.html.

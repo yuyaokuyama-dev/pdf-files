@@ -1,5 +1,5 @@
 // ページ一覧(サムネイル): 並べ替え(ドラッグ/↑↓)・削除・回転・複数選択削除・ページ追加・
-// 別PDFのドロップ挿入・ページの書き出し(画面外へドラッグ/チェックしたページ)
+// ページの書き出し(画面外へドラッグ/チェックしたページ)。別PDFのドロップ挿入は app.js の wireDrop が受け持つ
 import { icon } from "./icons.js";
 import { renderShapes } from "./render.js";
 import { confirmDialog, toast } from "./ui.js";
@@ -8,12 +8,11 @@ const TW = 128; // サムネイル幅(px)
 const PAGE_MIME = "application/x-pdffiles-page"; // ページ一覧内のドラッグを他のドラッグ(ファイル等)と見分ける
 
 export class Thumbs {
-  constructor({ el, editor, getPdfPage, onAdd, onDropFiles, onExport }) {
+  constructor({ el, editor, getPdfPage, onAdd, onExport }) {
     this.el = el;
     this.editor = editor;
     this.getPdfPage = getPdfPage;
     this.onAdd = onAdd;
-    this.onDropFiles = onDropFiles; // (files, atIndex) 別PDFをページの間に挿入
     this.onExport = onExport; // (pageIds) そのページだけのPDFを作る
     this.cache = new Map();
     this.checked = new Set();
@@ -34,7 +33,6 @@ export class Thumbs {
     let line = null; // 挿入線(初めてドラッグしたときに作る)
     let dragId = null; // ページ一覧の中からドラッグ中のページ
     let lastOver = 0; // 最後に画面内で dragover を受けた時刻(画面外へのドロップ判定に使う)
-    const isFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
     const hide = () => line && (line.hidden = true);
     document.addEventListener("dragover", () => (lastOver = Date.now()));
 
@@ -58,11 +56,9 @@ export class Thumbs {
       if (outside && this.model.page(id)) this.onExport?.([id]);
     });
     ["dragenter", "dragover"].forEach((type) => this.el.addEventListener(type, (e) => {
-      const files = isFiles(e);
-      if (!files && !dragId) return;
+      if (!dragId) return;
       e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = files ? "copy" : "move";
+      e.dataTransfer.dropEffect = "move";
       const slot = this.slot(e.clientY);
       if (!slot) return hide();
       if (!line) {
@@ -78,18 +74,11 @@ export class Thumbs {
     });
     this.el.addEventListener("drop", (e) => {
       hide();
-      const files = [...(e.dataTransfer?.files || [])];
-      const id = dragId || e.dataTransfer?.getData(PAGE_MIME);
-      if (!files.length && !id) return;
+      const id = dragId;
+      if (!id) return;
       e.preventDefault();
-      e.stopPropagation();
       const slot = this.slot(e.clientY);
       const at = slot ? slot.index : this.model.pages.length;
-      if (files.length) {
-        const pdfs = files.filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
-        if (!pdfs.length) return toast("PDFファイルをドロップしてください", { error: true });
-        return this.onDropFiles?.(pdfs, at);
-      }
       // 挿入位置(ページの間)へ移動。自分より後ろへ動かすときは、抜いた分だけ番号が1つ前にずれる
       const from = this.model.indexOf(id);
       if (from >= 0) this.model.movePage(id, at > from ? at - 1 : at);

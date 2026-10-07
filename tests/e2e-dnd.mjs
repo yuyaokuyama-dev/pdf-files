@@ -16,25 +16,28 @@ await page.click("#btnPages");
 check("ボタンでページ一覧が開く", await page.locator("#thumbs").isVisible());
 await page.click("#btnPages");
 
-// ドラッグ&ドロップ: 1ページ目と2ページ目の間に別PDFを挿入
+// ドラッグ&ドロップ: 左のページ一覧の1ページ目と2ページ目の間に別PDFを挿入
 const n0 = await page.evaluate(() => window.__apdf.model.pages.length);
 const ids0 = await page.evaluate(() => window.__apdf.model.pages.map((p) => p.id));
-const y = await page.evaluate(() => { const e = [...document.querySelectorAll("#pages .page")]; const a = e[0].getBoundingClientRect(), b = e[1].getBoundingClientRect(); return (a.bottom + b.top) / 2 + 2; });
-const x = await page.evaluate(() => document.querySelector("#pages .page").getBoundingClientRect().left + 100);
-const dispatch = (type, withFile) => page.evaluate(async ([type, withFile, x, y]) => {
+const dispatch = (sel, type, withFile, x, y) => page.evaluate(async ([sel, type, withFile, x, y]) => {
   const dt = new DataTransfer();
   if (withFile) {
     const buf = await (await fetch("/tests/fixtures/rotated.pdf")).arrayBuffer();
     dt.items.add(new File([buf], "other.pdf", { type: "application/pdf" }));
   }
   const ev = new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt });
-  document.querySelector("#viewer").dispatchEvent(ev);
+  document.querySelector(sel).dispatchEvent(ev);
   return ev.defaultPrevented;
-}, [type, withFile, x, y]);
-await dispatch("dragover", true);
+}, [sel, type, withFile, x, y]);
+// ファイルを持ってくるとページ一覧が開く
+await dispatch("#viewer", "dragenter", true, 400, 400);
+check("ファイルをドラッグしてくるとページ一覧が開く", await page.locator("#thumbs").isVisible());
+await page.waitForFunction(() => document.querySelectorAll("#thumbs .thumb").length >= 2);
+const tb = await page.evaluate(() => { const e = [...document.querySelectorAll("#thumbs .thumb")]; const a = e[0].getBoundingClientRect(), b = e[1].getBoundingClientRect(); return { x: a.left + 40, y: (a.bottom + b.top) / 2 + 2 }; });
+await dispatch("#thumbs .thumb", "dragover", true, tb.x, tb.y);
 const line = await page.evaluate(() => { const l = document.querySelector(".drop-line"); return l && !l.hidden ? l.getBoundingClientRect().top : null; });
-check("ドロップ位置(ページの間)に挿入線が出る", line !== null && Math.abs(line - y) < 12, `${line} vs ${y}`);
-await dispatch("drop", true);
+check("ページ一覧のドロップ位置(ページの間)に挿入線が出る", line !== null && Math.abs(line - tb.y) < 12, `${line} vs ${tb.y}`);
+await dispatch("#thumbs .thumb", "drop", true, tb.x, tb.y);
 await page.waitForFunction((n) => window.__apdf.model.pages.length > n, n0, { timeout: 15000 });
 const ids1 = await page.evaluate(() => window.__apdf.model.pages.map((p) => ({ id: p.id, src: p.srcId })));
 const added = ids1.length - n0;
@@ -44,18 +47,22 @@ check("挿入線は消える", await page.evaluate(() => document.querySelector(
 await page.click("#btnUndo");
 check("取り消しで元に戻る", (await page.evaluate(() => window.__apdf.model.pages.length)) === n0);
 
-// 先頭より上・末尾より下にも挿入できる
-const top = await page.evaluate(() => document.querySelector("#pages .page").getBoundingClientRect().top - 5);
-await page.evaluate(() => { document.querySelector("#viewer").scrollTop = 0; });
-await page.evaluate(async ([x]) => {
-  const dt = new DataTransfer();
-  const buf = await (await fetch("/tests/fixtures/rotated.pdf")).arrayBuffer();
-  dt.items.add(new File([buf], "other.pdf", { type: "application/pdf" }));
-  document.querySelector("#viewer").dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, clientX: x, clientY: 2, dataTransfer: dt }));
-}, [x]);
+// 先頭のページより上にドロップすると先頭に入る
+const top = await page.evaluate(() => { const r = document.querySelector("#thumbs .thumb").getBoundingClientRect(); return { x: r.left + 40, y: r.top + 3 }; });
+await dispatch("#thumbs .thumb", "drop", true, top.x, top.y);
 await page.waitForFunction((n) => window.__apdf.model.pages.length > n, n0, { timeout: 15000 });
 const first = await page.evaluate(() => window.__apdf.model.pages[0].id);
 check("ページより上にドロップすると先頭に入る", first !== ids0[0]);
+
+// 作業画面にドロップすると、ページは追加せず新しいタブで開く
+const before = await page.evaluate(() => ({ id: window.__apdf.model.meta.projectId, n: window.__apdf.model.pages.length }));
+await dispatch("#viewer", "drop", true, 600, 500);
+await page.waitForFunction((id) => window.__apdf.model.meta.projectId !== id && window.__apdf.model.pages.length > 0, before.id, { timeout: 15000 });
+check("作業画面へのドロップは新しいタブで開く", (await page.evaluate(() => window.__apdf.model.meta.name)) === "other.pdf" && (await page.locator("#tabbar .tab").count()) === 2);
+await page.locator("#tabbar .tab").first().click();
+await page.waitForFunction((id) => window.__apdf.model.meta.projectId === id, before.id, { timeout: 15000 });
+const nAfter = await page.evaluate(() => window.__apdf.model.pages.length);
+check("元のファイルのページ数は変わらない", nAfter === before.n, `${before.n} → ${nAfter}`);
 
 // メール送信方式の切替(設定)
 await page.click("#btnUser");
