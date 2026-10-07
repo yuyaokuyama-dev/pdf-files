@@ -10,3 +10,4 @@ Google Drive 保存・履歴 / Gmail 送信 / オフライン / メールアド�
 - テスト: `node --test tests/geometry.test.mjs tests/auth.test.mjs tests/google.test.mjs`、E2E は `node tests/e2e-*.mjs`(Playwright 必要)
 - 制限: ID/パスワードは端末内のみ(同期なし)/ パスワード付きPDF非対応 / 「最小」最適化はテキスト選択不可 /
   ロゴのフォント(TimeBurner)はEULAのためアウトライン化のみ同梱
+- ライセンス: 本体は非公開ライセンス([LICENSE](LICENSE))。同梱OSSの一覧と全文は `licenses.html`(設定 → オープンソースライセンス)

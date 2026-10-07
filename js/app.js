@@ -1901,7 +1901,8 @@ async function openSettings() {
         <button class="btn" id="stGout">Googleの接続を解除</button></div>
       <div class="field"><b style="color:var(--ink)">アプリのバージョン</b>
         <div class="row" style="gap:10px;align-items:center"><span id="stVer" style="font-size:16px;color:var(--ink)">${APP_VERSION}</span><span class="note">(${APP_DATE})</span><button type="button" class="btn" id="stUpd">更新を確認</button></div>
-        <span class="note" id="stUpdMsg"></span></div>
+        <span class="note" id="stUpdMsg"></span>
+        <a class="note" href="licenses.html" target="_blank" rel="noopener">オープンソースライセンス</a></div>
       <p class="note">ログイン中のID: <b>${esc(S.user)}</b> ・ データはこの端末内に保存されます。</p>`,
     buttons: [{ label: "キャンセル", value: null }, { label: "保存", value: true, primary: true, action: async (d) => {
       G.setConfig({ clientId: d.querySelector("#stCid").value.trim(), apiKey: d.querySelector("#stKey").value.trim(), appId: d.querySelector("#stApp").value.trim() });
