@@ -1,5 +1,5 @@
 // Service Worker: アプリ本体を端末に保存し、オフラインでも全機能を使えるようにする。
-const VERSION = "v1.5.0";
+const VERSION = "v1.6.0";
 const CORE = `apdf-core-${VERSION}`;
 const RUNTIME = `apdf-runtime-${VERSION}`;
 
@@ -10,7 +10,7 @@ const CORE_FILES = [
   "css/app.css",
   "js/account.js", "js/app.js", "js/auth.js", "js/editor.js", "js/export.js", "js/geometry.js", "js/google.js", "js/drivebrowse.js",
   "js/icons.js", "js/model.js", "js/pad.js", "js/props.js", "js/raster.js", "js/version.js", "js/render.js",
-  "js/store.js", "js/thumbs.js", "js/ui.js",
+  "js/store.js", "js/tabs.js", "js/thumbs.js", "js/ui.js",
   "vendor/pdf.min.mjs", "vendor/pdf.worker.min.mjs", "vendor/pdf-lib.esm.min.js",
   "icons/logo.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
 ];
