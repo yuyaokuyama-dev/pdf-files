@@ -7,7 +7,7 @@ import { DASH_TYPES, normDash, arrowSizeOf, dist, clampSweep, rotateAbout } from
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
 const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "dim", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
-const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp" };
+const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp", eraser: "eraser" };
 
 /** 文字の回転: 箱の中心を動かさずに角度だけ変える */
 function rotateTextAbout(sh, deg) {
@@ -233,6 +233,12 @@ export class Props {
     if (t.type === "checkbox") v = t.checked;
     else if (t.type === "range" || t.type === "number") v = Number(t.value);
     else v = t.value;
+    if (key === "eraserSize") {
+      this.ed.setEraser({ size: v });
+      const out = this.el.querySelector('[data-v="eraserSize"]');
+      if (out) out.textContent = `${this.ed.eraser.size}px`;
+      return;
+    }
     if (key === "stampW") {
       if (!isInput && v > 0) {
         const mm = Math.min(200, Math.max(3, v));
@@ -292,6 +298,10 @@ export class Props {
       return;
     }
     switch (b.dataset.act) {
+      case "eraser-mode":
+        ed.setEraser({ mode: b.dataset.mode });
+        this.refresh();
+        break;
       case "close":
         this.dismissed = true;
         this.refresh();
@@ -353,8 +363,18 @@ export class Props {
       return `<label class="field">${label}<div class="row"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v}"><span class="val" data-v="${k}">${fmt ? fmt(v) : v}</span></div></label>`;
     };
     const parts = [];
-    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ" }[t] || "";
-    parts.push(`<div style="display:flex;align-items:center"><h3 style="flex:1">${title}${ctx.sel ? "(選択中)" : "(次に描くもの)"}</h3><button class="btn icon" data-act="close" style="min-height:28px;width:28px" aria-label="閉じる">${icon("x", 16)}</button></div>`);
+    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ", eraser: "消しゴム" }[t] || "";
+    parts.push(`<div style="display:flex;align-items:center"><h3 style="flex:1">${title}${ctx.sel ? "(選択中)" : t === "eraser" ? "" : "(次に描くもの)"}</h3><button class="btn icon" data-act="close" style="min-height:28px;width:28px" aria-label="閉じる">${icon("x", 16)}</button></div>`);
+
+    if (t === "eraser") {
+      const er = this.ed.eraser;
+      const partial = er.mode === "partial";
+      parts.push(`<div class="field">消し方<div class="actions" style="margin:0">
+        <button class="btn${partial ? "" : " primary"}" data-act="eraser-mode" data-mode="stroke">線ごと</button>
+        <button class="btn${partial ? " primary" : ""}" data-act="eraser-mode" data-mode="partial">なぞった部分</button></div></div>`);
+      if (partial) parts.push(`<label class="field">消しゴムの大きさ(円の直径)<div class="row"><input type="range" data-k="eraserSize" min="4" max="120" step="1" value="${er.size}"><span class="val" data-v="eraserSize">${er.size}px</span></div></label>`);
+      parts.push(`<p class="hint">${partial ? "ペンで書いた線の、円でなぞった部分だけを消します。線は途中で分かれます。" : "ペンで書いた線に触れると、その線を1本まるごと消します。"}取り消しで戻せます。</p>`);
+    }
 
     if (t === "stamp") {
       const stamps = await this.getStamps();

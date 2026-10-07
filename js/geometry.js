@@ -352,3 +352,71 @@ export function dashArray(dash, width = 1) {
     default: return null;
   }
 }
+
+/** 線分ab と線分cd の最短距離(交差していれば0) */
+export function segmentDistance(a, b, c, d) {
+  const cr = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const d1 = cr(c, d, a), d2 = cr(c, d, b), d3 = cr(a, b, c), d4 = cr(a, b, d);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return 0;
+  return Math.min(distToSegment(a, c, d), distToSegment(b, c, d), distToSegment(c, a, b), distToSegment(d, a, b));
+}
+
+/**
+ * 部分消しゴム: 折れ線 pts のうち、消しゴムの軌跡(線分ab を半径Rでなぞった範囲)に入る部分を取り除く。
+ * 触れていなければ null、触れていれば残った断片(点列)の配列を返す(全部消えたら空配列)。
+ * 境界は二分探索で求めるので、消しゴムの円の形どおりに切れる。
+ */
+export function eraseStroke(pts, a, b, R) {
+  const inside = (p) => distToSegment(p, a, b) <= R;
+  if (pts.length === 1) return inside(pts[0]) ? [] : null;
+  const step = Math.max(R / 4, 0.25);
+  const out = [];
+  let cur = [];
+  let touched = false;
+  const flush = () => {
+    if (cur.length >= 2) out.push(cur);
+    cur = [];
+  };
+  // 外→内 / 内→外 の境界点を求める
+  const edge = (p, q, pIn) => {
+    let lo = 0, hi = 1;
+    for (let k = 0; k < 12; k++) {
+      const m = (lo + hi) / 2;
+      const x = [p[0] + (q[0] - p[0]) * m, p[1] + (q[1] - p[1]) * m];
+      if (inside(x) === pIn) lo = m; else hi = m;
+    }
+    const m = pIn ? hi : lo;
+    return [p[0] + (q[0] - p[0]) * m, p[1] + (q[1] - p[1]) * m];
+  };
+  let prevIn = inside(pts[0]);
+  if (prevIn) touched = true;
+  else cur.push(pts[0]);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i - 1], q = pts[i];
+    if (segmentDistance(p, q, a, b) > R) {
+      // この区間は消しゴムに触れない(両端とも外側)
+      cur.push(q);
+      prevIn = false;
+      continue;
+    }
+    const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / step));
+    let s0 = p;
+    for (let k = 1; k <= n; k++) {
+      const s1 = k === n ? q : [p[0] + ((q[0] - p[0]) * k) / n, p[1] + ((q[1] - p[1]) * k) / n];
+      const in1 = inside(s1);
+      if (in1) touched = true;
+      if (!prevIn && in1) {
+        cur.push(edge(s0, s1, false));
+        flush();
+      } else if (prevIn && !in1) {
+        cur.push(edge(s0, s1, true), s1);
+      } else if (!in1 && k === n) {
+        cur.push(s1);
+      }
+      prevIn = in1;
+      s0 = s1;
+    }
+  }
+  flush();
+  return touched ? out : null;
+}

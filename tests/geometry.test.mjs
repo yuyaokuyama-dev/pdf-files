@@ -187,3 +187,34 @@ test("円弧: 開き角の範囲と角度計算・回転", () => {
   const p = rotateAbout([10, 0], [0, 0], 90);
   assert.ok(Math.abs(p[0]) < 1e-9 && Math.abs(p[1] - 10) < 1e-9);
 });
+
+test("eraseStroke: 触れていなければ null", async () => {
+  const { eraseStroke } = await import("../js/geometry.js");
+  assert.equal(eraseStroke([[0, 0], [100, 0]], [50, 30], [50, 30], 10), null);
+});
+
+test("eraseStroke: 中央を円で消すと2本に分かれ、切れ目は円の境界", async () => {
+  const { eraseStroke } = await import("../js/geometry.js");
+  const r = eraseStroke([[0, 0], [100, 0]], [50, 0], [50, 0], 10);
+  assert.equal(r.length, 2);
+  const endA = r[0][r[0].length - 1], startB = r[1][0];
+  assert.ok(Math.abs(endA[0] - 40) < 0.01, `left cut ${endA}`);
+  assert.ok(Math.abs(startB[0] - 60) < 0.01, `right cut ${startB}`);
+  assert.deepEqual(r[0][0], [0, 0]);
+  assert.deepEqual(r[1][r[1].length - 1], [100, 0]);
+});
+
+test("eraseStroke: 端を消すと1本、全体を覆うと空", async () => {
+  const { eraseStroke } = await import("../js/geometry.js");
+  const r = eraseStroke([[0, 0], [50, 0], [100, 0]], [100, 0], [100, 0], 10);
+  assert.equal(r.length, 1);
+  assert.ok(Math.abs(r[0][r[0].length - 1][0] - 90) < 0.01);
+  assert.deepEqual(eraseStroke([[0, 0], [10, 0]], [0, 0], [10, 0], 5), []);
+});
+
+test("eraseStroke: なぞった軌跡(線分)が線を横切ると切れる", async () => {
+  const { eraseStroke } = await import("../js/geometry.js");
+  const r = eraseStroke([[0, 0], [100, 0]], [50, -40], [50, 40], 5);
+  assert.equal(r.length, 2);
+  assert.ok(Math.abs(r[0].at(-1)[0] - 45) < 0.01 && Math.abs(r[1][0][0] - 55) < 0.01);
+});
