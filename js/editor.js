@@ -1,7 +1,7 @@
 // エディタ本体: ページ表示・ズーム・描画ツール・選択/移動/頂点編集・テキスト編集
 import {
   dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, dimOpts, simplify,
-  arcGeometry, arcAngleOf, arcBounds, clampSweep, ARC_MIN, ARC_MAX,
+  arcGeometry, arcAngleOf, arcBounds, clampSweep, ARC_MIN, ARC_MAX, eraseStroke,
 } from "./geometry.js";
 import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, textCorners, fontCss, labelFor, arcLines } from "./render.js";
 
@@ -45,6 +45,7 @@ export class Editor {
     this.arrowSize = 10; // 矢印の大きさ(線の太さとは別)
     this.arc = { sweep: 180, r1: false, r2: false }; // 円弧の開き角(度)と半径の直線①②
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
+    this.eraser = { mode: "stroke", size: 24 }; // 消しゴム: stroke=線ごと / partial=なぞった部分だけ(size=円の直径・画面px)
     this.loadDefaults();
     this.pendingStamp = null;
     this.sel = null;
@@ -165,6 +166,8 @@ export class Editor {
     const el = { wrap, canvas, svg, layer, draft, ui, no, renderedScale: 0, task: null, token: 0 };
     this.els.set(page.id, el);
     svg.addEventListener("pointerdown", (e) => this.onPointerDown(e, page.id));
+    svg.addEventListener("pointermove", (e) => this.eraserHover(e, page.id));
+    svg.addEventListener("pointerleave", () => this.g?.kind !== "erase" && el.draft.replaceChildren());
     this.refreshLayer(page, true);
     this.io.observe(wrap);
     this.applyToolClass(el);
@@ -318,6 +321,7 @@ export class Editor {
     this.cancelGesture();
     this.returnTool = null;
     this.tool = t;
+    this.clearDraft();
     for (const el of this.els.values()) this.applyToolClass(el);
     if (t !== "select") this.setSelection(null);
     this.emit("tool", t);
@@ -467,14 +471,37 @@ export class Editor {
     this.drawDraft();
   }
 
-  /* ---------- 消しゴム(ペンで書いた線を、なぞった部分ごと1本単位で消す) ---------- */
+  /* ---------- 消しゴム ----------
+   * 線ごと(stroke): ペンで書いた線を、なぞった1本単位で消す
+   * 部分(partial): ペンで書いた線の、円でなぞった部分だけを消す(線は分割される) */
+  setEraser(o) {
+    Object.assign(this.eraser, o);
+    this.eraser.size = Math.max(4, Math.min(120, Number(this.eraser.size) || 24));
+    if (this.eraser.mode !== "partial") this.clearDraft();
+    this.saveDefaults();
+  }
+  /** 部分消しゴムの円(画面上の直径 size px)をページ座標で描く */
+  drawEraserCursor(pageId, p) {
+    const el = this.els.get(pageId);
+    if (!el) return;
+    el.draft.replaceChildren(sv("circle", {
+      cx: p[0], cy: p[1], r: this.eraser.size / 2 / this.zoom,
+      fill: "rgba(37,99,235,0.08)", stroke: "#2563eb", "stroke-width": 1 / this.zoom, class: "eraser-cursor",
+    }));
+  }
+  eraserHover(e, pageId) {
+    if (this.tool !== "eraser" || this.eraser.mode !== "partial" || this.g) return;
+    if (e.pointerType === "touch") return; // 指は触れている間だけ表示
+    this.drawEraserCursor(pageId, this.pt(e, pageId));
+  }
   eraseDown(e, pageId) {
     const el = this.els.get(pageId);
     const page = this.model.page(pageId);
     if (!el || !page) return;
     const before = this.model.snapshot();
+    const partial = this.eraser.mode === "partial";
     let last = this.pt(e, pageId);
-    const hit = (a, b) => {
+    const hitStroke = (a, b) => {
       const r = 12 / this.zoom; // 画面上で約12pxの太さ
       const keep = [];
       let removed = false;
@@ -489,21 +516,52 @@ export class Editor {
         }
         if (touched) removed = true; else keep.push(s);
       }
-      if (removed) { page.shapes = keep; this.model.emit("change"); }
+      if (removed) page.shapes = keep;
+      return removed;
+    };
+    const hitPartial = (a, b) => {
+      const r = this.eraser.size / 2 / this.zoom;
+      const next = [];
+      let changed = false;
+      for (const s of page.shapes) {
+        if (s.type !== "pen" || s.locked) { next.push(s); continue; }
+        // 線の太さの半分だけ広げて、円に入った部分の線が見た目でも残らないようにする
+        const parts = eraseStroke(s.pts, a, b, r + (s.style?.width || 1) / 2);
+        if (!parts) { next.push(s); continue; }
+        changed = true;
+        parts.forEach((pts, i) => next.push({ ...clone(s), id: i ? uid() : s.id, pts }));
+      }
+      if (changed) page.shapes = next;
+      return changed;
+    };
+    const hitOne = partial ? hitPartial : hitStroke;
+    const hit = (segs) => {
+      let changed = false;
+      for (const [a, b] of segs) if (hitOne(a, b)) changed = true;
+      if (changed) this.model.emit("change"); // 1回の移動につき再描画は1度だけ
     };
     this.g = { kind: "erase", pageId, id: e.pointerId };
-    hit(last, last);
+    hit([[last, last]]);
+    if (partial) this.drawEraserCursor(pageId, last);
     el.svg.setPointerCapture?.(e.pointerId);
     const move = (ev) => {
-      const p = this.pt(ev, pageId);
-      hit(last, p);
-      last = p;
+      if (ev.pointerId !== e.pointerId) return;
+      const events = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [];
+      const segs = [];
+      for (const ce of events.length ? events : [ev]) {
+        const p = this.pt(ce, pageId);
+        segs.push([last, p]);
+        last = p;
+      }
+      hit(segs);
+      if (partial) this.drawEraserCursor(pageId, last);
     };
     const stop = (commit) => {
       el.svg.removeEventListener("pointermove", move);
       el.svg.removeEventListener("pointerup", up);
       el.svg.removeEventListener("pointercancel", cancel);
       this.g = null;
+      if (partial && e.pointerType === "touch") el.draft.replaceChildren();
       if (commit) this.model.commit(before);
     };
     const up = () => stop(true);
@@ -1153,13 +1211,14 @@ export class Editor {
       if (d.cloudPitch) this.cloudPitch = d.cloudPitch;
       if (d.arrowSize) this.arrowSize = d.arrowSize;
       if (d.arc) Object.assign(this.arc, d.arc);
+      if (d.eraser) Object.assign(this.eraser, d.eraser);
     } catch {
       /* 破損していたら既定のまま */
     }
   }
   saveDefaults() {
     try {
-      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc }));
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc, eraser: this.eraser }));
     } catch {
       /* 保存できなくてもこのセッションでは有効 */
     }
