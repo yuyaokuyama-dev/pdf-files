@@ -9,6 +9,7 @@ const ICONS = {
   arrow: P("M5 19L19 5M9.5 5H19v9.5"),
   rect: P("M4 6h16v12H4z"),
   ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>',
+  arc: P("M4 8a8 8 0 0016 0"),
   polygon: P("M12 3.5l8 6-3 10.5H7L4 9.5z"),
   cloud: P("M7.5 18.5a4 4 0 01-.6-7.9 5.2 5.2 0 019.8-1.4 4.6 4.6 0 01.3 9.3z"),
   text: P("M5 7V4.5h14V7M12 4.5v15M9 19.5h6"),

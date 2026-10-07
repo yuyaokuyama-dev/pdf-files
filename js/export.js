@@ -2,9 +2,9 @@
 import { PDFDocument, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
-  dimensionGeometry, rectPoints, dashArray, dimOpts,
+  dimensionGeometry, rectPoints, dashArray, dimOpts, arcPath,
 } from "./geometry.js";
-import { textMetrics, labelFor, serializeOverlay } from "./render.js";
+import { textMetrics, labelFor, serializeOverlay, arcLines } from "./render.js";
 import { TEXT_LINE } from "./render.js";
 import { renderTextPng, recompressImage, renderPageJpeg } from "./raster.js";
 
@@ -144,6 +144,9 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
           break;
         case "ellipse":
           path(ellipsePath(sh.pts[0], sh.pts[1]), { ...strokeOpts, ...fillOpts });
+          break;
+        case "arc":
+          path(arcPath(sh.pts[0], sh.pts[1], sh.sweep, arcLines(sh)), strokeOpts);
           break;
         case "polygon":
           path(polygonPath(sh.pts), { ...strokeOpts, ...fillOpts });

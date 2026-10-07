@@ -251,6 +251,7 @@ const TOOLS = [
   { id: "arrow", icon: "arrow", label: "矢印", hint: "ドラッグで矢印を引きます" },
   { id: "rect", icon: "rect", label: "四角", hint: "ドラッグで四角を描きます" },
   { id: "ellipse", icon: "ellipse", label: "丸", hint: "ドラッグで丸(楕円)を描きます" },
+  { id: "arc", icon: "arc", label: "円弧", hint: "中心から外へドラッグして半径と始まりの向きを決めます。半円・1/4円・3/4円は右のパネルで切り替え" },
   { id: "polygon", icon: "polygon", label: "多角形", hint: "角をタップして点を打ち、最初の点をタップまたは「完了」で閉じます" },
   { id: "cloud", icon: "cloud", label: "雲", hint: "ドラッグで雲マークを描きます。ピッチは右のパネルで変更" },
   { id: "text", icon: "text", label: "文字", hint: "入れたい場所をタップして文字を入力します" },
