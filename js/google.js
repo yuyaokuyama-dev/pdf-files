@@ -5,6 +5,10 @@ export const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send", // メール送信のみ(受信箱は読めない)
 ].join(" ");
 
+/** アプリ内のドライブ一覧(iPhone等でGoogleの選択画面が使えない場合)で、既存のPDFを見るための権限。閲覧のみ・必要になったときだけ追加で求める */
+export const SCOPE_BROWSE = "https://www.googleapis.com/auth/drive.readonly";
+const BROWSE_KEY = "apdf_drive_browse_granted_v1";
+
 const CFG_KEY = "apdf_google_cfg_v1";
 const SRV_KEY = "apdf_google_srv_v1"; // サーバー(Vercel環境変数)から配布された値
 const nonEmpty = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v));
@@ -77,21 +81,22 @@ const ls = (fn) => {
 let token = ss((s) => JSON.parse(s.getItem(TOK_KEY) || "null")); // { access_token, expiresAt }
 let tokenClient = null;
 
-export async function getToken({ prompt } = {}) {
+export async function getToken({ prompt, browse = false } = {}) {
   needOnline();
   const cfg = getConfig();
   if (!cfg.clientId) throw new Error("Google連携が未設定です。「設定」でクライアントIDを入力してください");
-  if (token && token.expiresAt > Date.now() + 60_000 && !prompt) return token.access_token;
+  if (token && token.expiresAt > Date.now() + 60_000 && !prompt && (!browse || token.browse)) return token.access_token;
   // iOSはタップ直後でないとログイン用ポップアップを開けない。スクリプト読込をawaitすると
   // その間に「タップ操作」の扱いが切れるため、読込済みなら待たずに同期で進める(事前読込: preloadGoogle)
   if (!globalThis.google?.accounts?.oauth2) await loadScript("https://accounts.google.com/gsi/client");
   return new Promise((resolve, reject) => {
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: cfg.clientId,
-      scope: SCOPES,
+      scope: browse ? `${SCOPES} ${SCOPE_BROWSE}` : SCOPES,
       callback: (r) => {
         if (r.error) return reject(new Error(`Googleログインに失敗しました: ${r.error_description || r.error}`));
-        token = { access_token: r.access_token, expiresAt: Date.now() + (r.expires_in || 3600) * 1000 };
+        token = { access_token: r.access_token, expiresAt: Date.now() + (r.expires_in || 3600) * 1000, browse: !!browse || !!token?.browse };
+        if (browse) ls((l) => l.setItem(BROWSE_KEY, "1"));
         ss((s) => s.setItem(TOK_KEY, JSON.stringify(token)));
         ls((l) => l.setItem(GRANT_KEY, "1"));
         resolve(token.access_token);
@@ -102,14 +107,15 @@ export async function getToken({ prompt } = {}) {
       },
     });
     // 初回だけ同意画面を出す。許可済みなら "" にして、アカウント選択も省く(前回と同じアカウントを自動選択)
-    tokenClient.requestAccessToken({ prompt: prompt ?? (ls((l) => l.getItem(GRANT_KEY)) ? "" : "consent") });
+    const granted = ls((l) => l.getItem(browse ? BROWSE_KEY : GRANT_KEY));
+    tokenClient.requestAccessToken({ prompt: prompt ?? (granted ? "" : "consent") });
   });
 }
 /** ログイン直後などに呼んでおく: Google側のスクリプトを先に読み込み、ボタンを押した瞬間にログイン画面を開けるようにする */
 export function preloadGoogle() {
   if (!navigator.onLine || !getConfig().clientId) return;
   loadScript("https://accounts.google.com/gsi/client").catch(() => {});
-  loadScript("https://apis.google.com/js/api.js").catch(() => {});
+  if (!useOwnPicker()) loadScript("https://apis.google.com/js/api.js").catch(() => {});
 }
 export const isSignedIn = () => !!(token && token.expiresAt > Date.now());
 export function signOut() {
@@ -217,6 +223,40 @@ export async function downloadFile(id) {
   return { id, name: meta.name, modifiedTime: meta.modifiedTime, parents: meta.parents || [], bytes: new Uint8Array(await r.arrayBuffer()) };
 }
 
+/* ---------- アプリ内のドライブ一覧(Googleの選択画面の代わり) ---------- */
+const PICKER_MODE_KEY = "apdf_picker_mode_v1"; // auto | google | own
+export const getPickerMode = () => ls((l) => l.getItem(PICKER_MODE_KEY)) || "auto";
+export const setPickerMode = (v) => ls((l) => l.setItem(PICKER_MODE_KEY, v));
+/** Googleの選択画面はiPhone/iPadのSafariでCookie制限により動かないため、auto のときは iOS 系ではアプリ内の一覧を使う */
+export function useOwnPicker() {
+  const m = getPickerMode();
+  if (m !== "auto") return m === "own";
+  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+export const startFolderId = () => startParent();
+
+const qs = (s) => String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+async function listFiles(q, { max = 300 } = {}) {
+  const out = [];
+  let pageToken = "";
+  do {
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&orderBy=${encodeURIComponent("folder,name")}&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives&fields=${encodeURIComponent("nextPageToken,files(id,name,mimeType,modifiedTime,size)")}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+    const j = await (await api(url)).json();
+    out.push(...(j.files || []));
+    pageToken = j.nextPageToken || "";
+  } while (pageToken && out.length < max);
+  return out;
+}
+/** フォルダの中身(フォルダとPDF)。foldersOnly なら フォルダだけ */
+export const listChildren = (parent, { foldersOnly = false } = {}) =>
+  listFiles(`'${qs(parent)}' in parents and trashed=false and (mimeType='application/vnd.google-apps.folder'${foldersOnly ? "" : " or mimeType='application/pdf'"})`);
+export const searchPdfs = (text) => listFiles(`name contains '${qs(text)}' and mimeType='application/pdf' and trashed=false`, { max: 100 });
+export async function listSharedDrives() {
+  const j = await (await api("https://www.googleapis.com/drive/v3/drives?pageSize=100&fields=drives(id,name)")).json();
+  return j.drives || [];
+}
+
 /** このアプリで開いた/保存した PDF の一覧(drive.file スコープの範囲。別端末で保存した分も出る) */
 export async function listDriveFiles(pageSize = 30) {
   const q = encodeURIComponent("mimeType='application/pdf' and trashed=false");
@@ -237,8 +277,17 @@ export async function uploadPdf({ name, bytes, fileId, folderId }) {
   const url = fileId
     ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime`
     : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,modifiedTime";
-  const r = await api(url, { method: fileId ? "PATCH" : "POST", headers: { "Content-Type": contentType }, body });
-  return r.json();
+  try {
+    const r = await api(url, { method: fileId ? "PATCH" : "POST", headers: { "Content-Type": contentType }, body });
+    return r.json();
+  } catch (e) {
+    // アプリの権限外のフォルダ(アプリ内の一覧で選んだ場所など)には作れないことがある → マイドライブ直下に保存する
+    if (!fileId && folderId && /\((404|403)\)/.test(e.message)) {
+      const r = await uploadPdf({ name, bytes });
+      return { ...r, fellBack: true };
+    }
+    throw e;
+  }
 }
 
 /* ---------- Gmail ---------- */
