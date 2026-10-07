@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   cloudPath, makeScale, measure, formatLength, dimensionGeometry, rectPoints, signedArea,
   smoothPath, createPenFilter, simplify, pointInPolygon, distToSegment, arrowHead, ellipsePath, arrowSizeOf,
+  arcGeometry, arcPath, arcBounds, arcAngleOf, clampSweep, rotateAbout,
 } from "../js/geometry.js";
 
 test("rectPoints は時計回り(画面)で面積が正", () => {
@@ -150,4 +151,39 @@ test("矢印のサイズ: 個別指定が優先され、無い従来図形は線
   assert.equal(arrowSizeOf({ style: { width: 1 } }), 10);
   assert.equal(arrowSizeOf({ style: { width: 4 } }), 18);
   assert.equal(arrowSizeOf({ headSize: 10, style: { width: 8 } }), 10);
+});
+
+test("円弧: 半円は中心の反対側で終わり、半径は1つ(正円)", () => {
+  const g = arcGeometry([100, 100], [150, 100], 180);
+  assert.equal(g.r, 50);
+  assert.ok(Math.abs(g.b[0] - 50) < 1e-9 && Math.abs(g.b[1] - 100) < 1e-9);
+  assert.ok(Math.abs(g.mid[1] - 150) < 1e-9); // 時計回り(画面)なので下側を通る
+  assert.match(arcPath([100, 100], [150, 100], 180), /^M150 100 A50 50 0 0 1 50 100$/);
+});
+
+test("円弧: 3/4円は大きい弧フラグ、直線①②の表示切り替え", () => {
+  assert.match(arcPath([0, 0], [10, 0], 270), / A10 10 0 1 1 /);
+  assert.ok(arcPath([0, 0], [10, 0], 90, { r1: true }).startsWith("M0 0 L10 0 A"));
+  assert.ok(arcPath([0, 0], [10, 0], 90, { r2: true }).endsWith("L0 0"));
+  assert.ok(arcPath([0, 0], [10, 0], 90, { r1: true, r2: true }).endsWith("L0 0 Z"));
+  assert.ok(!/L/.test(arcPath([0, 0], [10, 0], 90)));
+});
+
+test("円弧: 外接枠は弧が通る範囲だけ(直線を出すと中心も含む)", () => {
+  const b = arcBounds([0, 0], [10, 0], 90);
+  assert.deepEqual([b.x, b.y, b.w, b.h].map((v) => +v.toFixed(6)), [0, 0, 10, 10]);
+  const h = arcBounds([0, 0], [0, -10], 180); // 上 → 右 → 下
+  assert.ok(Math.abs(h.x) < 1e-9 && Math.abs(h.w - 10) < 1e-9 && Math.abs(h.h - 20) < 1e-9);
+  const q = arcBounds([0, 0], [10, 0], 45, { r1: true });
+  assert.ok(Math.abs(q.x) < 1e-9 && Math.abs(q.y) < 1e-9);
+});
+
+test("円弧: 開き角の範囲と角度計算・回転", () => {
+  assert.equal(clampSweep(0), 1);
+  assert.equal(clampSweep(400), 359);
+  assert.equal(clampSweep("x"), 180);
+  assert.ok(Math.abs(arcAngleOf([0, 0], [10, 0], [0, 10]) - 90) < 1e-9);
+  assert.ok(Math.abs(arcAngleOf([0, 0], [10, 0], [0, -10]) - 270) < 1e-9);
+  const p = rotateAbout([10, 0], [0, 0], 90);
+  assert.ok(Math.abs(p[0]) < 1e-9 && Math.abs(p[1] - 10) < 1e-9);
 });

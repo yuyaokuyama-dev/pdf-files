@@ -2,6 +2,7 @@
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
   dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
+  arcPath, arcBounds, arcGeometry,
 } from "./geometry.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -62,6 +63,8 @@ export function shapeBounds(shape, page) {
       const g = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, shape.size || 12, dimOpts(shape));
       return bbox([...shape.pts, g.line[0], g.line[1], g.textPos, ...(g.leader || [])]);
     }
+    case "arc":
+      return arcBounds(shape.pts[0], shape.pts[1], shape.sweep, arcLines(shape));
     case "cloud": {
       const b = bbox(shape.pts);
       const m = (shape.pitch || 16) * 0.5;
@@ -79,6 +82,9 @@ function el(name, attrs = {}, parent) {
   return e;
 }
 
+/** 円弧の半径の直線①(中心→始点)・直線②(中心→終点)を出すか */
+export const arcLines = (shape) => ({ r1: !!shape.r1, r2: !!shape.r2 });
+
 /** 図形が持つ「頂点」(ハンドル表示・編集用)。寸法線のオフセットは別ハンドル */
 export function shapeVertices(shape) {
   switch (shape.type) {
@@ -89,6 +95,10 @@ export function shapeVertices(shape) {
     case "ellipse":
     case "image":
       return rectPoints(shape.pts[0], shape.pts[1]); // 4隅(対角を保って編集)
+    case "arc": {
+      const g = arcGeometry(shape.pts[0], shape.pts[1], shape.sweep);
+      return [g.a, g.b]; // 円弧の両端(開き角を変える)
+    }
     default:
       return shape.pts;
   }
@@ -153,6 +163,12 @@ export function renderShape(shape, parent, opts = {}) {
       const d = ellipsePath(shape.pts[0], shape.pts[1]);
       el("path", { d, ...fillAttrs, ...common }, g);
       hit(d, fill !== "none");
+      break;
+    }
+    case "arc": {
+      const d = arcPath(shape.pts[0], shape.pts[1], shape.sweep, arcLines(shape));
+      el("path", { d, fill: "none", ...common }, g);
+      hit(d);
       break;
     }
     case "polygon": {

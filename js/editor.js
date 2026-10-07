@@ -1,12 +1,13 @@
 // エディタ本体: ページ表示・ズーム・描画ツール・選択/移動/頂点編集・テキスト編集
 import {
   dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, dimOpts, simplify,
+  arcGeometry, arcAngleOf, arcBounds, clampSweep, ARC_MIN, ARC_MAX,
 } from "./geometry.js";
-import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, textCorners, fontCss, labelFor } from "./render.js";
+import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, textCorners, fontCss, labelFor, arcLines } from "./render.js";
 
 const NS = "http://www.w3.org/2000/svg";
-const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "cloud", "polygon", "text", "dim", "calib", "measure", "sign", "stamp"]);
-const LINE_TOOLS = new Set(["line", "arrow", "dim", "calib", "measure"]);
+const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "dim", "calib", "measure", "sign", "stamp"]);
+const LINE_TOOLS = new Set(["line", "arrow", "arc", "dim", "calib", "measure"]);
 const MAX_PIXELS = 16_000_000;
 
 export const isDrawTool = (t) => DRAW_TOOLS.has(t);
@@ -41,6 +42,7 @@ export class Editor {
     this.dimSize = 12;
     this.sticky = true; // 作成後も同じツールのまま連続して使う
     this.arrowSize = 10; // 矢印の大きさ(線の太さとは別)
+    this.arc = { sweep: 180, r1: false, r2: false }; // 円弧の開き角(度)と半径の直線①②
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
     this.loadDefaults();
     this.pendingStamp = null;
@@ -587,6 +589,8 @@ export class Editor {
       case "rect":
       case "ellipse":
         return g.p1 ? { ...base, type: g.tool, pts: [g.p0, g.p1], ...(g.tool === "arrow" ? { headSize: this.arrowSize } : {}) } : null;
+      case "arc":
+        return g.p1 ? { ...base, ...this.newArc(g.p0, g.p1) } : null;
       case "cloud":
         return g.p1 ? { ...base, type: "cloud", pts: rectPoints(g.p0, g.p1), pitch: this.cloudPitch } : null;
       case "dim":
@@ -654,6 +658,9 @@ export class Editor {
       case "ellipse":
         this.addAndSelect(pageId, { type: tool, pts: [g.p0, p1], style: { ...this.style } });
         break;
+      case "arc":
+        this.addAndSelect(pageId, { ...this.newArc(g.p0, p1), style: { ...this.style } });
+        break;
       case "cloud":
         this.addAndSelect(pageId, { type: "cloud", pts: rectPoints(g.p0, p1), pitch: this.cloudPitch, style: { ...this.style } });
         break;
@@ -678,6 +685,14 @@ export class Editor {
       default:
         break;
     }
+  }
+
+  /** 円弧: 中心 c から外へドラッグした点 p が始点(半径と向き)。開き角・直線①②は現在の設定 */
+  newArc(c, p) {
+    const sh = { type: "arc", pts: [c, p], sweep: clampSweep(this.arc.sweep) };
+    if (this.arc.r1) sh.r1 = true;
+    if (this.arc.r2) sh.r2 = true;
+    return sh;
   }
 
   addAndSelect(pageId, shape, select = true) {
@@ -970,7 +985,9 @@ export class Editor {
     el.svg.setPointerCapture?.(e.pointerId);
     let rotM = null;
     let rotCenter = null;
-    if (kind === "rot") {
+    const arc = shape.type === "arc" ? { c: shape.pts[0], ...arcGeometry(shape.pts[0], shape.pts[1], shape.sweep) } : null;
+    let arcPrev = arc?.sweep;
+    if (kind === "rot" && !arc) {
       rotM = textMetrics(shape);
       const cs = textCorners(shape, rotM);
       rotCenter = [(cs[0][0] + cs[2][0]) / 2, (cs[0][1] + cs[2][1]) / 2];
@@ -979,7 +996,10 @@ export class Editor {
       if (ev.pointerId !== e.pointerId) return;
       this.g.moved = true;
       let q = this.clampToPage(this.pt(ev, pageId), pageId);
-      if (kind === "rot") {
+      if (arc) {
+        this.arcHandle(shape, arc, kind, idx, q, ev, arcPrev);
+        arcPrev = shape.sweep;
+      } else if (kind === "rot") {
         // 文字の回転: 箱の中心を固定して、ハンドルの向きから角度を決める(Shiftで15°刻み)
         const c0 = rotCenter;
         let th = (Math.atan2(q[1] - c0[1], q[0] - c0[0]) * 180) / Math.PI + 90;
@@ -1043,6 +1063,41 @@ export class Editor {
     el.svg.addEventListener("pointercancel", up);
   }
 
+  /**
+   * 円弧のハンドル操作(中心と半径は1つなので常に正円のまま)
+   *  v0/v1: 始点/終点を円周に沿って動かし開き角を変える(45°付近で吸着、Shiftで15°刻み)
+   *  rad: 半径(大きさ)を変える / rot: 中心のまわりに回す(Shiftで15°刻み)
+   */
+  arcHandle(shape, arc, kind, idx, q, ev, prev) {
+    const { c, r, a, t1 } = arc;
+    const deg = (t) => (t * 180) / Math.PI;
+    if (kind === "rad") {
+      const r2 = Math.max(2, dist(c, q));
+      shape.pts = [c, [c[0] + ((a[0] - c[0]) * r2) / (r || 1), c[1] + ((a[1] - c[1]) * r2) / (r || 1)]];
+      return;
+    }
+    if (kind === "rot") {
+      // ハンドルは弧の中央の外側にある。ポインタの向きに弧の中央を合わせる
+      let th = deg(Math.atan2(q[1] - c[1], q[0] - c[0])) - arc.sweep / 2;
+      if (ev.shiftKey) th = Math.round(th / 15) * 15;
+      const t = (th * Math.PI) / 180;
+      shape.pts = [c, [c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)]];
+      return;
+    }
+    // 開き角: idx0 は終点を固定して始点を、idx1 は始点を固定して終点を動かす
+    let s = idx === 0 ? (((deg(t1 - Math.atan2(q[1] - c[1], q[0] - c[0]))) % 360) + 360) % 360 : arcAngleOf(c, a, q);
+    if (prev > 270 && s < 90) s = ARC_MAX; // 一周して反対側へ飛ばないように端で止める
+    else if (prev < 90 && s > 270) s = ARC_MIN;
+    if (ev.shiftKey) s = Math.round(s / 15) * 15;
+    else if (Math.abs(s - Math.round(s / 45) * 45) <= 4) s = Math.round(s / 45) * 45;
+    s = clampSweep(Math.round(s));
+    shape.sweep = s;
+    if (idx === 0) {
+      const t0 = t1 - (s * Math.PI) / 180;
+      shape.pts = [c, [c[0] + r * Math.cos(t0), c[1] + r * Math.sin(t0)]];
+    }
+  }
+
   insertVertex(pageId, shape, p) {
     const pts = shape.pts;
     let best = -1;
@@ -1086,13 +1141,14 @@ export class Editor {
       if (d.dimEnd) Object.assign(this.dimEnd, d.dimEnd);
       if (d.cloudPitch) this.cloudPitch = d.cloudPitch;
       if (d.arrowSize) this.arrowSize = d.arrowSize;
+      if (d.arc) Object.assign(this.arc, d.arc);
     } catch {
       /* 破損していたら既定のまま */
     }
   }
   saveDefaults() {
     try {
-      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize }));
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc }));
     } catch {
       /* 保存できなくてもこのセッションでは有効 */
     }
@@ -1108,6 +1164,7 @@ export class Editor {
     }
     if (sh.type === "arrow") this.arrowSize = sh.headSize ?? Math.max(10, (st.width ?? 1) * 4.5);
     if (sh.type === "cloud" && sh.pitch) this.cloudPitch = sh.pitch;
+    if (sh.type === "arc") this.arc = { sweep: clampSweep(sh.sweep), r1: !!sh.r1, r2: !!sh.r2 };
     this.saveDefaults();
   }
 
@@ -1160,6 +1217,18 @@ export class Editor {
       const hx = g.textPos[0] + dir[0] * (w / 2 + R * 1.6);
       const hy = g.textPos[1] + dir[1] * (w / 2 + R * 1.6);
       el.ui.appendChild(sv("circle", { class: "handle mid", cx: hx, cy: hy, r: R * 0.8, "stroke-width": 1.6 / z, "data-kind": "txt", "data-idx": 0 }));
+    }
+    if (sh.type === "arc") {
+      // 中心の目印(+)・大きさ(半径)ハンドル(弧の中央)・回転ハンドル(弧の中央の外側)
+      const g = arcGeometry(sh.pts[0], sh.pts[1], sh.sweep);
+      const c = sh.pts[0];
+      const k = 5 / z;
+      el.ui.appendChild(sv("path", { class: "sel-box", d: `M${c[0] - k} ${c[1]}H${c[0] + k}M${c[0]} ${c[1] - k}V${c[1] + k}`, "stroke-width": 1.2 / z }));
+      const u = g.r > 0 ? [(g.mid[0] - c[0]) / g.r, (g.mid[1] - c[1]) / g.r] : [0, -1];
+      const hp = [g.mid[0] + u[0] * 26 / z, g.mid[1] + u[1] * 26 / z];
+      el.ui.appendChild(sv("line", { class: "sel-box", x1: g.mid[0], y1: g.mid[1], x2: hp[0], y2: hp[1], "stroke-width": 1.2 / z }));
+      el.ui.appendChild(sv("rect", { class: "handle mid", x: g.mid[0] - R, y: g.mid[1] - R, width: R * 2, height: R * 2, rx: R / 3, "stroke-width": 1.6 / z, "data-kind": "rad", "data-idx": 0 }));
+      el.ui.appendChild(sv("circle", { class: "handle rot", cx: hp[0], cy: hp[1], r: R * 0.9, "stroke-width": 1.6 / z, "data-kind": "rot", "data-idx": 0 }));
     }
     if (sh.type === "text") {
       // 回転ハンドル(箱の上辺中央から外側へ)
@@ -1294,5 +1363,6 @@ function shapeBoundsOf(pts, shape) {
     const m = textMetrics(shape);
     return { x: pts[0][0], y: pts[0][1], w: m.w, h: m.h };
   }
+  if (shape.type === "arc") return arcBounds(pts[0], pts[1], shape.sweep, arcLines(shape));
   return bbox(pts);
 }
