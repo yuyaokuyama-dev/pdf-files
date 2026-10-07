@@ -284,7 +284,14 @@ function initUI() {
   dn.onclick = renameDoc;
 
   S.editor = new Editor({ model: new DocModel(), viewer: $("#viewer"), pagesEl: $("#pages"), getPdfPage });
-  S.thumbs = new Thumbs({ el: $("#thumbs"), editor: S.editor, getPdfPage, onAdd: (anchor) => addPageMenu(anchor) });
+  S.thumbs = new Thumbs({
+    el: $("#thumbs"),
+    editor: S.editor,
+    getPdfPage,
+    onAdd: (anchor) => addPageMenu(anchor),
+    onDropFiles: (files, at) => addPdfFiles(files, at),
+    onExport: (ids) => exportPages(ids),
+  });
   S.props = new Props({
     el: $("#props"),
     editor: S.editor,
@@ -1285,6 +1292,28 @@ async function deliverFile(bytes, name) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return "download";
+}
+
+/** 指定したページだけのPDFを作って保存する(ページ一覧から画面外へドラッグ・「書き出し」ボタン) */
+async function exportPages(ids) {
+  const m = S.model;
+  const pages = ids.map((id) => m.page(id)).filter(Boolean);
+  if (!pages.length) return;
+  const base = m.meta.name.replace(/\.pdf$/i, "");
+  const name = `${base}_${pages.length === 1 ? `p${m.indexOf(pages[0].id) + 1}` : `${pages.length}ページ`}.pdf`;
+  const b = busy("PDFを作成中…");
+  let res;
+  try {
+    S.editor.finishTextEdit?.();
+    res = await exportPdf({ meta: { name }, pages, sources: m.sources, images: m.images }, { level: S.settings.level, onProgress: (p, msg) => b.update(p, msg) });
+  } catch (e) {
+    console.error(e);
+    return toast(`PDFの作成に失敗しました: ${e.message}`, { error: true });
+  } finally {
+    b.close();
+  }
+  const how = await deliverFile(res.bytes, name);
+  if (how !== "cancel") toast(`${name}(${pages.length}ページ・${fmtBytes(res.bytes.length)})を保存しました`);
 }
 
 async function downloadPdf() {

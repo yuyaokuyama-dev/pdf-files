@@ -1,16 +1,20 @@
-// ページ一覧(サムネイル): 並べ替え(ドラッグ/↑↓)・削除・回転・複数選択削除・ページ追加
+// ページ一覧(サムネイル): 並べ替え(ドラッグ/↑↓)・削除・回転・複数選択削除・ページ追加・
+// 別PDFのドロップ挿入・ページの書き出し(画面外へドラッグ/チェックしたページ)
 import { icon } from "./icons.js";
 import { renderShapes } from "./render.js";
 import { confirmDialog, toast } from "./ui.js";
 
 const TW = 128; // サムネイル幅(px)
+const PAGE_MIME = "application/x-pdffiles-page"; // ページ一覧内のドラッグを他のドラッグ(ファイル等)と見分ける
 
 export class Thumbs {
-  constructor({ el, editor, getPdfPage, onAdd }) {
+  constructor({ el, editor, getPdfPage, onAdd, onDropFiles, onExport }) {
     this.el = el;
     this.editor = editor;
     this.getPdfPage = getPdfPage;
     this.onAdd = onAdd;
+    this.onDropFiles = onDropFiles; // (files, atIndex) 別PDFをページの間に挿入
+    this.onExport = onExport; // (pageIds) そのページだけのPDFを作る
     this.cache = new Map();
     this.checked = new Set();
     this.key = "";
@@ -27,29 +31,88 @@ export class Thumbs {
 
   attach() {
     this.el.addEventListener("click", (e) => this.onClick(e));
+    let line = null; // 挿入線(初めてドラッグしたときに作る)
+    let dragId = null; // ページ一覧の中からドラッグ中のページ
+    let lastOver = 0; // 最後に画面内で dragover を受けた時刻(画面外へのドロップ判定に使う)
+    const isFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+    const hide = () => line && (line.hidden = true);
+    document.addEventListener("dragover", () => (lastOver = Date.now()));
+
     this.el.addEventListener("dragstart", (e) => {
       const t = e.target.closest?.(".thumb");
       if (!t) return;
-      e.dataTransfer.setData("text/plain", t.dataset.id);
-      e.dataTransfer.effectAllowed = "move";
+      dragId = t.dataset.id;
+      e.dataTransfer.setData(PAGE_MIME, dragId);
+      e.dataTransfer.effectAllowed = "copyMove";
+      t.classList.add("dragging");
     });
-    this.el.addEventListener("dragover", (e) => {
-      const t = e.target.closest?.(".thumb");
-      if (!t) return;
+    this.el.addEventListener("dragend", (e) => {
+      const id = dragId;
+      dragId = null;
+      hide();
+      this.el.querySelectorAll(".dragging").forEach((n) => n.classList.remove("dragging"));
+      if (!id || e.dataTransfer?.dropEffect !== "none") return;
+      // ブラウザの画面の外で離した → そのページだけのPDFを作る(画面内で離した・Escで取り消したときは何もしない)
+      const { clientX: x, clientY: y } = e;
+      const outside = x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight || (x === 0 && y === 0 && Date.now() - lastOver > 150);
+      if (outside && this.model.page(id)) this.onExport?.([id]);
+    });
+    ["dragenter", "dragover"].forEach((type) => this.el.addEventListener(type, (e) => {
+      const files = isFiles(e);
+      if (!files && !dragId) return;
       e.preventDefault();
-      this.el.querySelectorAll(".dragover").forEach((n) => n.classList.remove("dragover"));
-      t.classList.add("dragover");
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = files ? "copy" : "move";
+      const slot = this.slot(e.clientY);
+      if (!slot) return hide();
+      if (!line) {
+        line = document.createElement("div");
+        line.className = "drop-line";
+        document.body.appendChild(line);
+      }
+      Object.assign(line.style, { top: `${slot.y - 2}px`, left: `${slot.left}px`, width: `${slot.width}px` });
+      line.hidden = false;
+    }));
+    this.el.addEventListener("dragleave", (e) => {
+      if (!this.el.contains(e.relatedTarget)) hide();
     });
-    this.el.addEventListener("dragleave", (e) => e.target.closest?.(".thumb")?.classList.remove("dragover"));
     this.el.addEventListener("drop", (e) => {
-      const t = e.target.closest?.(".thumb");
-      this.el.querySelectorAll(".dragover").forEach((n) => n.classList.remove("dragover"));
-      if (!t) return;
+      hide();
+      const files = [...(e.dataTransfer?.files || [])];
+      const id = dragId || e.dataTransfer?.getData(PAGE_MIME);
+      if (!files.length && !id) return;
       e.preventDefault();
-      const id = e.dataTransfer.getData("text/plain");
-      const to = this.model.indexOf(t.dataset.id);
-      if (id && to >= 0) this.model.movePage(id, to);
+      e.stopPropagation();
+      const slot = this.slot(e.clientY);
+      const at = slot ? slot.index : this.model.pages.length;
+      if (files.length) {
+        const pdfs = files.filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+        if (!pdfs.length) return toast("PDFファイルをドロップしてください", { error: true });
+        return this.onDropFiles?.(pdfs, at);
+      }
+      // 挿入位置(ページの間)へ移動。自分より後ろへ動かすときは、抜いた分だけ番号が1つ前にずれる
+      const from = this.model.indexOf(id);
+      if (from >= 0) this.model.movePage(id, at > from ? at - 1 : at);
     });
+  }
+
+  /** ドロップ位置(サムネイルの間)。index: 挿入位置(0=先頭)、y: 線を出す画面Y */
+  slot(clientY) {
+    const els = [...this.el.querySelectorAll(".thumb")];
+    if (!els.length) return null;
+    let index = els.length;
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) {
+        index = i;
+        break;
+      }
+    }
+    const a = index > 0 ? els[index - 1].getBoundingClientRect() : null;
+    const b = index < els.length ? els[index].getBoundingClientRect() : null;
+    const y = a && b ? (a.bottom + b.top) / 2 : b ? b.top - 5 : a.bottom + 5;
+    const ref = b || a;
+    return { index, y, left: ref.left, width: ref.width };
   }
 
   async onClick(e) {
@@ -57,6 +120,10 @@ export class Thumbs {
     if (bar) {
       if (bar.dataset.bar === "add") return this.onAdd(bar);
       if (bar.dataset.bar === "del") return this.deleteChecked();
+      if (bar.dataset.bar === "exp") {
+        const ids = this.model.pages.filter((p) => this.checked.has(p.id)).map((p) => p.id);
+        return ids.length ? this.onExport?.(ids) : toast("書き出すページにチェックを入れてください");
+      }
       if (bar.dataset.bar === "all") {
         if (this.checked.size === this.model.pages.length) this.checked.clear();
         else this.model.pages.forEach((p) => this.checked.add(p.id));
@@ -119,7 +186,8 @@ export class Thumbs {
     this.el.innerHTML = `<div class="thumb-bar">
       <button class="btn" data-bar="add">${icon("plus", 16)}追加</button>
       <button class="btn danger" data-bar="del">削除</button>
-      <button class="btn" data-bar="all">全選択</button></div>`;
+      <button class="btn" data-bar="all">全選択</button>
+      <button class="btn" data-bar="exp" title="チェックしたページだけのPDFを作る(ページを画面の外へドラッグしても作れます)">${icon("download", 16)}書き出し</button></div>`;
     pages.forEach((p, i) => {
       const th = TW * (p.h / p.w);
       const d = document.createElement("div");
