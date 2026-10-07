@@ -43,3 +43,4 @@ jobs:
           node tests/e2e-docs.mjs
           node tests/e2e-sticky.mjs
           node tests/e2e-drive.mjs
+          node tests/e2e-tabs.mjs

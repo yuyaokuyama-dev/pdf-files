@@ -196,3 +196,23 @@ html[data-ui="xlarge"] .btn.icon { width: 54px; }
 @media (max-width: 800px) { .docname { display: none; } }
 
 .linkbtn { background: none; border: 0; padding: 6px 0; color: var(--accent, #2563eb); font: inherit; font-size: 13px; text-align: center; cursor: pointer; text-decoration: underline; }
+
+/* ---------- タブ(開いているファイル)。外へドラッグすると別ウィンドウで開く ---------- */
+.tabbar { order: 1; display: flex; gap: 2px; padding: 4px 8px 0; background: #eef0f3; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; touch-action: pan-x; }
+.tabbar::-webkit-scrollbar { display: none; }
+.tab { flex: none; display: flex; align-items: center; gap: 2px; max-width: 220px; height: 32px; padding: 0 2px 0 12px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; color: var(--muted); font-size: 13px; cursor: pointer; user-select: none; -webkit-user-select: none; position: relative; }
+.tab:hover { background: #e3e6ea; }
+.tab.on { background: var(--panel); border-color: var(--line); color: var(--ink); margin-bottom: -1px; height: 33px; }
+.tab.dragging { opacity: .45; }
+.tab.slot-before::before, .tab.slot-after::after { content: ""; position: absolute; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--accent); }
+.tab.slot-before::before { left: -3px; }
+.tab.slot-after::after { right: -3px; }
+.tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-x { flex: none; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
+.tab-x:hover { background: #d5d9df; }
+.tab-ghost { position: fixed; z-index: 80; display: grid; gap: 2px; max-width: 260px; padding: 6px 12px; border-radius: 8px; background: var(--panel); box-shadow: 0 6px 20px rgba(0,0,0,.25); font-size: 13px; pointer-events: none; }
+.tab-ghost .tab-name { font-weight: 600; }
+.tab-ghost-hint { display: none; color: var(--accent); font-size: 12px; }
+.tab-ghost.out { outline: 2px solid var(--accent); }
+.tab-ghost.out .tab-ghost-hint { display: block; }
+@media (max-width: 800px) { .tab { max-width: 160px; } }
