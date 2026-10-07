@@ -40,7 +40,8 @@ export class Editor {
     this.textStyle = { size: 18, font: "gothic", bold: false, color: "#111827" };
     this.cloudPitch = 18;
     this.dimSize = 12;
-    this.sticky = true; // 作成後も同じツールのまま連続して使う
+    this.sticky = true; // 作成後に選択して調整 → 何もない所をタップで同じツールに戻り、続けて描ける
+    this.returnTool = null; // 作成直後の調整中だけ、戻り先のツールを覚えておく
     this.arrowSize = 10; // 矢印の大きさ(線の太さとは別)
     this.arc = { sweep: 180, r1: false, r2: false }; // 円弧の開き角(度)と半径の直線①②
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
@@ -315,6 +316,7 @@ export class Editor {
   setTool(t) {
     if (this.poly && t !== "polygon") this.cancelPolygon();
     this.cancelGesture();
+    this.returnTool = null;
     this.tool = t;
     for (const el of this.els.values()) this.applyToolClass(el);
     if (t !== "select") this.setSelection(null);
@@ -697,16 +699,26 @@ export class Editor {
 
   addAndSelect(pageId, shape, select = true) {
     const s = this.model.addShape(pageId, shape);
-    if (select && s && this.sticky) {
-      // 連続作成: ツールはそのまま(選択はしない)。調整したいときは「選択」で図形を選ぶ
-      this.setSelection(null);
-    } else if (select && s) {
-      this.tool = "select";
-      for (const el of this.els.values()) this.applyToolClass(el);
-      this.emit("tool", "select");
-      this.setSelection({ pageId, shapeId: s.id });
-    }
+    if (select && s) this.selectCreated(pageId, s.id);
     return s;
+  }
+  /**
+   * 作った図形を選択してプロパティを調整できるようにする。
+   * 連続作成(既定)のときは元のツールを覚えておき、何もない所をタップすると確定してそのツールに戻る
+   */
+  selectCreated(pageId, shapeId) {
+    const back = this.sticky && this.tool !== "select" ? this.tool : null;
+    this.tool = "select";
+    this.returnTool = back;
+    for (const el of this.els.values()) this.applyToolClass(el);
+    this.emit("tool", "select");
+    this.setSelection({ pageId, shapeId });
+  }
+  /** 作成直後の調整を確定して元のツールに戻る。戻り先が無ければ false */
+  confirmCreated() {
+    if (!this.returnTool) return false;
+    this.setTool(this.returnTool);
+    return true;
   }
 
   /* ---------- 多角形 ---------- */
@@ -834,10 +846,7 @@ export class Editor {
       if (!cancel && text) {
         ed.shape.text = text;
         this.model.addShape(ed.pageId, ed.shape);
-        this.tool = "select";
-        for (const el of this.els.values()) this.applyToolClass(el);
-        this.emit("tool", "select");
-        this.setSelection({ pageId: ed.pageId, shapeId: ed.shape.id });
+        this.selectCreated(ed.pageId, ed.shape.id);
       }
     } else if (!cancel) {
       const s = page?.shapes.find((x) => x.id === id);
@@ -914,6 +923,8 @@ export class Editor {
       return this.beginHandleDrag(e, pageId, handle);
     }
     if (!shEl) {
+      // 作成直後の調整中なら、何もない所のタップで確定して元のツールに戻る
+      if (this.confirmCreated()) return;
       if (this.sel) this.setSelection(null);
       return;
     }
@@ -1331,6 +1342,7 @@ export class Editor {
     } else if (e.key === "Escape") {
       if (this.poly) this.cancelPolygon();
       else if (this.g) this.cancelGesture();
+      else if (this.confirmCreated()) return;
       else if (this.sel) this.setSelection(null);
       else if (this.tool !== "select") this.setTool("select");
     } else if (e.key === "Enter") {

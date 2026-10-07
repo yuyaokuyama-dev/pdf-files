@@ -367,9 +367,12 @@ function showHint(text, ms = 4200, actions = []) {
 function wireEditorEvents() {
   const ed = S.editor;
   ed.on("tool", (t) => {
-    document.querySelectorAll(".tool").forEach((b) => b.classList.toggle("on", b.dataset.tool === t));
+    // 作成直後の調整中は、戻り先のツールを光らせたままにする
+    const lit = ed.returnTool || t;
+    document.querySelectorAll(".tool").forEach((b) => b.classList.toggle("on", b.dataset.tool === lit));
     const def = TOOLS.find((x) => x.id === t);
-    if (t === "polygon") showHint(def.hint, 0, [{ label: "完了", primary: true, onClick: () => ed.finishPolygon() }, { label: "取消", onClick: () => ed.cancelPolygon() }]);
+    if (ed.returnTool) showHint(`色や太さなどを調整できます。何もない所をタップすると確定して「${TOOLS.find((x) => x.id === ed.returnTool)?.label || ""}」に戻ります`, 3800);
+    else if (t === "polygon") showHint(def.hint, 0, [{ label: "完了", primary: true, onClick: () => ed.finishPolygon() }, { label: "取消", onClick: () => ed.cancelPolygon() }]);
     else showHint(def?.hint || "", 3800);
   });
   ed.on("polygon-state", (n) => {
@@ -1919,7 +1922,7 @@ async function openSettings() {
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <div class="field"><b style="color:var(--ink)">メールの送り方</b>
         <select id="stMail"><option value="api">アプリから直接送信(Gmail連携・自動で添付)</option><option value="app">Gmailを開いて添付する(スマホは共有メニューで添付済み)</option></select></div>
-      <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stSticky"${S.settings.sticky !== false ? " checked" : ""}> 線・図形・寸法などは、描いたあとも同じツールのまま続けて使う</label>
+      <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stSticky"${S.settings.sticky !== false ? " checked" : ""}> 線・図形・寸法などは、描いたあと選択して調整 → 何もない所をタップで同じツールに戻って続けて描く</label>
       <div class="field"><b style="color:var(--ink)">ボタンの大きさ(ツールバーなど)</b>
         <select id="stUi"><option value="auto">自動(iPadなどは大きめ)</option><option value="normal">標準</option><option value="large">大</option><option value="xlarge">特大</option></select></div>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stPalm"${S.settings.palm ? " checked" : ""}> ペン入力モード(描画はペン/マウスのみ、指はスクロール専用)</label>
