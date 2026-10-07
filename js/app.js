@@ -8,6 +8,7 @@ import { Thumbs } from "./thumbs.js";
 import { Props } from "./props.js";
 import { exportPdf, LEVELS } from "./export.js";
 import * as G from "./google.js";
+import { APP_VERSION, APP_DATE } from "./version.js";
 import { makeScale, formatLength } from "./geometry.js";
 import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, loadImage } from "./raster.js";
 import { createPad } from "./pad.js";
@@ -1724,6 +1725,9 @@ async function openSettings() {
       <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn" id="stPw">パスワードを変更</button>
         <button class="btn" id="stGout">Googleの接続を解除</button></div>
+      <div class="field"><b style="color:var(--ink)">アプリのバージョン</b>
+        <div class="row" style="gap:10px;align-items:center"><span id="stVer" style="font-size:16px;color:var(--ink)">${APP_VERSION}</span><span class="note">(${APP_DATE})</span><button type="button" class="btn" id="stUpd">更新を確認</button></div>
+        <span class="note" id="stUpdMsg"></span></div>
       <p class="note">ログイン中のID: <b>${esc(S.user)}</b> ・ データはこの端末内に保存されます。</p>`,
     buttons: [{ label: "キャンセル", value: null }, { label: "保存", value: true, primary: true, action: async (d) => {
       G.setConfig({ clientId: d.querySelector("#stCid").value.trim(), apiKey: d.querySelector("#stKey").value.trim(), appId: d.querySelector("#stApp").value.trim() });
@@ -1741,6 +1745,25 @@ async function openSettings() {
       return true;
     } }],
     onOpen: (d) => {
+      d.querySelector("#stUpd").onclick = async () => {
+        const msg = d.querySelector("#stUpdMsg");
+        msg.textContent = "確認しています…";
+        try {
+          const reg = await navigator.serviceWorker?.getRegistration();
+          if (!reg) { msg.textContent = "このブラウザでは自動更新の確認ができません。ページを再読み込みしてください。"; return; }
+          await reg.update();
+          const txt = await (await fetch("sw.js", { cache: "no-store" })).text();
+          const latest = txt.match(/const VERSION = "([^"]+)"/)?.[1];
+          if (latest && latest !== APP_VERSION) {
+            msg.textContent = `新しいバージョン ${latest} を取得しました。再読み込みします…(表示が ${latest} にならなければ、もう一度押してください)`;
+            setTimeout(() => location.reload(), 1800);
+          } else {
+            msg.textContent = `最新です(${APP_VERSION})`;
+          }
+        } catch {
+          msg.textContent = "確認できませんでした(オフラインの可能性があります)";
+        }
+      };
       d.querySelector("#stMail").value = S.settings.mailMode === "app" ? "app" : "api";
     d.querySelector("#stUi").value = S.settings.uiSize || "auto";
       let st = G.getStart();

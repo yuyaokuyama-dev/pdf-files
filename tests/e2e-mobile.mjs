@@ -19,6 +19,14 @@ check("アカウントメニューが開く", await page.locator("text=設定").
 await page.keyboard.press("Escape");
 await page.mouse.click(5, 400);
 
+// 設定画面にバージョンが表示される
+await page.click("#btnUser");
+await page.locator("#menu button", { hasText: "設定" }).click();
+const ver = await page.textContent("#stVer");
+check("設定画面にバージョンが表示される", /^v\d+\.\d+\.\d+$/.test(ver), ver);
+check("「更新を確認」で最新と表示される", await (async () => { await page.click("#stUpd"); await page.waitForFunction(() => /最新です/.test(document.querySelector("#stUpdMsg").textContent), null, { timeout: 15000 }); return true; })());
+await page.locator("dialog[open] button", { hasText: "キャンセル" }).click();
+
 // ③ ピンチ: 途中はCSS transformだけ、指を離すと1回でズーム確定
 const z0 = await page.evaluate(() => window.__apdf.editor.zoom);
 const res = await page.evaluate(async () => {
