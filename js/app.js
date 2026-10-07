@@ -9,6 +9,7 @@ import { Props } from "./props.js";
 import { exportPdf, LEVELS } from "./export.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
+import { browseDrive } from "./drivebrowse.js";
 import { makeScale, formatLength } from "./geometry.js";
 import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, loadImage } from "./raster.js";
 import { createPad } from "./pad.js";
@@ -1321,7 +1322,7 @@ async function googleErr(e) {
 async function openFromDrive() {
   if (!(await ensureGoogle())) return;
   try {
-    const doc = await G.pickPdf();
+    const doc = G.useOwnPicker() ? await browseDrive({ mode: "pdf" }) : await G.pickPdf();
     if (!doc) return;
     await openDriveFile(doc.id);
   } catch (e) {
@@ -1393,7 +1394,7 @@ async function saveToDrive() {
       show();
       d.querySelector("#dfPick").onclick = async () => {
         try {
-          const f = await overDialog(d, () => G.pickFolder());
+          const f = await overDialog(d, () => (G.useOwnPicker() ? browseDrive({ mode: "folder" }) : G.pickFolder()));
           if (f) {
             folder = { id: f.id, name: f.name };
             show();
@@ -1438,10 +1439,18 @@ async function saveToDrive() {
   }
   const b = busy("Googleドライブに保存中…");
   try {
-    const r = await G.uploadPdf({ name: o.name, bytes: res.bytes, fileId, folderId: m.meta.driveFolder });
+    let r;
+    try {
+      r = await G.uploadPdf({ name: o.name, bytes: res.bytes, fileId, folderId: m.meta.driveFolder });
+    } catch (e) {
+      // アプリ内の一覧で開いたファイルなど、このアプリの権限では上書きできない場合は、別のファイルとして保存するか確認
+      if (fileId && /\((403|404)\)/.test(e.message) && (await confirmDialog("このファイルは上書きできません(このアプリが作ったファイルではないため)。\n別のファイルとして保存しますか?", { ok: "別のファイルとして保存" }))) {
+        r = await G.uploadPdf({ name: o.name, bytes: res.bytes, folderId: m.meta.driveFolder });
+      } else throw e;
+    }
     m.meta.driveId = r.id;
     await saveProjectNow();
-    toast(`Googleドライブに保存しました(${fmtBytes(res.bytes.length)})`);
+    toast(r.fellBack ? `選んだフォルダには保存できないため、マイドライブ直下に保存しました(${fmtBytes(res.bytes.length)})` : `Googleドライブに保存しました(${fmtBytes(res.bytes.length)})`);
   } catch (e) {
     googleErr(e);
   } finally {
@@ -1714,6 +1723,9 @@ async function openSettings() {
       <div class="field"><b style="color:var(--ink)">ドライブの選択画面を開く場所</b>
         <select id="stStart"><option value="home">マイドライブ(ホーム)</option><option value="last">前回保存したフォルダ</option><option value="fixed">指定したフォルダ</option></select>
         <div class="row" id="stStartRow" style="display:none;gap:8px;align-items:center"><span id="stStartName"></span><button type="button" class="btn" id="stStartPick">フォルダを選ぶ…</button></div></div>
+      <div class="field"><b style="color:var(--ink)">ドライブのファイル選択画面</b>
+        <select id="stPick"><option value="auto">自動(iPhone・iPadはアプリ内の一覧)</option><option value="google">Googleの選択画面</option><option value="own">アプリ内の一覧</option></select>
+        <span class="note">アプリ内の一覧は、初回に「ドライブ内のファイルの閲覧」の許可が追加で必要です(閲覧のみ)。</span></div>
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <div class="field"><b style="color:var(--ink)">メールの送り方</b>
         <select id="stMail"><option value="api">アプリから直接送信(Gmail連携・自動で添付)</option><option value="app">Gmailを開いて添付する(スマホは共有メニューで添付済み)</option></select></div>
@@ -1732,6 +1744,7 @@ async function openSettings() {
     buttons: [{ label: "キャンセル", value: null }, { label: "保存", value: true, primary: true, action: async (d) => {
       G.setConfig({ clientId: d.querySelector("#stCid").value.trim(), apiKey: d.querySelector("#stKey").value.trim(), appId: d.querySelector("#stApp").value.trim() });
       S.settings.mailMode = d.querySelector("#stMail").value;
+      G.setPickerMode(d.querySelector("#stPick").value);
       S.settings.palm = d.querySelector("#stPalm").checked;
       S.settings.sticky = d.querySelector("#stSticky").checked;
       S.settings.uiSize = d.querySelector("#stUi").value;
@@ -1766,6 +1779,7 @@ async function openSettings() {
       };
       d.querySelector("#stMail").value = S.settings.mailMode === "app" ? "app" : "api";
     d.querySelector("#stUi").value = S.settings.uiSize || "auto";
+    d.querySelector("#stPick").value = G.getPickerMode();
       let st = G.getStart();
       const selEl = d.querySelector("#stStart");
       const showSt = () => {
@@ -1777,7 +1791,7 @@ async function openSettings() {
       selEl.onchange = () => ((st = { ...st, mode: selEl.value }), G.setStart(st), showSt());
       d.querySelector("#stStartPick").onclick = async () => {
         try {
-          const f = await overDialog(d, () => G.pickFolder());
+          const f = await overDialog(d, () => (G.useOwnPicker() ? browseDrive({ mode: "folder" }) : G.pickFolder()));
           if (f) (st = { mode: "fixed", id: f.id, name: f.name }), G.setStart(st);
         } catch (e) {
           googleErr(e);
