@@ -62,6 +62,5 @@ g, w = line_svg(NAME, size, 8, 64, {0: RED}, 1.2)
 wordmark = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w + 16:.0f} 84" role="img" aria-label="{NAME}">{g}</svg>'
 open("icons/logo.svg", "w").write(wordmark)
 
-# iPhone ホーム画面用の icons/app-icon-ios.svg (従来の1行「PDF Files」) は以前このスクリプトで生成したもの。
 # アプリアイコン(赤い角丸に白い書類と「PDF Files」)は scripts/make-icons-from-image.py で元画像から生成する
 print("generated icons/logo.svg")

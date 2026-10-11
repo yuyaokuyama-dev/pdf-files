@@ -60,3 +60,6 @@ inner = full.resize((440, 440), Image.LANCZOS)
 m.paste(inner, (36, 36))
 m.save("icons/files-icon-maskable-512.png", optimize=True)
 print("wrote icons/files-icon-maskable-512.png")
+
+# iPhone のホーム画面: iOS が角を丸めるので、角まで赤で埋めた正方形を渡す
+save(full, 180, "icons/files-apple-touch-icon.png")
