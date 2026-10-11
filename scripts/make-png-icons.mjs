@@ -1,19 +1,13 @@
-// icons/*.svg → PNG (Playwright の Chromium で描画)
+// icons/app-icon-ios.svg → iPhone ホーム画面用 PNG (Playwright の Chromium で描画)
 //   node scripts/make-png-icons.mjs   (NODE_PATH に playwright がある環境で実行)
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 const require = createRequire((process.env.TOOLS_DIR || "/opt/npm-tools") + "/node_modules/");
 const { chromium } = require("playwright");
 
-// ファイル名を変えるとインストール済みアプリ(Windows/Android)やブラウザのキャッシュに古い画像が残りにくい
+// Windows / Android / ファビコンは scripts/make-icons-from-image.py で元画像から生成する
 const jobs = [
-  ["icons/app-icon.svg", "icons/pdf-favicon-32.png", 32],
   ["icons/app-icon-ios.svg", "icons/apple-touch-icon.png", 180], // iPhone のホーム画面は従来の「PDF Files」デザイン
-  ["icons/app-icon.svg", "icons/pdf-icon-192.png", 192],
-  ["icons/app-icon.svg", "icons/pdf-icon-256.png", 256],
-  ["icons/app-icon.svg", "icons/pdf-icon-512.png", 512],
-  ["icons/app-icon-maskable.svg", "icons/pdf-icon-maskable-512.png", 512],
-  ["icons/app-icon.svg", "icons/icon-192.png", 192], // アプリ内の既定サムネイル・通知用
 ];
 const browser = await chromium.launch();
 const page = await browser.newPage();

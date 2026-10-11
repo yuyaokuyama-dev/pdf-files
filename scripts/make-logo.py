@@ -63,5 +63,5 @@ wordmark = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w + 16:.0f} 8
 open("icons/logo.svg", "w").write(wordmark)
 
 # iPhone ホーム画面用の icons/app-icon-ios.svg (従来の1行「PDF Files」) は以前このスクリプトで生成したもの。
-# アプリアイコン(赤背景に白抜き太字「PDF」)は scripts/make-app-icon.py で生成する
+# アプリアイコン(赤い角丸に白い書類と「PDF Files」)は scripts/make-icons-from-image.py で元画像から生成する
 print("generated icons/logo.svg")
