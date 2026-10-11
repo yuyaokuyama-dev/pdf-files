@@ -15,6 +15,7 @@ import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, lo
 import { createPad } from "./pad.js";
 import { icon } from "./icons.js";
 import { TabBar, createWindowSync, sideBySideFeatures } from "./tabs.js";
+import { canPickHandle, contentKey, pickPdfWithHandle, isSameFile, ensureWritable, writeToHandle } from "./filekey.js";
 import { $, esc, toast, busy, dialog, confirmDialog, alertDialog, promptDialog, showMenu, showBanner, hideBanner, fmtBytes, fmtDate } from "./ui.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdf.worker.min.mjs", import.meta.url).href;
@@ -190,8 +191,8 @@ function flushLaunch() {
   const files = launchPending.splice(0);
   (async () => {
     try {
-      await openLocalFile(files[0]);
-      if (files.length > 1) await addPdfFiles(files.slice(1));
+      await openLocalFile(files[0].file, files[0].handle);
+      if (files.length > 1) await addPdfFiles(files.slice(1).map((f) => f.file));
     } catch (e) {
       toast(e.message, { error: true });
     }
@@ -200,9 +201,21 @@ function flushLaunch() {
 if ("launchQueue" in window) {
   window.launchQueue.setConsumer(async (p) => {
     if (!p.files?.length) return;
-    for (const h of p.files) launchPending.push(await h.getFile());
+    for (const h of p.files) launchPending.push({ file: await h.getFile(), handle: h });
     flushLaunch(); // ログイン前なら、ログイン後に enterApp から開く
   });
+}
+
+/** このタブ(ブラウザのタブ・アプリのウィンドウ)で既に使っていたか = 再読み込みか。閉じると消える sessionStorage で判定 */
+function sessionResumed(user) {
+  const k = "apdf_session_v1";
+  try {
+    const was = sessionStorage.getItem(k) === user.toLowerCase();
+    sessionStorage.setItem(k, user.toLowerCase());
+    return was;
+  } catch {
+    return false;
+  }
 }
 
 /** 操作ボタンの大きさ(auto: iPadなど大きいタッチ画面では「大」) */
@@ -228,12 +241,21 @@ async function enterApp(user) {
   G.preloadGoogle();
   S.win = createWindowSync({ user, winId: S.winId, getIds: () => S.tabs, onRemoteChange: remoteWindowChange, onFocusRequest: () => window.focus() });
   await S.win.ready;
-  // 別ウィンドウ(タブを外へドラッグ)ならそのファイルだけ、通常は前回の続きを開く
   const elsewhere = (id) => S.win.heldElsewhere(id);
+  // アプリを閉じて開き直したときは、タブも含めて全て閉じた状態から始める(閉じたファイルは「履歴から開く」へ)。
+  // ページの再読み込み(同じタブの中)では前回のタブを開き直す
+  const resumed = !S.popupDoc && sessionResumed(user);
+  if (!S.popupDoc && !resumed) {
+    // 別のウィンドウでまだ開いているものと、待っている間に開いたものだけ残す
+    S.openDocs = ((await S.store.getSetting("openDocs", [])) || []).filter((id) => elsewhere(id) || S.tabs.includes(id));
+    await S.store.setSetting("openDocs", S.openDocs);
+    await S.store.setSetting("lastProject", null);
+  }
+  // 別ウィンドウ(タブを外へドラッグ)ならそのファイルだけ、再読み込みなら前回の続きを開く
   const opened = S.tabs; // 待っている間に開いたファイル
   S.tabs = S.popupDoc ? [] : S.openDocs.filter((id) => S.tabNames.has(id) && !elsewhere(id));
   for (const id of opened) if (!S.tabs.includes(id)) S.tabs.push(id);
-  const last = S.popupDoc || (await S.store.getSetting("lastProject", null));
+  const last = S.popupDoc || (resumed ? await S.store.getSetting("lastProject", null) : null);
   let restored = S.model.pages.length > 0;
   for (const id of restored ? [] : [last, ...S.tabs.slice().reverse()]) {
     if (!id || elsewhere(id)) continue;
@@ -246,6 +268,7 @@ async function enterApp(user) {
   }
   if (!restored) setDoc(new DocModel());
   renderTabs();
+  refreshUnsavedNote();
   updateNet();
   refreshQueueBadge();
   if (G.isConfigured() && navigator.onLine) G.preload?.();
@@ -290,6 +313,7 @@ function initUI() {
   $("#emptyDrive").innerHTML = `${icon("drive", 18)}Googleドライブから開く`;
   $("#emptyBlank").innerHTML = `${icon("blank", 18)}白紙から作成`;
   $("#emptyCamera").innerHTML = `${icon("camera", 18)}撮影して作成`;
+  $("#emptyHistory").innerHTML = `${icon("history", 18)}履歴から開く`;
   // 名前表示
   const dn = document.createElement("button");
   dn.id = "docName";
@@ -420,7 +444,8 @@ function wireTopbar() {
   $("#btnFile").onclick = (e) => fileMenu(e.currentTarget);
   $("#btnSave").onclick = (e) => saveMenu(e.currentTarget);
   $("#btnUser").onclick = (e) => userMenu(e.currentTarget);
-  $("#emptyOpen").onclick = () => $("#fileOpen").click();
+  $("#emptyOpen").onclick = openPicker;
+  $("#emptyHistory").onclick = openHistory;
   $("#emptyDrive").onclick = openFromDrive;
   $("#emptyBlank").onclick = () => newBlank();
   $("#emptyCamera").onclick = () => capturePhoto().then((p) => p && newDocFromImage(p));
@@ -447,7 +472,16 @@ function updateEmpty() {
   $("#docName").textContent = has ? S.model.meta.name : "";
   $("#docName").hidden = !has;
   if (has) S.tabNames.set(S.model.meta.projectId, S.model.meta.name);
+  else refreshUnsavedNote();
   renderTabs();
+}
+/** 空の画面に「保存していないファイルがあります」と出す */
+async function refreshUnsavedNote() {
+  const el = $("#emptyUnsaved");
+  if (!el || !S.store) return;
+  const n = (await S.store.getAll("recents")).filter((r) => r.unsaved).length;
+  el.hidden = !n;
+  el.textContent = n ? `保存していないファイルが${n}件あります。「履歴から開く」の一覧から元のファイルに保存できます。` : "";
 }
 
 /* =========================================================
@@ -461,6 +495,7 @@ function setDoc(model, { fit = true } = {}) {
     addTab(model.meta.projectId, model.meta.name);
   }
   model.onChange(() => {
+    model.meta.unsaved = true; // 元のファイルにまだ保存していない(端末内には自動保存される)
     updateUndoRedo();
     scheduleSave();
     S.thumbs.refresh();
@@ -528,6 +563,102 @@ async function closeTab(id) {
   } else removeTab(id);
   await untrackOpen(id);
 }
+/** すべて閉じる: タブも含めて全て閉じる。編集データは端末内に残り「履歴から開く」から開ける */
+async function closeAll() {
+  await saveProjectNow();
+  const ids = [...new Set([...S.tabs, ...(S.model.pages.length ? [S.model.meta.projectId] : [])])];
+  S.tabs = [];
+  S.win?.announce();
+  for (const id of ids) await untrackOpen(id);
+  setDoc(new DocModel());
+  if (!S.popupDoc) await S.store.setSetting("lastProject", null);
+  toast("すべて閉じました。「履歴から開く」からまた開けます");
+}
+
+/* ---------- 元のファイルへ保存 ---------- */
+function saveOriginalLabel(meta) {
+  if (realHandle(meta.fileHandle)) return "上書き保存(元のファイル)";
+  if (meta.driveId) return "上書き保存(Googleドライブの元のファイル)";
+  return "保存(保存先を選ぶ)";
+}
+/**
+ * 元のファイルに上書き保存する(履歴の「保存」ボタン・保存メニュー)。
+ * 元の場所: PCで開いたファイル → そのファイル / Googleドライブ → Driveのファイル。
+ * 場所が分からないファイル(iPhone・白紙など)は保存先を選ぶ(選べない環境では端末に保存・共有)。
+ */
+async function saveOriginal(id) {
+  const isCur = id === S.model.meta.projectId && S.model.pages.length > 0;
+  if (isCur) await saveProjectNow();
+  const rec = await S.store.get("recents", id);
+  if (!rec) return false;
+  if (!isCur && S.win?.heldElsewhere(id)) {
+    toast("別のウィンドウで開いているファイルです。そのウィンドウで保存してください", { error: true });
+    return false;
+  }
+  // 1. 保存先の準備(ボタンを押した直後に許可を求める)
+  let handle = realHandle(rec.fileHandle);
+  const driveId = handle ? null : rec.driveId;
+  let how;
+  try {
+    if (handle) {
+      if (!(await ensureWritable(handle))) {
+        toast("ファイルへの書き込みが許可されませんでした", { error: true });
+        return false;
+      }
+      how = "handle";
+    } else if (driveId) {
+      if (!(await ensureGoogle())) return false;
+      await G.getToken();
+      how = "drive";
+    } else if (typeof window.showSaveFilePicker === "function") {
+      handle = await window.showSaveFilePicker({ suggestedName: rec.name, types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }] });
+      how = "saveas";
+    } else how = "deliver";
+  } catch (e) {
+    if (e?.name !== "AbortError") toast(e.message || "保存できませんでした", { error: true });
+    return false;
+  }
+  // 2. PDFを作って書き込む(元のファイルなので画質優先)
+  const b = busy("保存しています…");
+  let m;
+  try {
+    m = isCur ? S.model : await loadProjectModel(id);
+    if (!m) throw new Error("この端末に編集データがありません");
+    if (m === S.model) S.editor.finishTextEdit?.();
+    const res = await exportPdf(m, { level: "standard", onProgress: (p, msg) => b.update(p, msg) });
+    const patch = { unsaved: false };
+    if (how === "handle" || how === "saveas") {
+      await writeToHandle(handle, res.bytes);
+      patch.fileHandle = handle; // 別の場所に保存した場合は、次からそこに上書きする
+      patch.fileKey = await contentKey(res.bytes);
+    } else if (how === "drive") {
+      await G.uploadPdf({ name: m.meta.name, bytes: res.bytes, fileId: driveId });
+    } else {
+      b.close();
+      if ((await deliverFile(res.bytes, m.meta.name)) === "cancel") return false;
+    }
+    await patchProjectMeta(m, patch);
+    toast(how === "handle" || how === "drive" ? `「${m.meta.name}」を元のファイルに上書き保存しました` : `「${m.meta.name}」を保存しました`);
+    refreshUnsavedNote();
+    return true;
+  } catch (e) {
+    console.error(e);
+    toast(`保存できませんでした: ${e.message}`, { error: true });
+    return false;
+  } finally {
+    b.close();
+  }
+}
+/** 保存状態などを、表示中ならモデルに、閉じているファイルなら端末内の保存データに書き込む */
+async function patchProjectMeta(m, patch) {
+  Object.assign(m.meta, patch);
+  if (m === S.model) return saveProjectNow();
+  const pr = await S.store.get("projects", m.meta.projectId);
+  if (pr) await S.store.put("projects", { ...pr, meta: { ...pr.meta, ...patch } });
+  const r = await S.store.get("recents", m.meta.projectId);
+  if (r) await S.store.put("recents", { ...r, ...patch });
+}
+
 /** タブを外へドラッグ → このウィンドウから外して、別ウィンドウで開く */
 async function popOutDoc(id) {
   const why = popOutBlocked();
@@ -657,7 +788,8 @@ async function saveProjectNow() {
     }
     data.sources = data.sources.map((s) => ({ id: s.id, name: s.name }));
     await S.store.put("projects", data);
-    await S.store.put("recents", { id: m.meta.projectId, name: m.meta.name, driveId: m.meta.driveId, updatedAt: Date.now(), pages: m.pages.length, thumb });
+    await S.store.put("recents", { id: m.meta.projectId, name: m.meta.name, driveId: m.meta.driveId, updatedAt: Date.now(), pages: m.pages.length, thumb,
+      fileKey: m.meta.fileKey || null, fileHandle: m.meta.fileHandle || null, unsaved: !!m.meta.unsaved });
     S.tabNames.set(m.meta.projectId, m.meta.name);
     if (!S.popupDoc) await S.store.setSetting("lastProject", m.meta.projectId); // 別ウィンドウは「前回の続き」を書き換えない
   } catch (e) {
@@ -676,20 +808,25 @@ async function openProject(id, { silent = false } = {}) {
     if (!silent) toast("このファイルは別のウィンドウで開いています");
     return false;
   }
-  const data = await S.store.get("projects", id);
-  if (!data) {
+  const m = await loadProjectModel(id);
+  if (!m) {
     if (!silent) toast("この端末に編集データがありません", { error: true });
     return false;
   }
+  setDoc(m);
+  return true;
+}
+/** 端末内の編集データから DocModel を作る(表示はしない)。無ければ null */
+async function loadProjectModel(id) {
+  const data = await S.store.get("projects", id);
+  if (!data) return null;
   for (const s of data.sources) {
     const rec = await S.store.get("projects", "src:" + s.id);
     if (!rec) throw new Error("保存データが壊れています");
     s.bytes = rec.bytes;
     S.savedSrc.add(id + s.id);
   }
-  const m = await DocModel.restore(data, loadPdf);
-  setDoc(m);
-  return true;
+  return DocModel.restore(data, loadPdf);
 }
 
 async function newDocFromBytes(bytes, name, meta = {}) {
@@ -711,13 +848,85 @@ async function newDocFromBytes(bytes, name, meta = {}) {
   }
 }
 
-async function openLocalFile(file) {
+/** 「PDFを開く」: ファイルの場所が分かる環境(PCのChrome/Edge)では場所付きで選ぶ */
+async function openPicker() {
+  if (!canPickHandle()) return $("#fileOpen").click();
+  try {
+    const r = await pickPdfWithHandle();
+    if (r) await openLocalFile(r.file, r.handle);
+  } catch (e) {
+    console.warn("showOpenFilePicker", e);
+    $("#fileOpen").click(); // 使えなければ従来の選び方
+  }
+}
+
+const realHandle = (h) => (typeof FileSystemFileHandle !== "undefined" && h instanceof FileSystemFileHandle ? h : null);
+
+/**
+ * 端末のファイルを開く。同じファイル(場所、分からなければ中身で判定)が既に開いていれば、
+ * 新しいタブを作らずにそのタブを表示する。handle: ファイルの場所(取れた場合)
+ */
+async function openLocalFile(file, handle = null) {
+  handle = realHandle(handle);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const fileKey = await contentKey(bytes);
+  if (await showSameFile({ handle, key: fileKey })) return;
   if (/^image\//.test(file.type)) {
     const p = await prepPhoto(file);
-    return newDocFromImage(p, file.name.replace(/\.[^.]+$/, "") + ".pdf");
+    newDocFromImage(p, file.name.replace(/\.[^.]+$/, "") + ".pdf", { fileKey }); // 画像はPDFで上書きできないので場所は持たない(保存は別名で)
+    return;
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  await newDocFromBytes(bytes, file.name.toLowerCase().endsWith(".pdf") ? file.name : file.name + ".pdf");
+  await newDocFromBytes(bytes, file.name.toLowerCase().endsWith(".pdf") ? file.name : file.name + ".pdf", { fileKey, fileHandle: handle });
+}
+
+/**
+ * 開こうとしているファイルが、開いているタブ・別ウィンドウ・履歴にあれば、それを表示して true。
+ * 無ければ false(新しく開く)。
+ */
+async function showSameFile(target) {
+  if (!S.store || (!target.handle && !target.key)) return false;
+  let hit = null;
+  for (const r of await S.store.getAll("recents")) {
+    if (!(await isSameFile(r, target))) continue;
+    if (!hit || S.tabs.includes(r.id) || S.win?.heldElsewhere(r.id)) hit = r; // 開いているものを優先
+  }
+  if (!hit) return false;
+  if (S.tabs.includes(hit.id) || hit.id === S.model.meta.projectId) {
+    await switchDoc(hit.id);
+    toast(`「${hit.name}」はすでに開いています`);
+    return true;
+  }
+  if (S.win?.heldElsewhere(hit.id)) {
+    S.win.requestFocus(hit.id);
+    toast("このファイルは別のウィンドウで開いています");
+    return true;
+  }
+  // 閉じて履歴にあるファイル
+  let useLocal = hit.fileKey && hit.fileKey === target.key; // 中身が前回と同じ → 履歴の編集データ(注釈を編集できる状態)で開く
+  if (!useLocal && hit.unsaved) {
+    // 場所は同じだが、ファイルが外で書き換えられている。未保存の編集があるので選んでもらう
+    const c = await dialog({
+      title: "どちらを開きますか?",
+      body: `<p>「${esc(hit.name)}」には、まだ保存していない<b>編集中の内容</b>(${fmtDate(hit.updatedAt)})があります。</p><p class="note">ファイルはその後に別のアプリなどで書き換えられています。「ファイルの最新を開く」を選ぶと、編集中の内容は破棄されます。</p>`,
+      buttons: [{ label: "キャンセル", value: null }, { label: "ファイルの最新を開く", value: "file" }, { label: "編集中の内容を開く", value: "local", primary: true }],
+    });
+    if (!c) return true;
+    useLocal = c === "local";
+  }
+  if (useLocal) {
+    const b = busy("開いています…");
+    try {
+      await saveProjectNow();
+      if (await openProject(hit.id, { silent: true })) {
+        if (hit.unsaved) toast("保存していない編集中の内容で開きました");
+        return true;
+      }
+    } finally {
+      b.close();
+    }
+  }
+  await deleteProjectData(hit.id); // 古い履歴は新しく開くものに置き換える
+  return false;
 }
 
 async function addPdfFiles(files, atIndex) {
@@ -745,6 +954,7 @@ async function addPdfFiles(files, atIndex) {
 function newBlank(landscape = false) {
   const m = new DocModel();
   m.meta.name = "白紙.pdf";
+  m.meta.unsaved = true;
   m.pages.push({ id: "p" + uid(), srcId: null, srcIndex: 0, rot: 0, baseRot: 0, w: landscape ? A4.h : A4.w, h: landscape ? A4.w : A4.h, shapes: [], scale: null });
   setDoc(m);
   saveProjectNow();
@@ -783,12 +993,12 @@ function thumbSlot(clientY) {
 }
 
 /** ドロップしたファイルを、1つずつ新しいタブで開く */
-async function openDroppedFiles(files) {
-  const ok = files.filter((f) => isPdf(f) || /^image\//.test(f.type));
+async function openDroppedFiles(files, handles = []) {
+  const ok = files.map((f, i) => ({ f, h: handles[i]?.kind === "file" ? handles[i] : null })).filter(({ f }) => isPdf(f) || /^image\//.test(f.type));
   if (!ok.length) return toast("PDFファイルをドロップしてください", { error: true });
-  for (const f of ok) {
+  for (const { f, h } of ok) {
     try {
-      await openLocalFile(f);
+      await openLocalFile(f, h);
     } catch (e) {
       toast(e.message, { error: true });
     }
@@ -824,8 +1034,10 @@ function wireDrop() {
     v.classList.remove("drop");
     const f = [...(e.dataTransfer?.files || [])];
     if (!f.length) return;
+    // ファイルの場所(重複して開かない判定用)。イベント中に取り出す必要がある(Chrome/Edge のみ)
+    const hs = [...(e.dataTransfer.items || [])].filter((i) => i.kind === "file").map((i) => i.getAsFileSystemHandle?.()?.catch(() => null) ?? null);
     e.preventDefault();
-    await openDroppedFiles(f);
+    await openDroppedFiles(f, hs.length === f.length ? await Promise.all(hs) : []);
   });
 
   ["dragenter", "dragover"].forEach((t) => th.addEventListener(t, (e) => {
@@ -884,11 +1096,12 @@ function panStart(e) {
  * ======================================================= */
 function fileMenu(anchor) {
   showMenu(anchor, [
-    { label: "PDFを開く(この端末)", icon: "folder", onClick: () => $("#fileOpen").click() },
+    { label: "PDFを開く(この端末)", icon: "folder", onClick: openPicker },
     { label: "Googleドライブから開く", icon: "drive", onClick: openFromDrive },
     { label: "履歴から開く", icon: "history", onClick: openHistory },
     { label: `開いているファイル(${Math.max(S.openDocs.length, S.model.pages.length ? 1 : 0)})…`, icon: "folder", onClick: openDocsDialog },
     { label: "別ウィンドウで開く(並べて表示)", icon: "pages", onClick: () => popOutDoc(S.model.meta.projectId), disabled: !S.model.pages.length },
+    { label: "すべて閉じる(履歴へ)", icon: "history", onClick: closeAll, disabled: !S.tabs.length && !S.model.pages.length },
     { label: "保存しないで閉じる", icon: "trash", onClick: () => discardDoc(S.model.meta.projectId), disabled: !S.model.pages.length },
     { sep: true },
     { label: "白紙から新規作成", icon: "blank", onClick: () => newBlank() },
@@ -903,6 +1116,7 @@ function fileMenu(anchor) {
 function saveMenu(anchor) {
   const has = S.model.pages.length > 0;
   showMenu(anchor, [
+    { label: saveOriginalLabel(S.model.meta), icon: "download", onClick: () => saveOriginal(S.model.meta.projectId), disabled: !has },
     { label: S.model.meta.driveId ? "Googleドライブに保存(上書き/別名)" : "Googleドライブに保存", icon: "drive", onClick: saveToDrive, disabled: !has },
     { label: "PDFを端末に保存(最適化)", icon: "download", onClick: downloadPdf, disabled: !has },
     { label: "Gmailでメール送信", icon: "mail", onClick: mailPdf, disabled: !has },
@@ -1067,15 +1281,18 @@ async function addPhotoPage(src) {
   toast("写真をページに追加しました");
 }
 
-function newDocFromImage(p, name = "写真.pdf") {
+function newDocFromImage(p, name = "写真.pdf", meta = {}) {
   const m = new DocModel();
   m.meta.name = name;
+  m.meta.unsaved = true; // まだどこにも保存していない
+  Object.assign(m.meta, meta);
   const sz = imagePage(p.aspect);
   const page = { id: "p" + uid(), srcId: null, srcIndex: 0, rot: 0, baseRot: 0, w: sz.w, h: sz.h, shapes: [], scale: null };
   page.shapes.push(photoPageShape(m, page, p));
   m.pages.push(page);
   setDoc(m);
   saveProjectNow();
+  return m;
 }
 
 /* =========================================================
@@ -1488,7 +1705,11 @@ async function downloadPdf() {
   S.model.meta.name = o.name;
   updateEmpty();
   const how = await deliverFile(res.bytes, o.name);
-  if (how !== "cancel") toast(`${o.name}(${fmtBytes(res.bytes.length)})を保存しました`);
+  if (how !== "cancel") {
+    S.model.meta.unsaved = false;
+    await saveProjectNow();
+    toast(`${o.name}(${fmtBytes(res.bytes.length)})を保存しました`);
+  }
 }
 
 /* =========================================================
@@ -1527,6 +1748,11 @@ async function openDriveFile(id) {
   // この端末に同じファイルの編集データがある場合は選べるようにする
   const recents = await S.store.getAll("recents");
   const local = recents.find((r) => r.driveId === id);
+  if (local && (S.tabs.includes(local.id) || local.id === S.model.meta.projectId)) {
+    await switchDoc(local.id); // 同じファイルは新しいタブにせず、開いているタブを表示
+    return toast(`「${local.name}」はすでに開いています`);
+  }
+  if (local && S.win?.heldElsewhere(local.id)) return void (await openProject(local.id));
   if (local) {
     const c = await dialog({
       title: "どちらを開きますか?",
@@ -1541,7 +1767,7 @@ async function openDriveFile(id) {
   try {
     const f = await G.downloadFile(id);
     b.close();
-    await newDocFromBytes(f.bytes, f.name, { driveId: f.id, driveFolder: f.parents?.[0] || null });
+    await newDocFromBytes(f.bytes, f.name, { driveId: f.id, driveFolder: f.parents?.[0] || null, fileKey: "drive:" + f.id });
   } catch (e) {
     b.close();
     googleErr(e);
@@ -1642,6 +1868,7 @@ async function saveToDrive() {
       } else throw e;
     }
     m.meta.driveId = r.id;
+    m.meta.unsaved = false;
     await saveProjectNow();
     toast(r.fellBack ? `選んだフォルダには保存できないため、マイドライブ直下に保存しました(${fmtBytes(res.bytes.length)})` : `Googleドライブに保存しました(${fmtBytes(res.bytes.length)})`);
   } catch (e) {
@@ -1838,9 +2065,16 @@ async function notifyOnline(n) {
  * 履歴
  * ======================================================= */
 async function openHistory() {
+  await saveProjectNow();
   const recents = (await S.store.getAll("recents")).sort((a, b) => b.updatedAt - a.updatedAt);
+  const cur = S.model.pages.length ? S.model.meta.projectId : null;
+  const state = (r) => (r.id === cur ? "(表示中)" : S.tabs.includes(r.id) ? "(開いています)" : S.win?.heldElsewhere(r.id) ? "(別ウィンドウ)" : "");
+  // まだ保存していないファイルは、名前の横に「保存」ボタン(元のファイルに上書き)。保存するまでは端末内に一時保存されている
+  const saveBtn = (r) => (r.unsaved && !S.win?.heldElsewhere(r.id)
+    ? `<button type="button" class="btn sm primary" data-save="${r.id}" title="${esc(saveOriginalLabel(r))}">保存</button>`
+    : "");
   const localHtml = recents.length
-    ? recents.map((r) => `<div class="item"><img src="${r.thumb || "icons/icon-192.png"}" alt=""><div class="meta"><div class="name">${esc(r.name)}</div><div class="sub">${fmtDate(r.updatedAt)} ・ ${r.pages}ページ${r.driveId ? " ・ Drive保存済み" : ""}</div></div><button class="btn" data-open="${r.id}">開く</button><button class="btn danger icon" data-del="${r.id}" aria-label="削除">${icon("trash", 18)}</button></div>`).join("")
+    ? recents.map((r) => `<div class="item"><img src="${r.thumb || "icons/icon-192.png"}" alt=""><div class="meta"><div class="name-row"><div class="name">${esc(r.name)}${state(r)}</div>${saveBtn(r)}</div><div class="sub">${fmtDate(r.updatedAt)} ・ ${r.pages}ページ${r.unsaved ? ' ・ <b class="unsaved">未保存(端末内に一時保存中)</b>' : r.driveId ? " ・ Drive保存済み" : " ・ 保存済み"}</div></div><button class="btn" data-open="${r.id}">開く</button><button class="btn danger icon" data-del="${r.id}" aria-label="削除">${icon("trash", 18)}</button></div>`).join("")
     : '<p class="note">履歴はまだありません。</p>';
   await dialog({
     title: "履歴",
@@ -1858,12 +2092,24 @@ async function openHistory() {
       d.querySelector("#hLocal").addEventListener("click", async (e) => {
         const o = e.target.closest("[data-open]");
         const del = e.target.closest("[data-del]");
-        if (o) {
+        const sv = e.target.closest("[data-save]");
+        if (sv) {
+          sv.disabled = true;
+          sv.textContent = "保存中…";
+          if (await saveOriginal(sv.dataset.save)) {
+            const item = sv.closest(".item");
+            item.querySelector(".unsaved")?.replaceWith("保存済み");
+            sv.remove();
+          } else {
+            sv.disabled = false;
+            sv.textContent = "保存";
+          }
+        } else if (o) {
           close(true);
           const b = busy("開いています…");
           try {
             await saveProjectNow();
-            await openProject(o.dataset.open);
+            if (o.dataset.open !== S.model.meta.projectId) await openProject(o.dataset.open);
           } catch (err) {
             toast(err.message, { error: true });
           } finally {

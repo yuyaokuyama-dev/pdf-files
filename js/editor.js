@@ -40,6 +40,7 @@ export class Editor {
     this.textStyle = { size: 18, font: "gothic", bold: false, color: "#111827" };
     this.cloudPitch = 18;
     this.dimSize = 12;
+    this.measureWidth = 2; // 計測の線の太さ(他の線とは別に覚える)
     this.sticky = true; // 作成後に選択して調整 → 何もない所をタップで同じツールに戻り、続けて描ける
     this.returnTool = null; // 作成直後の調整中だけ、戻り先のツールを覚えておく
     this.arrowSize = 10; // 矢印の大きさ(線の太さとは別)
@@ -658,7 +659,7 @@ export class Editor {
       case "calib":
         return g.p1 ? { ...base, type: "dim", style: { ...style, color: "#2563eb", dash: true }, pts: [g.p0, g.p1], off: 24, size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, text: "?" } : null;
       case "measure":
-        return g.p1 ? { ...base, type: "measure", pts: [g.p0, g.p1], size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size } : null;
+        return g.p1 ? { ...base, type: "measure", style: { ...style, color: "#059669", width: this.measureWidth }, pts: [g.p0, g.p1], size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size } : null;
       case "sign":
         return g.p1 ? { ...base, type: "rect", style: { color: "#2563eb", width: 1.5, dash: true, fill: "none" }, pts: [g.p0, g.p1] } : null;
       default:
@@ -740,7 +741,7 @@ export class Editor {
           this.emit("need-scale");
           break;
         }
-        this.addAndSelect(pageId, { type: "measure", pts: [g.p0, p1], size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, style: { ...this.style, color: "#059669", width: 2 } }, false);
+        this.addAndSelect(pageId, { type: "measure", pts: [g.p0, p1], size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, style: { ...this.style, color: "#059669", width: this.measureWidth } }, false);
         break;
       default:
         break;
@@ -1207,6 +1208,7 @@ export class Editor {
       Object.assign(this.style, d.style || {});
       Object.assign(this.textStyle, d.textStyle || {});
       if (d.dimSize) this.dimSize = d.dimSize;
+      if (d.measureWidth) this.measureWidth = d.measureWidth;
       if (d.dimEnd) Object.assign(this.dimEnd, d.dimEnd);
       if (d.cloudPitch) this.cloudPitch = d.cloudPitch;
       if (d.arrowSize) this.arrowSize = d.arrowSize;
@@ -1218,7 +1220,7 @@ export class Editor {
   }
   saveDefaults() {
     try {
-      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc, eraser: this.eraser }));
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, measureWidth: this.measureWidth, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc, eraser: this.eraser }));
     } catch {
       /* 保存できなくてもこのセッションでは有効 */
     }
