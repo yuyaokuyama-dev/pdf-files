@@ -1,5 +1,5 @@
 // Service Worker: アプリ本体を端末に保存し、オフラインでも全機能を使えるようにする。
-const VERSION = "v1.7.0";
+const VERSION = "v1.7.1";
 const CORE = `apdf-core-${VERSION}`;
 const RUNTIME = `apdf-runtime-${VERSION}`;
 
@@ -14,8 +14,8 @@ const CORE_FILES = [
   "js/store.js", "js/tabs.js", "js/thumbs.js", "js/ui.js",
   "vendor/pdf.min.mjs", "vendor/pdf.worker.min.mjs", "vendor/pdf-lib.esm.min.js",
   "icons/logo.svg", "icons/icon-192.png",
-  "icons/pdf-favicon-32.png", "icons/apple-touch-icon.png", "icons/pdf-icon-192.png", "icons/pdf-icon-256.png",
-  "icons/pdf-icon-512.png", "icons/pdf-icon-maskable-512.png",
+  "favicon.ico", "icons/files-favicon-32.png", "icons/files-apple-touch-icon.png", "icons/files-icon-192.png", "icons/files-icon-256.png",
+  "icons/files-icon-512.png", "icons/files-icon-maskable-512.png",
 ];
 
 self.addEventListener("install", (e) => {
