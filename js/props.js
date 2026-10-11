@@ -87,6 +87,8 @@ export class Props {
       case "dash":
         return normDash((sh ? sh.style : ed.style)?.dash);
       case "width":
+        if (!sh && ctx.type === "measure") return ed.measureWidth;
+        return (sh ? sh.style : ed.style)?.width;
       case "fill":
       case "fillOpacity":
       case "opacity":
@@ -182,6 +184,9 @@ export class Props {
           else ed.style.color = value;
           break;
         case "width":
+          if (ctx.type === "measure") ed.measureWidth = value;
+          else ed.style.width = value;
+          break;
         case "fill":
         case "fillOpacity":
         case "dash":
@@ -388,7 +393,7 @@ export class Props {
       const cur = (g("color") || "#e11d48").toLowerCase();
       parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
     }
-    if (LINE_TYPES.has(t) && t !== "measure") parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
+    if (LINE_TYPES.has(t)) parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
     if (FILL_TYPES.has(t)) {
       const fill = g("fill");
       const on = fill && fill !== "none";

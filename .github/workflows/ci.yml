@@ -46,3 +46,4 @@ jobs:
           node tests/e2e-drive.mjs
           node tests/e2e-arc.mjs
           node tests/e2e-tabs.mjs
+          node tests/e2e-samefile.mjs
