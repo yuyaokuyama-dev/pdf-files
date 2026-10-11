@@ -104,6 +104,23 @@ dl.faq dt { font-weight: 700; }
 dl.faq dd { margin: 2px 0 0; color: var(--ink); max-width: 42em; }
 footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: center; }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+@media print {
+  body { font-size: 11pt; line-height: 1.7; background: var(--paper); }
+  .wrap { display: block; max-width: none; padding: 0; }
+  header.top { padding-block: 0 8px; }
+  .applink { display: none; }
+  nav.toc { position: static; max-height: none; margin-bottom: 14px; break-after: page; }
+  main { display: block; }
+  section { border: 0; border-radius: 0; padding: 0; margin: 0 0 18px; }
+  section + section { border-top: 1px solid var(--line); padding-top: 14px; }
+  #install, #update, #uninstall { break-before: page; border-top: 0; padding-top: 0; }
+  h2, h3 { break-after: avoid; }
+  .pf, .note, .warn, tr, .steps > li, dl.faq dt, dl.faq dd { break-inside: avoid; }
+  .tbl { overflow: visible; }
+  table { min-width: 0; }
+  a { color: var(--ink); text-decoration: none; }
+  footer { display: none; }
+}
 </style>
 </head>
 <body>
@@ -113,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><a href="./">アプリを開く</a> ・ 対象バージョン v1.7.1(2026-10-11)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.7.2(2026-10-11)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -146,6 +163,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
       <p>PDF Filesは、ブラウザで動くPDFエディタです。PDFに手書きや図形、文字、寸法、署名、印影を書き込み、ページの並べ替えや削除をして、端末やGoogleドライブに保存できます。Gmailでそのまま送ることもできます。</p>
       <p>アプリストアは使いません。ブラウザで公開URLを開くだけで使え、<a href="#install">ホーム画面に追加(インストール)</a>すると普通のアプリと同じようにアイコンから起動できます。一度開いたあとは、電波のない場所でも編集できます。</p>
       <div class="note"><b>データの保存場所</b>開いたPDF、編集中の内容、履歴、印影は、使っている端末の中に保存されます。別の端末とは自動では同期されません。別の端末で続きを作業したいときは、Googleドライブに保存してください。</div>
+      <p>このマニュアルは、アプリの右上の人型ボタン → <span class="ui">マニュアルをダウンロード(PDF)</span>でPDFとして端末に保存できます。</p>
     </section>
 
     <section id="login">
@@ -345,6 +363,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
         <li><b>メールの送り方</b>:アプリから直接送るか、Gmailを開いて添付するかを選びます。</li>
         <li><b>ボタンの大きさ</b>:自動・標準・大・特大。</li>
         <li><b>ペン入力モード</b>、<b>続けて描く動き</b>、<b>オンライン復帰時の通知</b>。</li>
+        <li><b>マニュアル</b>:人型ボタンのメニューで<span class="ui">設定</span>のすぐ下にある<span class="ui">マニュアルをダウンロード(PDF)</span>で、このマニュアルをPDFで保存できます。</li>
         <li><b>アプリのバージョン</b>:今のバージョンの確認と<span class="ui">更新を確認</span>(<a href="#update">バージョン更新</a>を参照)。</li>
       </ul>
     </section>
@@ -452,7 +471,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.7.1 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.7.2 対応</footer>
 </div>
 </body>
 </html>
