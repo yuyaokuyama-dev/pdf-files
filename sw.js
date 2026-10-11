@@ -13,7 +13,9 @@ const CORE_FILES = [
   "js/icons.js", "js/model.js", "js/pad.js", "js/props.js", "js/raster.js", "js/version.js", "js/render.js",
   "js/store.js", "js/tabs.js", "js/thumbs.js", "js/ui.js",
   "vendor/pdf.min.mjs", "vendor/pdf.worker.min.mjs", "vendor/pdf-lib.esm.min.js",
-  "icons/logo.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
+  "icons/logo.svg", "icons/icon-192.png",
+  "icons/pdf-favicon-32.png", "icons/apple-touch-icon.png", "icons/pdf-icon-192.png", "icons/pdf-icon-256.png",
+  "icons/pdf-icon-512.png", "icons/pdf-icon-maskable-512.png",
 ];
 
 self.addEventListener("install", (e) => {

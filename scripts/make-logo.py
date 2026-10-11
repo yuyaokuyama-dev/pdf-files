@@ -62,26 +62,6 @@ g, w = line_svg(NAME, size, 8, 64, {0: RED}, 1.2)
 wordmark = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w + 16:.0f} 84" role="img" aria-label="{NAME}">{g}</svg>'
 open("icons/logo.svg", "w").write(wordmark)
 
-# --- アプリアイコン: 1行 "PDF Files" (先頭の P のみ赤) ---
-S = 512
-
-
-def app_icon(pad_scale=1.0):
-    box = S * 0.84 * pad_scale  # 1行の横幅
-    _, w_txt = layout(NAME)
-    size = box / (w_txt / upm)
-    cap = font["OS/2"].sCapHeight / upm if getattr(font["OS/2"], "sCapHeight", 0) else 0.7
-    h = size * cap
-    base = (S + h) / 2
-    g1, w1 = line_svg(NAME, size, 0, base, {0: RED}, S / 180)
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {S} {S}" width="{S}" height="{S}">'
-        f'<rect width="{S}" height="{S}" fill="{BG}"/>'
-        f'<g transform="translate({(S - w1) / 2:.2f} 0)">{g1}</g>'
-        f"</svg>"
-    )
-
-
-open("icons/app-icon.svg", "w").write(app_icon())
-open("icons/app-icon-maskable.svg", "w").write(app_icon(0.8))
-print("generated icons/logo.svg, app-icon.svg, app-icon-maskable.svg")
+# iPhone ホーム画面用の icons/app-icon-ios.svg (従来の1行「PDF Files」) は以前このスクリプトで生成したもの。
+# アプリアイコン(赤背景に白抜き太字「PDF」)は scripts/make-app-icon.py で生成する
+print("generated icons/logo.svg")
