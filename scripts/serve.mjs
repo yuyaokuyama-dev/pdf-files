@@ -5,7 +5,7 @@ import { join, extname, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml", ".png": "image/png", ".pcf": "application/octet-stream", ".bcmap": "application/octet-stream", ".wasm": "application/wasm", ".pfb": "application/octet-stream", ".ttf": "font/ttf" };
+const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml", ".png": "image/png", ".pcf": "application/octet-stream", ".bcmap": "application/octet-stream", ".wasm": "application/wasm", ".pfb": "application/octet-stream", ".ttf": "font/ttf", ".pdf": "application/pdf" };
 
 export function startServer(port = 0) {
   const server = http.createServer(async (req, res) => {

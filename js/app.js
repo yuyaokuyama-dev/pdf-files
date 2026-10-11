@@ -1129,6 +1129,7 @@ function userMenu(anchor) {
   showMenu(anchor, [
     { header: `ログイン中: ${auth.currentProfile()?.displayName ? auth.currentProfile().displayName + " (" + S.user + ")" : S.user}` },
     { label: "設定", icon: "settings", onClick: openSettings },
+    { label: "マニュアルをダウンロード(PDF)", icon: "download", onClick: downloadManual },
     { label: "履歴", icon: "history", onClick: openHistory },
     { label: "使い方・ホーム画面に追加", icon: "info", onClick: installHelp },
     ...(auth.isAdmin() ? [{ label: "再設定コードの発行(管理者)", icon: "settings", onClick: issueResetDialog }] : []),
@@ -2273,6 +2274,18 @@ async function changePasswordDialog() {
     toast("パスワードを変更しました");
   } catch (e) {
     toast(e.message, { error: true });
+  }
+}
+
+/** 使い方マニュアル(manual.pdf。manual.html から scripts/make-manual-pdf.mjs で作る)を端末に保存する */
+async function downloadManual() {
+  try {
+    const r = await fetch("manual.pdf");
+    if (!r.ok) throw new Error(String(r.status));
+    const how = await deliverFile(new Uint8Array(await r.arrayBuffer()), `PDF Files manual ${APP_VERSION}.pdf`);
+    if (how === "download") toast("マニュアル(PDF)を保存しました");
+  } catch {
+    toast("マニュアルを取得できませんでした。オンラインで一度開いてから、もう一度お試しください", { error: true });
   }
 }
 

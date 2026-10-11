@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="favicon.ico" sizes="any">
+<title>PDF Files 使い方マニュアル</title>
+<style>
+/* レイアウト: 1段組みの読み物。広い画面では左に目次を固定し、本文は約40字幅 */
+:root {
+  --bg: #f4f5f7;
+  --paper: #ffffff;
+  --ink: #1d2128;
+  --muted: #5d6573;
+  --line: #dde1e7;
+  --red: #d42a2a;
+  --red-soft: #fdeceb;
+  --note: #eef3fb;
+  --note-ink: #23436e;
+  --warn: #fff5e0;
+  --warn-ink: #7a4a00;
+  --key: #eceef2;
+  --font-body: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", "Meiryo", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171b; --paper: #1d2026; --ink: #e8eaee; --muted: #a2a9b5; --line: #343943;
+    --red: #ff6b63; --red-soft: #3a2020; --note: #1d2a3d; --note-ink: #b9d0f0;
+    --warn: #392c14; --warn-ink: #f2cf8a; --key: #2c3039; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171b; --paper: #1d2026; --ink: #e8eaee; --muted: #a2a9b5; --line: #343943;
+  --red: #ff6b63; --red-soft: #3a2020; --note: #1d2a3d; --note-ink: #b9d0f0;
+  --warn: #392c14; --warn-ink: #f2cf8a; --key: #2c3039; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.8; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 64px; display: grid; grid-template-columns: 1fr; gap: 24px; }
+@media (min-width: 900px) { .wrap { grid-template-columns: 240px minmax(0, 1fr); gap: 40px; padding-inline: 24px; } }
+
+header.top { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding-block: 8px 4px; }
+.mark { width: 56px; height: 56px; border-radius: 14px; background: var(--red); display: grid; place-items: center; flex: none; }
+.mark svg { width: 26px; height: 32px; }
+header.top h1 { margin: 0; font-size: clamp(24px, 4vw, 32px); line-height: 1.3; text-wrap: balance; }
+header.top h1 b { color: var(--red); }
+header.top p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+
+nav.toc { align-self: start; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 14px; }
+@media (min-width: 900px) { nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); max-height: calc(100vh - 32px); overflow: auto; } }
+nav.toc .lbl { font-size: 12px; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+nav.toc ol { margin: 0; padding-left: 1.6em; display: grid; gap: 2px; }
+nav.toc a { color: var(--ink); text-decoration: none; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--red); text-decoration: underline; }
+nav.toc li.key a { font-weight: 700; }
+
+main { min-width: 0; display: grid; gap: 20px; }
+section { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 20px clamp(16px, 3vw, 32px) 24px; min-width: 0; scroll-margin-top: 16px; }
+section > :first-child { margin-top: 0; }
+h2 { font-size: 22px; line-height: 1.4; margin: 0 0 12px; display: flex; gap: 10px; align-items: baseline; text-wrap: balance; }
+h2 .n { color: var(--red); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; flex: none; }
+h3 { font-size: 17px; margin: 22px 0 6px; line-height: 1.5; }
+p, li { max-width: 42em; }
+p { margin: 8px 0; }
+ul, ol { margin: 8px 0; padding-left: 1.4em; }
+li { margin: 3px 0; }
+a { color: var(--red); }
+:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.ui { font-weight: 700; white-space: nowrap; }
+.ui::before { content: "［"; color: var(--muted); font-weight: 400; }
+.ui::after { content: "］"; color: var(--muted); font-weight: 400; }
+kbd { font-family: var(--font-mono); font-size: 13px; background: var(--key); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+code { font-family: var(--font-mono); font-size: 14px; background: var(--key); border-radius: 4px; padding: 0 4px; }
+
+.steps { counter-reset: s; list-style: none; padding-left: 0; display: grid; gap: 8px; }
+.steps > li { counter-increment: s; position: relative; padding-left: 36px; }
+.steps > li::before { content: counter(s); position: absolute; left: 0; top: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--red); color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+
+.note, .warn { border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 15px; max-width: 42em; }
+.note { background: var(--note); color: var(--note-ink); }
+.warn { background: var(--warn); color: var(--warn-ink); }
+.note b:first-child, .warn b:first-child { margin-right: 4px; }
+
+.platforms { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 12px; }
+.pf { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; min-width: 0; }
+.pf h3 { margin-top: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pf h3 small { font-weight: 400; color: var(--muted); font-size: 13px; }
+.pf .steps { font-size: 15px; }
+
+.tbl { overflow-x: auto; margin: 10px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; min-width: 520px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
+td:first-child { white-space: nowrap; font-weight: 700; }
+
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; font-size: 14px; }
+.flow span { background: var(--red-soft); border-radius: 999px; padding: 4px 12px; }
+.flow i { font-style: normal; color: var(--muted); }
+
+dl.faq { margin: 0; display: grid; gap: 14px; }
+dl.faq dt { font-weight: 700; }
+dl.faq dd { margin: 2px 0 0; color: var(--ink); max-width: 42em; }
+footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: center; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+@media print {
+  body { font-size: 11pt; line-height: 1.7; background: var(--paper); }
+  .wrap { display: block; max-width: none; padding: 0; }
+  header.top { padding-block: 0 8px; }
+  .applink { display: none; }
+  nav.toc { position: static; max-height: none; margin-bottom: 14px; break-after: page; }
+  main { display: block; }
+  section { border: 0; border-radius: 0; padding: 0; margin: 0 0 18px; }
+  section + section { border-top: 1px solid var(--line); padding-top: 14px; }
+  #install, #update, #uninstall { break-before: page; border-top: 0; padding-top: 0; }
+  h2, h3 { break-after: avoid; }
+  .pf, .note, .warn, tr, .steps > li, dl.faq dt, dl.faq dd { break-inside: avoid; }
+  .tbl { overflow: visible; }
+  table { min-width: 0; }
+  a { color: var(--ink); text-decoration: none; }
+  footer { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
+    <div>
+      <h1><b>PDF Files</b> 使い方マニュアル</h1>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.7.2(2026-10-11)・iPhone / iPad / Windows / Android / Mac</p>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="目次">
+    <div class="lbl">目次</div>
+    <ol>
+      <li><a href="#about">PDF Filesとは</a></li>
+      <li><a href="#login">はじめてのログイン</a></li>
+      <li class="key"><a href="#install">インストール</a></li>
+      <li><a href="#screen">画面の見かた</a></li>
+      <li><a href="#open">PDFを開く・新しく作る</a></li>
+      <li><a href="#draw">書き込む・図形を描く</a></li>
+      <li><a href="#measure">寸法・縮尺・計測</a></li>
+      <li><a href="#sign">署名・印影・写真</a></li>
+      <li><a href="#pages">ページの操作</a></li>
+      <li><a href="#save">保存・書き出し・メール</a></li>
+      <li><a href="#tabs">タブ・別ウィンドウ・履歴</a></li>
+      <li><a href="#offline">オフラインで使う</a></li>
+      <li><a href="#settings">設定</a></li>
+      <li class="key"><a href="#update">バージョン更新</a></li>
+      <li class="key"><a href="#uninstall">アンインストール</a></li>
+      <li><a href="#keys">キーボード操作</a></li>
+      <li><a href="#faq">困ったとき</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="about">
+      <h2><span class="n">1</span>PDF Filesとは</h2>
+      <p>PDF Filesは、ブラウザで動くPDFエディタです。PDFに手書きや図形、文字、寸法、署名、印影を書き込み、ページの並べ替えや削除をして、端末やGoogleドライブに保存できます。Gmailでそのまま送ることもできます。</p>
+      <p>アプリストアは使いません。ブラウザで公開URLを開くだけで使え、<a href="#install">ホーム画面に追加(インストール)</a>すると普通のアプリと同じようにアイコンから起動できます。一度開いたあとは、電波のない場所でも編集できます。</p>
+      <div class="note"><b>データの保存場所</b>開いたPDF、編集中の内容、履歴、印影は、使っている端末の中に保存されます。別の端末とは自動では同期されません。別の端末で続きを作業したいときは、Googleドライブに保存してください。</div>
+      <p>このマニュアルは、アプリの右上の人型ボタン → <span class="ui">マニュアルをダウンロード(PDF)</span>でPDFとして端末に保存できます。</p>
+    </section>
+
+    <section id="login">
+      <h2><span class="n">2</span>はじめてのログイン</h2>
+      <ol class="steps">
+        <li>公開URLをブラウザで開きます。ログイン画面が出ます。</li>
+        <li>はじめての人は<span class="ui">新規登録</span>を押し、メールアドレス・名前・パスワード(8文字以上)を入力します。登録済みの人は<span class="ui">ログイン</span>でメールアドレスとパスワードを入力します。</li>
+        <li><span class="ui">ログイン状態を保持する</span>にチェックを入れておくと、次回からログイン画面が出ません。</li>
+      </ol>
+      <div class="note"><b>Buildsと同じアカウント</b>Buildsを使っている人は、Buildsと同じメールアドレスとパスワードでログインできます。一度ログインした端末では、オフラインでもログインできます。</div>
+      <h3>パスワードを忘れたとき</h3>
+      <ol class="steps">
+        <li>ログイン画面の<span class="ui">パスワードを忘れた場合</span>を押します。</li>
+        <li>管理者に連絡して、6桁の確認コードを発行してもらいます(管理者は右上の人型ボタン → <span class="ui">再設定コードの発行(管理者)</span>で発行できます)。コードは30分有効で、5回間違えると使えなくなります。</li>
+        <li>メールアドレス、確認コード、新しいパスワードを入れて<span class="ui">再設定してログイン</span>を押します。</li>
+      </ol>
+      <p>ログイン中にパスワードを変えるときは、右上の人型ボタン → <span class="ui">設定</span> → <span class="ui">パスワードを変更</span>です。</p>
+    </section>
+
+    <section id="install">
+      <h2><span class="n">3</span>インストール(ホーム画面に追加)</h2>
+      <p>インストールすると、ブラウザのアドレスバーなどが消えて画面を広く使え、ホーム画面やスタートメニューのアイコンから起動できます。アイコンは赤い角丸に白い書類と「PDF Files」の文字です。アプリ内でも、<span class="ui">ファイル</span> → <span class="ui">ホーム画面に追加(インストール)</span>で手順を確認できます。</p>
+      <div class="platforms">
+        <div class="pf">
+          <h3>iPhone・iPad <small>Safari</small></h3>
+          <ol class="steps">
+            <li>Safariで公開URLを開きます。</li>
+            <li>画面下(iPadは上)の共有ボタン <b>⬆︎</b> を押します。</li>
+            <li><span class="ui">ホーム画面に追加</span>を選びます。見つからないときはメニューを下へスクロールします。</li>
+            <li>名前が「PDF Files」になっていることを確認し、<span class="ui">追加</span>を押します。</li>
+          </ol>
+          <p>iPhone・iPadは、Safariから追加してください。</p>
+        </div>
+        <div class="pf">
+          <h3>Windows <small>Chrome・Edge</small></h3>
+          <ol class="steps">
+            <li>ChromeかEdgeで公開URLを開きます。</li>
+            <li>アドレスバー右端のインストールアイコン(モニターに矢印の形)を押します。アプリ内の<span class="ui">ファイル</span> → <span class="ui">ホーム画面に追加(インストール)</span> → <span class="ui">今すぐインストール</span>でも同じです。</li>
+            <li>確認が出たら<span class="ui">インストール</span>を押します。</li>
+          </ol>
+          <p>スタートメニューに「PDF Files」が追加されます。タスクバーにピン留めもできます。</p>
+        </div>
+        <div class="pf">
+          <h3>Android <small>Chrome</small></h3>
+          <ol class="steps">
+            <li>Chromeで公開URLを開きます。</li>
+            <li>右上の︙メニュー → <span class="ui">アプリをインストール</span>(または<span class="ui">ホーム画面に追加</span>)を選びます。</li>
+            <li><span class="ui">インストール</span>を押します。</li>
+          </ol>
+          <p>ホーム画面とアプリ一覧にアイコンが追加されます。</p>
+        </div>
+        <div class="pf">
+          <h3>Mac <small>Chrome・Edge・Safari</small></h3>
+          <ol class="steps">
+            <li>Chrome・Edgeは、Windowsと同じくアドレスバーのインストールアイコンから追加します。</li>
+            <li>Safariは、メニューバーの<span class="ui">ファイル</span> → <span class="ui">Dockに追加</span>を選びます。</li>
+          </ol>
+        </div>
+      </div>
+      <div class="note"><b>PDFをダブルクリックで開く</b>パソコンのChrome・Edgeでインストールした場合、PDFファイルを右クリック → <span class="ui">プログラムから開く</span>でPDF Filesを選べます。すでにPDF Filesが開いているときは、そのウィンドウに新しいタブとして開きます。</div>
+      <div class="warn"><b>iPhone・iPadの注意</b>Safariで開いたPDF Filesと、ホーム画面から開いたPDF Filesは、保存データ(履歴・印影・編集中の内容)が別々になります。普段はホーム画面のアイコンから使ってください。</div>
+    </section>
+
+    <section id="screen">
+      <h2><span class="n">4</span>画面の見かた</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>場所</th><th>できること</th></tr></thead>
+        <tbody>
+          <tr><td>上のバー</td><td>元に戻す・やり直し、縮小・拡大(真ん中の%を押すと幅に合わせる)、<span class="ui">ファイル</span>、<span class="ui">保存・出力</span>、人型ボタン(アカウント・設定)。オフラインのときは「オフライン」、保存待ちがあるときは件数が表示されます。</td></tr>
+          <tr><td>タブ</td><td>開いているPDFが並びます。押すと切り替わります。</td></tr>
+          <tr><td>左:ページ一覧</td><td>下のツールバーの<span class="ui">ページ</span>で開閉します。ページの並べ替え・回転・削除・追加をします。</td></tr>
+          <tr><td>中央:作業画面</td><td>PDFを表示して書き込みます。2本指のピンチで拡大縮小、パソコンは <kbd>Ctrl</kbd>+マウスホイールで拡大縮小します。</td></tr>
+          <tr><td>右:プロパティ</td><td>選んだ図形や今のツールの色・太さ・線の種類・文字の大きさなどを変えます。</td></tr>
+          <tr><td>下:ツールバー</td><td>ペンや図形などの道具を選びます。選ぶと使い方のヒントが画面に出ます。</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="open">
+      <h2><span class="n">5</span>PDFを開く・新しく作る</h2>
+      <p>何も開いていないときは、画面中央のボタンから始められます。開いたあとは<span class="ui">ファイル</span>メニューを使います。</p>
+      <ul>
+        <li><span class="ui">PDFを開く(この端末)</span>:端末の中のPDFを選びます。パソコンでは、PDFを作業画面にドラッグ&ドロップしても開けます。</li>
+        <li><span class="ui">Googleドライブから開く</span>:はじめて使うときにGoogleのログインと許可の画面が出ます。</li>
+        <li><span class="ui">履歴から開く</span>:前に開いたPDFを、書き込みを残したまま開き直します。</li>
+        <li><span class="ui">白紙から新規作成</span>:白紙のPDFを作ります。</li>
+        <li><span class="ui">写真・スキャンから新規作成</span>:カメラで書類を撮影してPDFにします。</li>
+      </ul>
+      <p>同じファイルを二重に開くことはありません。すでに開いているファイルを開くと、そのタブに切り替わります。</p>
+      <div class="note"><b>開けないPDF</b>パスワード付きのPDFは開けません。パスワードを解除したPDFを開いてください。</div>
+    </section>
+
+    <section id="draw">
+      <h2><span class="n">6</span>書き込む・図形を描く</h2>
+      <p>下のツールバーで道具を選び、ページの上をなぞります。描いたものは<span class="ui">選択</span>ツールで押すと選択でき、移動・大きさの変更・色の変更・削除ができます。</p>
+      <div class="tbl"><table>
+        <thead><tr><th>ツール</th><th>使い方</th></tr></thead>
+        <tbody>
+          <tr><td>選択</td><td>描いたものを選んで動かす・変える・消す。</td></tr>
+          <tr><td>移動</td><td>ページを掴んでスクロールします(書き込みはしません)。</td></tr>
+          <tr><td>ペン</td><td>指・ペン・マウスでなめらかに手書きします。</td></tr>
+          <tr><td>消しゴム</td><td>ペンで書いた線をなぞって消します。線ごと消すか、なぞった部分だけ消すかを右のパネルで選べます。</td></tr>
+          <tr><td>線・矢印</td><td>ドラッグで引きます。パソコンでは <kbd>Shift</kbd> を押しながらで45°刻みになります。</td></tr>
+          <tr><td>四角・丸</td><td>ドラッグで描きます。右のパネルで塗りつぶしもできます。</td></tr>
+          <tr><td>円弧</td><td>中心から外へドラッグします。半円・1/4円・3/4円は右のパネルで切り替えます。</td></tr>
+          <tr><td>多角形</td><td>角をタップして点を打ち、最初の点をタップするか<span class="ui">完了</span>で閉じます。あとから頂点を動かせます。</td></tr>
+          <tr><td>雲</td><td>ドラッグで雲マーク(指摘・修正箇所の囲み)を描きます。山の大きさ(ピッチ)は右のパネルで変えます。</td></tr>
+          <tr><td>文字</td><td>入れたい場所をタップして文字を入力します。</td></tr>
+        </tbody>
+      </table></div>
+      <h3>続けて描くとき</h3>
+      <p>線・図形・寸法などは、描いた直後に選択された状態になり、そのまま色や太さを調整できます。何もない所をタップすると確定し、同じツールに戻って続けて描けます。この動きは<a href="#settings">設定</a>で切り替えられます。</p>
+      <div class="note"><b>iPadとApple Pencil</b><a href="#settings">設定</a>の<span class="ui">ペン入力モード</span>をオンにすると、描くのはペン(とマウス)だけになり、指はスクロール専用になります。手のひらが画面に触れても線が入りません。</div>
+    </section>
+
+    <section id="measure">
+      <h2><span class="n">7</span>寸法・縮尺・計測</h2>
+      <p>図面や間取り図に寸法を書き込んだり、長さを測ったりできます。</p>
+      <h3>寸法線を入れる</h3>
+      <p><span class="ui">寸法線</span>ツールで、測りたい2点をドラッグし、表示したい数値(文字も可)を入力します。あとから選択して文字を直せます。</p>
+      <h3>縮尺を設定して長さを測る</h3>
+      <ol class="steps">
+        <li><span class="ui">縮尺設定</span>ツールで、実際の長さが分かっている2点(例:図面上の 3,640mm の壁)をドラッグします。</li>
+        <li>その実際の長さと単位を入力して<span class="ui">設定</span>を押します。全ページに同じ縮尺を使うこともできます。</li>
+        <li>自動で<span class="ui">計測</span>ツールに切り替わります。測りたい2点をドラッグすると、設定した縮尺で長さが表示されます。</li>
+      </ol>
+    </section>
+
+    <section id="sign">
+      <h2><span class="n">8</span>署名・印影・写真</h2>
+      <h3>署名</h3>
+      <p><span class="ui">署名</span>ツールで署名を入れたい範囲を四角でドラッグ(タップでも可)し、出てきた欄に指やペンで署名して<span class="ui">署名を入れる</span>を押します。</p>
+      <h3>印影(ハンコ)</h3>
+      <ol class="steps">
+        <li><span class="ui">ファイル</span> → <span class="ui">印影の登録・管理</span>で印影を登録します。ハンコを押した紙の写真、名前からの自動作成、手書きのどれでも作れます。</li>
+        <li><span class="ui">印影</span>ツールを選び、押したい位置をタップします。</li>
+      </ol>
+      <h3>写真</h3>
+      <p>ツールバーの<span class="ui">写真</span>で、カメラで撮った写真や画像ファイルをページに貼ったり、新しいページとして追加したりできます。</p>
+    </section>
+
+    <section id="pages">
+      <h2><span class="n">9</span>ページの操作</h2>
+      <p>ツールバーの<span class="ui">ページ</span>でページ一覧を開きます。</p>
+      <ul>
+        <li><b>並べ替え</b>:ページをドラッグして好きな位置へ動かします。</li>
+        <li><b>回転</b>:ページの回転ボタンで90°ずつ回します。</li>
+        <li><b>削除</b>:ページのゴミ箱ボタンで1ページずつ、チェックを入れてまとめて削除もできます。最後の1ページは削除できません。</li>
+        <li><b>追加</b>:白紙ページ(A4縦・横)、別のPDF、カメラの写真、画像ファイルを追加できます。パソコンでは、ページ一覧に別のPDFをドロップするとその位置に入ります。</li>
+        <li><b>そのページだけ書き出す</b>:パソコンでは、ページを画面の外へドラッグすると、そのページだけのPDFを作れます。チェックを入れた複数ページの書き出しもできます。</li>
+      </ul>
+    </section>
+
+    <section id="save">
+      <h2><span class="n">10</span>保存・書き出し・メール</h2>
+      <p>書き込んだ内容は、端末の中に自動で一時保存されます。元のファイルやGoogleドライブへ保存するには、右上の<span class="ui">保存・出力</span>を使います。</p>
+      <div class="tbl"><table>
+        <thead><tr><th>メニュー</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>上書き保存</td><td>開いた元のファイルに上書きします。パソコンで開いたPDFはそのファイル、Googleドライブから開いたPDFはドライブのファイルが更新されます。元の場所が分からないファイル(iPhoneで開いたPDFや白紙から作ったPDF)は、保存先を選びます。</td></tr>
+          <tr><td>Googleドライブに保存</td><td>上書きするか、別のファイルとして保存するかを選べます。</td></tr>
+          <tr><td>PDFを端末に保存</td><td>ファイル名とファイルサイズの最適化を選んで保存します。iPhoneでは共有メニューから<span class="ui">"ファイル"に保存</span>などを選びます。</td></tr>
+          <tr><td>Gmailでメール送信</td><td>PDFを添付してGmailで送ります。添付できるのは約24MBまでです。</td></tr>
+          <tr><td>ファイル名を変更</td><td>表示中のPDFの名前を変えます。</td></tr>
+        </tbody>
+      </table></div>
+      <h3>ファイルサイズの最適化</h3>
+      <ul>
+        <li><b>標準(画質優先)</b>:元のPDFの内容を保ち、挿入した写真だけを適度に圧縮します。</li>
+        <li><b>軽量(おすすめ)</b>:写真を強めに圧縮します。通常はこれで十分軽くなります。</li>
+        <li><b>最小</b>:全ページを画像にして最も軽くします。文字の選択や検索はできなくなります。メールで容量オーバーになったときに使います。</li>
+      </ul>
+    </section>
+
+    <section id="tabs">
+      <h2><span class="n">11</span>タブ・別ウィンドウ・履歴</h2>
+      <ul>
+        <li><b>タブ</b>:複数のPDFを同時に開けます。<span class="ui">ファイル</span> → <span class="ui">開いているファイル</span>で一覧を見られます。</li>
+        <li><b>別ウィンドウ</b>:パソコンでは、タブを作業画面の外へドラッグするか<span class="ui">別ウィンドウで開く(並べて表示)</span>で、PDFを別のウィンドウに分けて並べられます。</li>
+        <li><b>閉じる</b>:アプリを閉じると、開いていたファイルはすべて履歴に入ります。<span class="ui">すべて閉じる(履歴へ)</span>も同じです。<span class="ui">保存しないで閉じる</span>は、編集を捨てて閉じます。</li>
+        <li><b>履歴</b>:<span class="ui">ファイル</span> → <span class="ui">履歴から開く</span>で開きます。まだ元のファイルに保存していないものには「未保存(端末内に一時保存中)」と表示され、名前の横の<span class="ui">保存</span>で元のファイルに上書き保存できます。ゴミ箱ボタンは、その履歴と端末内の編集データを削除します(Googleドライブに保存済みのファイルは消えません)。</li>
+      </ul>
+    </section>
+
+    <section id="offline">
+      <h2><span class="n">12</span>オフラインで使う</h2>
+      <p>一度インターネットにつながった状態で開けば、アプリ本体が端末に保存されます。その後は機内モードでも、PDFを開く・書き込む・図形・寸法・計測・署名・ページ操作・端末への保存ができます。</p>
+      <p>Googleドライブへの保存とメール送信は、オフラインのときは「待ち」に入り、上のバーに件数が表示されます。オンラインに戻ると<span class="ui">今すぐ実行</span>の案内が出ます。<a href="#settings">設定</a>で<span class="ui">オンライン復帰時に通知で知らせる</span>をオンにすると、通知でも知らせます。</p>
+    </section>
+
+    <section id="settings">
+      <h2><span class="n">13</span>設定</h2>
+      <p>右上の人型ボタン → <span class="ui">設定</span>で開きます。変えたら<span class="ui">保存</span>を押します。</p>
+      <ul>
+        <li><b>Google連携</b>:通常は設定不要です。ドライブやメールをはじめて使うときにGoogleのログインを一度行います。<span class="ui">Googleの接続を解除</span>で連携をやめられます。</li>
+        <li><b>ドライブの選択画面を開く場所</b>:マイドライブ・前回保存したフォルダ・指定したフォルダから選びます。</li>
+        <li><b>メールの送り方</b>:アプリから直接送るか、Gmailを開いて添付するかを選びます。</li>
+        <li><b>ボタンの大きさ</b>:自動・標準・大・特大。</li>
+        <li><b>ペン入力モード</b>、<b>続けて描く動き</b>、<b>オンライン復帰時の通知</b>。</li>
+        <li><b>マニュアル</b>:人型ボタンのメニューで<span class="ui">設定</span>のすぐ下にある<span class="ui">マニュアルをダウンロード(PDF)</span>で、このマニュアルをPDFで保存できます。</li>
+        <li><b>アプリのバージョン</b>:今のバージョンの確認と<span class="ui">更新を確認</span>(<a href="#update">バージョン更新</a>を参照)。</li>
+      </ul>
+    </section>
+
+    <section id="update">
+      <h2><span class="n">14</span>バージョン更新</h2>
+      <p>PDF Filesはアプリストアを通さないので、更新のための操作は基本的に不要です。新しいバージョンが公開されると、インターネットにつながった状態で起動したときに裏で自動的に取り込まれ、<b>次に起動したとき</b>から新しいバージョンになります。</p>
+      <div class="flow" aria-label="更新の流れ"><span>新バージョン公開</span><i>→</i><span>オンラインで起動(裏で取り込み)</span><i>→</i><span>次の起動から新バージョン</span></div>
+      <h3>今すぐ更新したいとき</h3>
+      <ol class="steps">
+        <li>インターネットにつながった状態で、右上の人型ボタン → <span class="ui">設定</span>を開きます。</li>
+        <li><span class="ui">アプリのバージョン</span>の<span class="ui">更新を確認</span>を押します。</li>
+        <li>新しいバージョンがあれば「新しいバージョン v○○ を取得しました」と出て、自動で再読み込みされます。「最新です」と出たら更新は不要です。</li>
+        <li>表示が新しいバージョンにならないときは、もう一度<span class="ui">更新を確認</span>を押します。</li>
+      </ol>
+      <h3>自動で更新されないとき</h3>
+      <ul>
+        <li><b>iPhone・iPad</b>:ホーム画面のアプリは、閉じたつもりでも裏で動き続けていることがあります。画面下から上へスワイプしてアプリ一覧を出し、PDF Filesを上へはじいて完全に終了してから、もう一度開きます。</li>
+        <li><b>Windows・Mac・Android</b>:PDF Filesのウィンドウをすべて閉じてから開き直します。ブラウザで使っている場合は再読み込み(<kbd>Ctrl</kbd>+<kbd>R</kbd>、Macは <kbd>⌘</kbd>+<kbd>R</kbd>)します。</li>
+      </ul>
+      <div class="note"><b>更新してもデータは消えません</b>履歴・編集中の内容・印影・ログイン情報は更新後もそのまま残ります。アイコンや名前の変更は、端末によっては反映まで時間がかかることがあります。すぐに変えたいときは、一度アンインストールして入れ直します(その場合は次の注意を読んでください)。</div>
+    </section>
+
+    <section id="uninstall">
+      <h2><span class="n">15</span>アンインストール</h2>
+      <div class="warn"><b>先に保存してください</b>アンインストールすると、その端末に保存されている履歴・まだ保存していない編集内容・印影・端末内だけのアカウント情報が消えることがあります。必要なPDFは、先に<span class="ui">保存・出力</span>で元のファイルやGoogleドライブに保存してください。Googleドライブに保存したファイルと、Buildsと共通のアカウントは消えません。</div>
+      <div class="platforms">
+        <div class="pf">
+          <h3>iPhone・iPad</h3>
+          <ol class="steps">
+            <li>ホーム画面のPDF Filesのアイコンを長押しします。</li>
+            <li><span class="ui">Appを削除</span>(または<span class="ui">ブックマークを削除</span>)を選び、<span class="ui">削除</span>を押します。</li>
+          </ol>
+          <p>ホーム画面のアプリの保存データも一緒に削除されます。</p>
+        </div>
+        <div class="pf">
+          <h3>Windows・Mac <small>Chrome</small></h3>
+          <ol class="steps">
+            <li>PDF Filesを起動し、ウィンドウ右上の︙メニューを開きます。</li>
+            <li><span class="ui">PDF Filesをアンインストール</span>を選びます。</li>
+            <li>保存データも消すときは<span class="ui">Chromeのデータも削除する</span>にチェックを入れ、<span class="ui">削除</span>を押します。</li>
+          </ol>
+          <p>Windowsでは、<span class="ui">設定</span> → <span class="ui">アプリ</span> → <span class="ui">インストールされているアプリ</span>からも削除できます。</p>
+        </div>
+        <div class="pf">
+          <h3>Windows・Mac <small>Edge</small></h3>
+          <ol class="steps">
+            <li>Edgeのアドレスバーに <code>edge://apps</code> と入力して開きます。</li>
+            <li>PDF Filesの︙(詳細)から<span class="ui">アンインストール</span>を選びます。</li>
+          </ol>
+        </div>
+        <div class="pf">
+          <h3>Android</h3>
+          <ol class="steps">
+            <li>ホーム画面かアプリ一覧のPDF Filesのアイコンを長押しします。</li>
+            <li><span class="ui">アンインストール</span>(または<span class="ui">削除</span>)を選びます。</li>
+          </ol>
+        </div>
+        <div class="pf">
+          <h3>Mac <small>Safari(Dockに追加した場合)</small></h3>
+          <ol class="steps">
+            <li>Finderで<span class="ui">アプリケーション</span>フォルダを開きます。</li>
+            <li>PDF Filesをゴミ箱に入れます。</li>
+          </ol>
+        </div>
+      </div>
+      <h3>ブラウザに残ったデータも消したいとき</h3>
+      <p>ブラウザで直接開いて使っていた場合は、ブラウザの設定で公開URLのサイトデータ(Cookieとサイトデータ)を削除すると、端末内の履歴や印影が消えます。</p>
+    </section>
+
+    <section id="keys">
+      <h2><span class="n">16</span>キーボード操作(パソコン)</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>キー</th><th>動作</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>元に戻す</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>やり直し</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>選んだ図形を複製</td></tr>
+          <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>選んだ図形を削除</td></tr>
+          <tr><td>矢印キー</td><td>選んだ図形を少しずつ動かす(<kbd>Shift</kbd>を押しながらで大きく)</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>多角形を閉じる / 選んだ文字・寸法を編集</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>描きかけを取り消す・選択を外す・選択ツールに戻る</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+ホイール</td><td>拡大・縮小</td></tr>
+        </tbody>
+      </table></div>
+      <p>Macでは <kbd>Ctrl</kbd> の代わりに <kbd>⌘</kbd> を使います。</p>
+    </section>
+
+    <section id="faq">
+      <h2><span class="n">17</span>困ったとき</h2>
+      <dl class="faq">
+        <dt>書き込んだ内容が消えないか心配です</dt>
+        <dd>編集内容は端末の中に自動で一時保存されます。アプリを閉じても、<span class="ui">履歴から開く</span>で続きから作業できます。ただし元のファイルには保存されていないので、最後に<span class="ui">保存・出力</span>で保存してください。</dd>
+        <dt>「どちらを開きますか?」と聞かれました</dt>
+        <dd>端末に保存していない編集内容があるのに、元のファイルがほかのアプリなどで書き換えられているときに出ます。書き込みを続けたいなら<span class="ui">編集中の内容を開く</span>、新しいファイルを見たいなら<span class="ui">ファイルの最新を開く</span>(編集内容は破棄されます)を選びます。</dd>
+        <dt>メールで「添付が大きすぎます」と出ます</dt>
+        <dd>Gmailの添付は約24MBまでです。最適化を<b>最小</b>にして送り直してください。</dd>
+        <dt>Googleドライブやメールが使えません</dt>
+        <dd>インターネットにつながっているか確認してください。オフライン中の保存や送信は「待ち」に入り、オンラインに戻ったら実行できます。うまくいかないときは<span class="ui">設定</span> → <span class="ui">Googleの接続を解除</span>のあと、もう一度Googleにログインしてください。</dd>
+        <dt>新しい機能が表示されません</dt>
+        <dd><a href="#update">バージョン更新</a>の<span class="ui">更新を確認</span>を試してください。</dd>
+        <dt>使っているバージョンを知りたい</dt>
+        <dd><span class="ui">設定</span>の<span class="ui">アプリのバージョン</span>に表示されています。</dd>
+      </dl>
+    </section>
+  </main>
+
+  <footer>PDF Files 使い方マニュアル ・ v1.7.2 対応</footer>
+</div>
+</body>
+</html>
