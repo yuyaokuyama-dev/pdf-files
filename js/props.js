@@ -7,10 +7,10 @@ import { resolveShape, BL_KEYS, layerIdOf } from "./layers.js";
 import { SNAP_KINDS, polarOf, pointAt } from "./snap.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
-const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "dim", "measure"]);
+const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "polyline", "cloud", "dim", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
 const TEXT_LIKE = new Set(["text"]);
-const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp", eraser: "eraser" };
+const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", polyline: "polyline", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp", eraser: "eraser" };
 
 /** 文字の回転: 箱の中心を動かさずに角度だけ変える */
 function rotateTextAbout(sh, deg) {
@@ -265,6 +265,10 @@ export class Props {
       }
       return;
     }
+    if (key === "regN") {
+      if (!isInput && Number.isFinite(v)) this.ed.setMode("n", v);
+      return;
+    }
     if (key.startsWith("snap")) {
       if (isInput && t.type !== "number") return;
       const aid = this.ed.aid;
@@ -382,6 +386,14 @@ export class Props {
       return;
     }
     switch (b.dataset.act) {
+      case "mode":
+        ed.setMode(b.dataset.key, b.dataset.v);
+        this.refresh();
+        break;
+      case "to-cloud":
+        ed.convertToCloud();
+        this.refresh();
+        break;
       case "eraser-mode":
         ed.setEraser({ mode: b.dataset.mode });
         this.refresh();
@@ -456,7 +468,7 @@ export class Props {
       `<label class="field">${label}<select data-k="${key}">${layers.map((l) => `<option value="${esc(l.id)}"${l.id === selId ? " selected" : ""}>${esc(l.name)}${l.visible ? "" : "(非表示)"}</option>`).join("")}</select></label>`;
     const blBox = (shape) =>
       `<label class="check field" style="display:flex"><input type="checkbox" data-k="bl"${BL_KEYS.every((k) => shape?.bl?.includes(k)) ? " checked" : ""}> 色・太さ・線種をレイヤーに従う</label>`;
-    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ", eraser: "消しゴム", multi: `複数選択(${ed.multi?.ids.length ?? 0}個)` }[t] || "";
+    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", polyline: "ポリライン", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ", eraser: "消しゴム", multi: `複数選択(${ed.multi?.ids.length ?? 0}個)` }[t] || "";
     parts.push(`<div style="display:flex;align-items:center"><h3 style="flex:1">${title}${ctx.sel ? "(選択中)" : t === "eraser" ? "" : "(次に描くもの)"}</h3><button class="btn icon" data-act="close" style="min-height:28px;width:28px" aria-label="閉じる">${icon("x", 16)}</button></div>`);
 
     if (t === "multi") {
@@ -502,6 +514,18 @@ export class Props {
       parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
     }
     if (LINE_TYPES.has(t)) parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
+    if (!ctx.sel) {
+      // 作図方法の切り替え(次に描くものだけに効く)
+      const M = this.ed.modes;
+      const radios = (key, opts) =>
+        `<div class="field">描き方<div class="actions" style="margin:0">${opts.map(([v, l]) => `<button class="btn${M[key] === v ? " primary" : ""}" data-act="mode" data-key="${key}" data-v="${v}">${l}</button>`).join("")}</div></div>`;
+      if (this.ed.tool === "ellipse") parts.push(radios("ellipse", [["ellipse", "楕円(対角)"], ["circle", "円(中心→半径)"]]));
+      else if (this.ed.tool === "arc") parts.push(radios("arc", [["center", "中心と半径"], ["three", "3点"]]));
+      else if (this.ed.tool === "polygon") {
+        parts.push(radios("poly", [["polygon", "多角形"], ["polyline", "ポリライン"], ["regular", "正多角形"]]));
+        if (M.poly === "regular") parts.push(`<label class="field">辺の数<input type="number" data-k="regN" min="3" max="64" step="1" value="${M.n}" style="width:80px;height:34px"></label>`);
+      }
+    }
     if (FILL_TYPES.has(t)) {
       const fill = g("fill");
       const on = fill && fill !== "none";
@@ -589,7 +613,9 @@ export class Props {
         <button class="btn" data-act="front">前面へ</button>
         <button class="btn" data-act="back">背面へ</button>
         <button class="btn danger" data-act="del">${icon("trash", 16)}削除</button></div>`);
-      if (t === "polygon" || t === "cloud") parts.push(`<p class="hint">頂点をドラッグで移動、辺をダブルタップで頂点を追加、頂点をダブルタップで削除できます。</p>`);
+      if (t === "polygon" || t === "polyline" || t === "cloud") parts.push(`<p class="hint">頂点をドラッグで移動、辺の中点の四角をドラッグで辺ごと移動、辺をダブルタップで頂点を追加、頂点をダブルタップで削除できます。</p>`);
+      if (t === "rect") parts.push(`<p class="hint">四隅の丸で大きさ、各辺の中点の四角で辺ごと動かせます。</p>`);
+      if (["rect", "ellipse", "polygon"].includes(t)) parts.push(`<div class="actions"><button class="btn" data-act="to-cloud">雲マークに変換</button></div>`);
       if (t === "arc") parts.push(`<p class="hint">両端の丸で開き角、弧の中央の四角で大きさ、外側の丸で回転できます。常に正円のままです。</p>`);
     }
     if (!ctx.sel && (LINE_TYPES.has(t) || TEXT_LIKE.has(t))) {

@@ -214,6 +214,9 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
         case "arc":
           path(arcPath(sh.pts[0], sh.pts[1], sh.sweep, arcLines(sh)), strokeOpts);
           break;
+        case "polyline":
+          path(linePath(sh.pts), strokeOpts);
+          break;
         case "polygon":
           path(polygonPath(sh.pts), { ...strokeOpts, ...fillOpts });
           break;

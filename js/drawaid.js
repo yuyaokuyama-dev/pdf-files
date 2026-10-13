@@ -120,7 +120,7 @@ export class DrawAid {
       text = `${this.fmtLen(Math.abs(p1[0] - p0[0]), page)} × ${this.fmtLen(Math.abs(p1[1] - p0[1]), page)}`;
     } else if (tool === "ellipse") {
       text = this.pend ? `半径 ${this.fmtLen(dist(p0, p1), page)}` : `${this.fmtLen(Math.abs(p1[0] - p0[0]), page)} × ${this.fmtLen(Math.abs(p1[1] - p0[1]), page)}`;
-    } else if (tool === "arc") {
+    } else if (tool === "arc" || tool === "circle") {
       text = `半径 ${this.fmtLen(dist(p0, p1), page)}`;
     } else return;
     if (mark && mark.kind !== "polar") text += `  [${({ end: "端点", mid: "中点", center: "中心", quad: "四半円点", int: "交点" })[mark.kind] || ""}]`;
