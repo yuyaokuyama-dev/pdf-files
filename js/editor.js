@@ -8,10 +8,11 @@ import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, tex
 import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
 import { isLayerLocked, isLayerVisible, BL_KEYS } from "./layers.js";
 import { DrawAid, DYN_TOOLS } from "./drawaid.js";
+import { LEADER_DEFAULT } from "./leader.js";
 import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, extendPolyline, filletLines, chamferLines, stretchShape, splitPolyline, joinChains, explodeShape } from "./modify.js";
 
 const NS = "http://www.w3.org/2000/svg";
-const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "dim", "calib", "measure", "sign", "stamp"]);
+const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "leader", "dim", "calib", "measure", "sign", "stamp"]);
 const LINE_TOOLS = new Set(["line", "arrow", "arc", "dim", "calib", "measure"]);
 const MAX_PIXELS = 16_000_000;
 
@@ -46,7 +47,7 @@ function edgesOf(sh) {
 
 const PICK_CMDS = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch"]);
 /** 1キーで切り替えるツール・コマンド(パソコン) */
-const TOOL_KEYS = { v: "select", w: "marquee", n: "pen", l: "line", r: "rect", c: "ellipse", a: "arc", p: "polygon", o: "cloud", t: "text", d: "dim", e: "eraser", h: "hand", m: "cmd:move", k: "cmd:copy", x: "cmd:explode", j: "cmd:join" };
+const TOOL_KEYS = { v: "select", w: "marquee", n: "pen", l: "line", r: "rect", c: "ellipse", a: "arc", p: "polygon", o: "cloud", t: "text", q: "leader", d: "dim", e: "eraser", h: "hand", m: "cmd:move", k: "cmd:copy", x: "cmd:explode", j: "cmd:join" };
 
 export class Editor {
   /**
@@ -72,6 +73,7 @@ export class Editor {
     this.sticky = true; // 作成後に選択して調整 → 何もない所をタップで同じツールに戻り、続けて描ける
     this.returnTool = null; // 作成直後の調整中だけ、戻り先のツールを覚えておく
     this.arrowSize = 10; // 矢印の大きさ(線の太さとは別)
+    this.leader = { ...LEADER_DEFAULT }; // 引出線つき文字の設定(文字の大きさ・囲み・先端)
     this.arc = { sweep: 180, r1: false, r2: false }; // 円弧の開き角(度)と半径の直線①②
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
     this.eraser = { mode: "stroke", size: 24 }; // 消しゴム: stroke=線ごと / partial=なぞった部分だけ(size=円の直径・画面px)
@@ -696,6 +698,8 @@ export class Editor {
       case "arrow":
       case "rect":
         return g.p1 ? { ...base, type: g.tool, pts: [g.p0, g.p1], ...(g.tool === "arrow" ? { headSize: this.arrowSize } : {}) } : null;
+      case "leader":
+        return g.p1 ? { ...base, type: "leader", pts: [g.p0, g.p1], text: "", ...this.leader } : null;
       case "arc":
         return g.p1 ? { ...base, ...this.newArc(g.p0, g.p1) } : null;
       case "cloud":
@@ -790,6 +794,11 @@ export class Editor {
       case "rect":
         this.addAndSelect(pageId, { type: tool, pts: [g.p0, p1], style: { ...this.style } });
         break;
+      case "leader": {
+        const s = this.addAndSelect(pageId, { type: "leader", pts: [g.p0, p1], text: "", style: { ...this.style }, ...this.leader });
+        if (s) this.emit("leader-edit", { pageId, shapeId: s.id, isNew: true });
+        break;
+      }
       case "ellipse":
         this.addAndSelect(pageId, { type: "ellipse", pts: this.modes.ellipse === "circle" ? this.circlePts(g.p0, p1) : [g.p0, p1], style: { ...this.style } });
         break;
@@ -1145,6 +1154,7 @@ export class Editor {
     if (dbl && !this.multi) {
       if (shape.type === "text") return this.editText(pageId, shape, false);
       if (shape.type === "dim") return this.emit("dim-edit", { pageId, shape });
+      if (shape.type === "leader") return this.emit("leader-edit", { pageId, shapeId: shape.id, isNew: false });
       if (shape.type === "polygon" || shape.type === "polyline" || shape.type === "cloud") return this.insertVertex(pageId, shape, p);
     }
     const inSel = this.selectionPageId() === pageId && this.selectedIds().includes(id);
@@ -1588,6 +1598,7 @@ export class Editor {
       if (d.dimEnd) Object.assign(this.dimEnd, d.dimEnd);
       if (d.cloudPitch) this.cloudPitch = d.cloudPitch;
       if (d.arrowSize) this.arrowSize = d.arrowSize;
+      if (d.leader) Object.assign(this.leader, d.leader);
       if (d.arc) Object.assign(this.arc, d.arc);
       if (d.eraser) Object.assign(this.eraser, d.eraser);
       if (d.modes) Object.assign(this.modes, d.modes);
@@ -1597,7 +1608,7 @@ export class Editor {
   }
   saveDefaults() {
     try {
-      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, measureWidth: this.measureWidth, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc, eraser: this.eraser, modes: this.modes }));
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, measureWidth: this.measureWidth, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, leader: this.leader, arc: this.arc, eraser: this.eraser, modes: this.modes }));
     } catch {
       /* 保存できなくてもこのセッションでは有効 */
     }
@@ -1640,6 +1651,7 @@ export class Editor {
       this.dimEnd = { style: sh.endStyle ?? "arrow", size: sh.endSize ?? (sh.size || 12) / 2 };
     }
     if (sh.type === "arrow") this.arrowSize = sh.headSize ?? Math.max(10, (st.width ?? 1) * 4.5);
+    if (sh.type === "leader") this.leader = { size: sh.size || LEADER_DEFAULT.size, box: sh.box ?? LEADER_DEFAULT.box, tip: sh.tip ?? LEADER_DEFAULT.tip, tipSize: sh.tipSize ?? LEADER_DEFAULT.tipSize };
     if (sh.type === "cloud" && sh.pitch) this.cloudPitch = sh.pitch;
     if (sh.type === "arc") this.arc = { sweep: clampSweep(sh.sweep), r1: !!sh.r1, r2: !!sh.r2 };
     this.saveDefaults();

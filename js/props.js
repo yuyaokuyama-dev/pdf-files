@@ -5,12 +5,13 @@ import { esc } from "./ui.js";
 import { DASH_TYPES, normDash, arrowSizeOf, dist, clampSweep, rotateAbout } from "./geometry.js";
 import { resolveShape, BL_KEYS, layerIdOf } from "./layers.js";
 import { SNAP_KINDS, polarOf, pointAt } from "./snap.js";
+import { LEADER_BOXES, LEADER_TIPS, LEADER_DEFAULT } from "./leader.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
-const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "polyline", "cloud", "dim", "measure"]);
+const LINE_TYPES = new Set(["pen", "line", "arrow", "leader", "rect", "ellipse", "arc", "polygon", "polyline", "cloud", "dim", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
 const TEXT_LIKE = new Set(["text"]);
-const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", polyline: "polyline", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp", eraser: "eraser" };
+const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", polyline: "polyline", cloud: "cloud", text: "text", leader: "leader", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp", eraser: "eraser" };
 
 /** 文字の回転: 箱の中心を動かさずに角度だけ変える */
 function rotateTextAbout(sh, deg) {
@@ -23,6 +24,7 @@ function rotateTextAbout(sh, deg) {
 }
 
 const PT_MM = 25.4 / 72;
+const LEADER_FIELD = { lsize: "size", lbox: "box", ltip: "tip", ltipSize: "tipSize", ltext: "text" };
 const ARC_PRESETS = [{ s: 90, label: "1/4円" }, { s: 180, label: "半円" }, { s: 270, label: "3/4円" }];
 const arcAngle = (sh) => {
   const [c, a] = sh.pts;
@@ -132,6 +134,15 @@ export class Props {
         return sh ? sh.endSize ?? (sh.size || 12) / 2 : ed.dimEnd.size;
       case "text":
         return sh?.text ?? "";
+      case "ltext":
+        return sh?.text ?? "";
+      case "lsize":
+      case "lbox":
+      case "ltip":
+      case "ltipSize": {
+        const f = LEADER_FIELD[key];
+        return sh ? sh[f] ?? LEADER_DEFAULT[f] : ed.leader[f];
+      }
       default:
         return undefined;
     }
@@ -190,6 +201,13 @@ export class Props {
           case "headSize":
             sh[key] = value;
             break;
+          case "ltext":
+          case "lsize":
+          case "lbox":
+          case "ltip":
+          case "ltipSize":
+            sh[LEADER_FIELD[key]] = value;
+            break;
           default:
             break;
         }
@@ -229,6 +247,13 @@ export class Props {
           break;
         case "headSize":
           ed.arrowSize = value;
+          break;
+        case "lsize":
+        case "lbox":
+        case "ltip":
+        case "ltipSize":
+          ed.leader[LEADER_FIELD[key]] = value;
+          ed.saveDefaults();
           break;
         case "sweep":
           ed.arc.sweep = clampSweep(value);
@@ -575,6 +600,14 @@ export class Props {
     if (LINE_TYPES.has(t) && t !== "measure") {
       parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
       parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
+    }
+    if (t === "leader") {
+      const sel = (k, label, list) => `<label class="field">${label}<select data-k="${k}">${list.map((o) => `<option value="${o.id}"${g(k) === o.id ? " selected" : ""}>${o.label}</option>`).join("")}</select></label>`;
+      if (ctx.sel) parts.push(`<label class="field">文字(空欄なら文字なしの引出線)<input type="text" data-k="ltext" value="${esc(g("ltext"))}" placeholder="例: 1 / 仕上げ材"></label>`);
+      parts.push(sel("lbox", "文字の囲み", LEADER_BOXES));
+      parts.push(sel("ltip", "引出線の先端", LEADER_TIPS));
+      parts.push(num("lsize", "文字の大きさ", 6, 48, 1));
+      parts.push(num("ltipSize", "先端(矢印・黒丸)の大きさ", 3, 30, 0.5, (v) => Number(v).toFixed(1)));
     }
     if (t === "arrow") parts.push(num("headSize", "矢印のサイズ(線の太さとは別)", 3, 60, 0.5, (v) => Number(v).toFixed(1)));
     if (t === "cloud") parts.push(num("pitch", "雲のピッチ(円弧の大きさ)", 6, 80, 1));

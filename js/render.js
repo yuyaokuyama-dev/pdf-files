@@ -5,6 +5,7 @@ import {
   arcPath, arcBounds, arcGeometry,
 } from "./geometry.js";
 import { visibleShapes } from "./layers.js";
+import { leaderGeometry, stadiumPath, LEADER_DEFAULT } from "./leader.js";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -63,6 +64,10 @@ export function shapeBounds(shape, page) {
     case "dim": {
       const g = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, shape.size || 12, dimOpts(shape));
       return bbox([...shape.pts, g.line[0], g.line[1], g.textPos, ...(g.leader || [])]);
+    }
+    case "leader": {
+      const sz = shape.size || LEADER_DEFAULT.size;
+      return leaderGeometry(shape, shape.text ? textMetrics({ ...shape, size: sz }) : null).bounds;
     }
     case "arc":
       return arcBounds(shape.pts[0], shape.pts[1], shape.sweep, arcLines(shape));
@@ -212,6 +217,27 @@ export function renderShape(shape, parent, opts = {}) {
         ts.textContent = line || " ";
       });
       el("rect", { x: x - 3, y: y - 3, width: m.w + 6, height: m.h + 6, fill: "transparent", class: "hit" }, g);
+      break;
+    }
+    case "leader": {
+      const sz = shape.size || LEADER_DEFAULT.size;
+      const m = shape.text ? textMetrics({ ...shape, size: sz }) : null;
+      const geo = leaderGeometry(shape, m);
+      el("path", { d: linePath(geo.line), fill: "none", ...common }, g);
+      if (geo.tipShape?.type === "arrow") el("path", { d: polygonPath(geo.tipShape.poly), fill: color, stroke: color, "stroke-width": 1, "stroke-linejoin": "round", opacity: common.opacity }, g);
+      else if (geo.tipShape?.type === "dot") el("circle", { cx: geo.tipShape.c[0], cy: geo.tipShape.c[1], r: geo.tipShape.r, fill: color, opacity: common.opacity }, g);
+      if (geo.box?.type === "underline") el("path", { d: linePath(geo.box.pts), fill: "none", ...common }, g);
+      else if (geo.box?.type === "stadium") el("path", { d: stadiumPath(geo.box), fill: "none", ...common }, g);
+      if (m) {
+        const [x, y] = geo.textTL;
+        const t = el("text", { x, y: y + sz * TEXT_ASCENT, "font-size": sz, "font-family": fontCss(shape.font), "font-weight": shape.bold ? "bold" : null, fill: shape.color || color, style: "white-space:pre" }, g);
+        m.lines.forEach((line, i) => {
+          const ts = el("tspan", { x, dy: i === 0 ? 0 : sz * TEXT_LINE }, t);
+          ts.textContent = line || " ";
+        });
+        el("rect", { x: geo.bounds.x, y: geo.bounds.y, width: geo.bounds.w, height: geo.bounds.h, fill: "transparent", class: "hit" }, g);
+      }
+      hit(linePath([geo.line[0], shape.pts[0]]));
       break;
     }
     case "dim":

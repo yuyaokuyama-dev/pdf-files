@@ -94,6 +94,13 @@ export function transformShape(shape, m, opts = {}) {
       s.pts = [a, b];
       return s;
     }
+    case "leader":
+      s.pts = shape.pts.map(map);
+      if (m.k !== 1) {
+        s.size = Math.max(4, (shape.size || 14) * m.k);
+        if (shape.tipSize) s.tipSize = shape.tipSize * m.k;
+      }
+      return s;
     case "pen":
     case "line":
     case "arrow":
