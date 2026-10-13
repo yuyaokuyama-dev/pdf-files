@@ -8,6 +8,7 @@ import { textMetrics, labelFor, serializeOverlay, arcLines } from "./render.js";
 import { TEXT_LINE } from "./render.js";
 import { renderTextPng, recompressImage, renderPageJpeg } from "./raster.js";
 import { visibleShapes, layerIdOf } from "./layers.js";
+import { leaderGeometry, stadiumPath, LEADER_DEFAULT } from "./leader.js";
 import { packEdit, pageOf, EDIT_FILE, OC_PREFIX } from "./editdata.js";
 
 /** 最適化レベル */
@@ -232,6 +233,18 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
             { lines: m.lines, size: sh.size || 18, font: sh.font, bold: !!sh.bold, color: sh.color || st.color || "#e11d48", bg: sh.bg || null, w: m.w, h: m.h },
             sh.pts[0], sh.angle || 0,
           );
+          break;
+        }
+        case "leader": {
+          const sz = sh.size || LEADER_DEFAULT.size;
+          const m = sh.text ? textMetrics({ ...sh, size: sz }) : null;
+          const geo = leaderGeometry(sh, m);
+          path(linePath(geo.line), strokeOpts);
+          if (geo.tipShape?.type === "arrow") path(polygonPath(geo.tipShape.poly), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: 1 });
+          else if (geo.tipShape?.type === "dot") path(ellipsePath([geo.tipShape.c[0] - geo.tipShape.r, geo.tipShape.c[1] - geo.tipShape.r], [geo.tipShape.c[0] + geo.tipShape.r, geo.tipShape.c[1] + geo.tipShape.r]), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          if (geo.box?.type === "underline") path(linePath(geo.box.pts), strokeOpts);
+          else if (geo.box?.type === "stadium") path(stadiumPath(geo.box), strokeOpts);
+          if (m) await placeText({ lines: m.lines, size: sz, font: sh.font, bold: !!sh.bold, color: sh.color || color, bg: null, w: m.w, h: m.h }, geo.textTL, 0);
           break;
         }
         case "dim":

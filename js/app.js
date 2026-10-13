@@ -302,6 +302,7 @@ const TOOLS = [
   { id: "cloud", icon: "cloud", label: "雲", hint: "ドラッグで雲マークを描きます。ピッチは右のパネルで変更" },
   { id: "text", icon: "text", label: "文字", hint: "入れたい場所をタップして文字を入力します" },
   { sep: true },
+  { id: "leader", icon: "leader", label: "引出線", hint: "指す所から文字の位置までドラッグします(先が矢印か黒丸)。離すと文字を入れる画面が出ます。空のままなら文字なしの引出線です" },
   { id: "dim", icon: "dim", label: "寸法線", hint: "測りたい2点をドラッグ → 数値を入力します" },
   { id: "calib", icon: "calib", label: "縮尺設定", hint: "実際の長さが分かる2点をドラッグ → 実寸を入力して縮尺を設定。右のパネルから、用紙と縮尺(1/100など)を数値で設定することもできます" },
   { id: "measure", icon: "measure", label: "計測", hint: "2点をドラッグすると、設定した縮尺で長さを計測します" },
@@ -392,6 +393,16 @@ function buildTools() {
   });
 }
 
+/** 引出線の文字を入れる・直す */
+async function leaderEdit({ pageId, shapeId, isNew }) {
+  const ed = S.editor;
+  const f = ed.model.findShape(shapeId);
+  if (!f) return;
+  const r = await promptDialog({ title: "引出線の文字", label: "文字(空欄なら文字なしの引出線)", value: f.shape.text || "", placeholder: "例: 1 / 仕上げ材", ok: "決定" });
+  if (r == null) return;
+  if (r !== (f.shape.text || "")) ed.model.mutate(() => (f.shape.text = r));
+}
+
 /** 「修正」メニュー: トリム・延長・フィレット・面取り・切断・ストレッチ・結合・分解 */
 async function modifyMenu(anchor) {
   const ed = S.editor;
@@ -472,6 +483,7 @@ function wireEditorEvents() {
   });
   ed.on("zoom", (z) => ($("#btnZoomFit").textContent = `${Math.round(z * 100)}%`));
   ed.on("toast", (o) => toast(o.text, o));
+  ed.on("leader-edit", leaderEdit);
   ed.on("cmd", (c) => (c ? showHint(c.text, 0, [{ label: "中止", onClick: () => ed.cancelCommand() }]) : showHint("")));
   ed.on("sign-request", signRequest);
   ed.on("dim-request", dimRequest);
