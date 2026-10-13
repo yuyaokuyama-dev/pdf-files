@@ -336,6 +336,8 @@ function initUI() {
     getPdfPage,
     onAdd: (anchor) => addPageMenu(anchor),
     onExport: (ids) => exportPages(ids),
+    makePdf: (ids) => buildPagesPdf(ids),
+    pdfKey: (ids) => pagesPdfKey(ids),
   });
   S.props = new Props({
     el: $("#props"),
@@ -611,7 +613,7 @@ async function saveOriginal(id) {
       await G.getToken();
       how = "drive";
     } else if (typeof window.showSaveFilePicker === "function") {
-      handle = await window.showSaveFilePicker({ suggestedName: rec.name, types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }] });
+      handle = await window.showSaveFilePicker({ suggestedName: rec.name, types: PDF_TYPES, id: SAVE_PICKER_ID });
       how = "saveas";
     } else how = "deliver";
   } catch (e) {
@@ -1676,40 +1678,105 @@ async function deliverFile(bytes, name) {
   return "download";
 }
 
-/** 指定したページだけのPDFを作って保存する(ページ一覧から画面外へドラッグ・「書き出し」ボタン) */
-async function exportPages(ids) {
+const PDF_TYPES = [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }];
+const SAVE_PICKER_ID = "pdffiles-save"; // 今のファイルの場所が分からないときは、前回選んだフォルダから始まる
+
+/**
+ * 保存先を選ぶ(Chrome/Edge のPC版)。最初に開くフォルダは、今のファイルを保存している場所。
+ * 選んだファイル(ハンドル)を返す。キャンセルは "cancel"、選べない環境(iPhone・Safari・Firefox など)は null
+ * (null のときは deliverFile で端末に保存・共有する)。ボタンを押した直後に呼ぶ(時間が経つと許可されない)。
+ */
+async function pickSaveTarget(name) {
+  if (typeof window.showSaveFilePicker !== "function") return null;
+  const opts = { suggestedName: name, types: PDF_TYPES, id: SAVE_PICKER_ID };
+  const here = realHandle(S.model.meta.fileHandle);
+  if (here) opts.startIn = here; // ファイルを渡すと、そのファイルがあるフォルダで開く
+  try {
+    return await window.showSaveFilePicker(opts);
+  } catch (e) {
+    if (e?.name === "AbortError") return "cancel";
+    console.warn("showSaveFilePicker", e); // ドラッグの後などで選択画面を出せないときは、端末に保存する
+    return null;
+  }
+}
+
+/** 作ったPDFを、選んだ保存先(無ければ端末に保存・共有)へ。キャンセルは false */
+async function writePicked(target, bytes, name) {
+  if (target) {
+    await writeToHandle(target, bytes);
+    return true;
+  }
+  return (await deliverFile(bytes, name)) !== "cancel";
+}
+
+/** ページだけのPDFのファイル名(元の名前_p2.pdf / 元の名前_3ページ.pdf) */
+function pagesPdfName(ids) {
+  const m = S.model;
+  const base = m.meta.name.replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|]/g, "_");
+  return `${base}_${ids.length === 1 ? `p${m.indexOf(ids[0]) + 1}` : `${ids.length}ページ`}.pdf`;
+}
+/** ページだけのPDFの中身が変わると変わる文字列(ドラッグ用に先に作ったPDFが古くないかの確認) */
+function pagesPdfKey(ids) {
+  const m = S.model;
+  return JSON.stringify([m.meta.projectId, pagesPdfName(ids), S.settings.level, ids.map((id) => {
+    const p = m.page(id);
+    return p && [p.srcId, p.srcIndex, p.rot, p.w, p.h, p.shapes];
+  })]);
+}
+/** 指定したページだけのPDFを作る(画面表示なし) */
+async function buildPagesPdf(ids, onProgress) {
   const m = S.model;
   const pages = ids.map((id) => m.page(id)).filter(Boolean);
-  if (!pages.length) return;
-  const base = m.meta.name.replace(/\.pdf$/i, "");
-  const name = `${base}_${pages.length === 1 ? `p${m.indexOf(pages[0].id) + 1}` : `${pages.length}ページ`}.pdf`;
+  const name = pagesPdfName(pages.map((p) => p.id));
+  const res = await exportPdf({ meta: { name }, pages, sources: m.sources, images: m.images }, { level: S.settings.level, onProgress });
+  return { bytes: res.bytes, name, count: pages.length };
+}
+
+/** 指定したページだけのPDFを作って保存する(ページ一覧の「書き出し」ボタン・画面外へドラッグ)。保存先を選べる環境では選ぶ */
+async function exportPages(ids) {
+  ids = ids.filter((id) => S.model.page(id));
+  if (!ids.length) return;
+  const target = await pickSaveTarget(pagesPdfName(ids));
+  if (target === "cancel") return;
   const b = busy("PDFを作成中…");
   let res;
   try {
     S.editor.finishTextEdit?.();
-    res = await exportPdf({ meta: { name }, pages, sources: m.sources, images: m.images }, { level: S.settings.level, onProgress: (p, msg) => b.update(p, msg) });
+    res = await buildPagesPdf(ids, (p, msg) => b.update(p, msg));
   } catch (e) {
     console.error(e);
     return toast(`PDFの作成に失敗しました: ${e.message}`, { error: true });
   } finally {
     b.close();
   }
-  const how = await deliverFile(res.bytes, name);
-  if (how !== "cancel") toast(`${name}(${pages.length}ページ・${fmtBytes(res.bytes.length)})を保存しました`);
+  try {
+    if (await writePicked(target, res.bytes, res.name)) toast(`${target?.name || res.name}(${res.count}ページ・${fmtBytes(res.bytes.length)})を保存しました`);
+  } catch (e) {
+    console.error(e);
+    toast(`保存できませんでした: ${e.message}`, { error: true });
+  }
 }
 
 async function downloadPdf() {
-  const o = await askExport({ title: "PDFを端末に保存", ok: "作成して保存" });
+  const o = await askExport({ title: "PDFを端末に保存", ok: typeof window.showSaveFilePicker === "function" ? "作成して保存先を選ぶ" : "作成して保存" });
   if (!o) return;
+  const target = await pickSaveTarget(o.name); // 最初は今のファイルと同じ場所
+  if (target === "cancel") return;
   const res = await runExport(o.level);
   if (!res) return;
   S.model.meta.name = o.name;
   updateEmpty();
-  const how = await deliverFile(res.bytes, o.name);
-  if (how !== "cancel") {
+  let ok;
+  try {
+    ok = await writePicked(target, res.bytes, o.name);
+  } catch (e) {
+    console.error(e);
+    return toast(`保存できませんでした: ${e.message}`, { error: true });
+  }
+  if (ok) {
     S.model.meta.unsaved = false;
     await saveProjectNow();
-    toast(`${o.name}(${fmtBytes(res.bytes.length)})を保存しました`);
+    toast(`${target?.name || o.name}(${fmtBytes(res.bytes.length)})を保存しました`);
   }
 }
 

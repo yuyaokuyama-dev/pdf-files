@@ -60,6 +60,8 @@ check("同じ場所に落としても順番は変わらない", JSON.stringify(a
 await page.click("#btnUndo");
 check("並べ替えも取り消せる", JSON.stringify(await ids()) === JSON.stringify(ids2));
 
+// ここからは保存先を選べないブラウザ(iPhone・Firefox など)の動き: 端末に保存する。保存先を選ぶ動きは e2e-pagesel.mjs
+await page.evaluate(() => { window.showSaveFilePicker = undefined; });
 // 3) 2ページ目を画面の外へドラッグして離す → そのページだけのPDFが保存される
 const dragOut = (i, x, y) => page.evaluate(([i, x, y]) => {
   const t = document.querySelectorAll("#thumbs .thumb")[i];
