@@ -119,6 +119,20 @@ export class DocModel {
     });
     return true;
   }
+  /** 複数ページをまとめて挿入位置 at(移動前の並びで、そのページの前。末尾は pages.length)へ移す。並びは文書順のまま */
+  movePages(ids, at) {
+    const set = new Set(ids);
+    const moving = this.pages.filter((p) => set.has(p.id));
+    if (!moving.length) return false;
+    const rest = this.pages.filter((p) => !set.has(p.id));
+    const to = this.pages.slice(0, at).filter((p) => !set.has(p.id)).length;
+    const next = [...rest.slice(0, to), ...moving, ...rest.slice(to)];
+    if (next.every((p, i) => p === this.pages[i])) return false;
+    this.mutate(() => {
+      this.pages = next;
+    });
+    return true;
+  }
   rotatePage(id, delta = 90) {
     const p = this.page(id);
     if (!p) return;

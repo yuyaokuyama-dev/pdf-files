@@ -1,5 +1,10 @@
 // ページ一覧(サムネイル): 並べ替え(ドラッグ/↑↓)・削除・回転・複数選択削除・ページ追加・
-// ページの書き出し(画面外へドラッグ/チェックしたページ)。別PDFのドロップ挿入は app.js の wireDrop が受け持つ
+// ページの書き出し(画面外へドラッグ/チェックしたページ)。別PDFのドロップ挿入は app.js の wireDrop が受け持つ。
+// Ctrl(Mac は ⌘)+クリックでチェックの付け外し、Shift+クリックで範囲をチェック。チェックしたページをドラッグすると、
+// チェックしたページをまとめて動かす・書き出す。
+// Chrome/Edge(PC)では、ドラッグしたページのPDFを先に作っておき(ページにマウスを乗せた時点で作り始める)、
+// デスクトップやフォルダにドロップするとその場所に保存される(DownloadURL)。間に合わなかったとき・他のブラウザでは、
+// 画面の外で離すと保存先を選んで保存する
 import { icon } from "./icons.js";
 import { renderShapes } from "./render.js";
 import { confirmDialog, toast } from "./ui.js";
@@ -8,12 +13,20 @@ const TW = 128; // サムネイル幅(px)
 const PAGE_MIME = "application/x-pdffiles-page"; // ページ一覧内のドラッグを他のドラッグ(ファイル等)と見分ける
 
 export class Thumbs {
-  constructor({ el, editor, getPdfPage, onAdd, onExport }) {
+  constructor({ el, editor, getPdfPage, onAdd, onExport, makePdf, pdfKey }) {
     this.el = el;
     this.editor = editor;
     this.getPdfPage = getPdfPage;
     this.onAdd = onAdd;
     this.onExport = onExport; // (pageIds) そのページだけのPDFを作る
+    this.makePdf = makePdf; // (pageIds) → {bytes, name} ドロップした場所に保存するPDF(画面表示なしで作る)
+    this.pdfKey = pdfKey; // (pageIds) → 中身が変わると変わる文字列
+    this.anchor = null; // Shift+クリックの範囲の起点
+    this.ready = null; // 作り終えたPDF {key, name, url}
+    this.making = null; // 作成中の key
+    this.queued = null; // 作成中に頼まれた次のページ
+    // ドロップした場所へ直接保存できるのは Chromium(Chrome/Edge)のPC版だけ
+    this.canDropSave = !!(makePdf && navigator.userAgentData?.brands?.some((b) => /Chromium/.test(b.brand)) && !matchMedia("(pointer: coarse)").matches);
     this.cache = new Map();
     this.checked = new Set();
     this.key = "";
@@ -31,32 +44,58 @@ export class Thumbs {
   attach() {
     this.el.addEventListener("click", (e) => this.onClick(e));
     let line = null; // 挿入線(初めてドラッグしたときに作る)
-    let dragId = null; // ページ一覧の中からドラッグ中のページ
+    let dragIds = null; // ページ一覧の中からドラッグ中のページ(チェックしたページをドラッグしたときは全部)
+    let dropSave = null; // ドロップした場所へ保存するPDFの名前(DownloadURL を付けたとき)
     let lastOver = 0; // 最後に画面内で dragover を受けた時刻(画面外へのドロップ判定に使う)
     const hide = () => line && (line.hidden = true);
     document.addEventListener("dragover", () => (lastOver = Date.now()));
 
+    // マウスを乗せたページ(またはチェックしたページ一式)のPDFを先に作っておく
+    let hoverTimer = 0;
+    this.el.addEventListener("pointerover", (e) => {
+      const t = e.pointerType !== "touch" && e.target.closest?.(".thumb");
+      clearTimeout(hoverTimer);
+      if (t) hoverTimer = setTimeout(() => this.prepare(this.dragSet(t.dataset.id)), 200);
+    });
+    this.el.addEventListener("pointerdown", (e) => {
+      const t = e.pointerType !== "touch" && e.button === 0 && e.target.closest?.(".thumb");
+      if (t) this.prepare(this.dragSet(t.dataset.id));
+    });
+
     this.el.addEventListener("dragstart", (e) => {
       const t = e.target.closest?.(".thumb");
       if (!t) return;
-      dragId = t.dataset.id;
-      e.dataTransfer.setData(PAGE_MIME, dragId);
+      dragIds = this.dragSet(t.dataset.id);
+      dropSave = null;
+      e.dataTransfer.setData(PAGE_MIME, dragIds.join(","));
       e.dataTransfer.effectAllowed = "copyMove";
-      t.classList.add("dragging");
+      const r = this.ready;
+      if (this.canDropSave && r && r.key === this.pdfKey(dragIds)) {
+        e.dataTransfer.setData("DownloadURL", `application/pdf:${r.name}:${r.url}`);
+        dropSave = r.name;
+      }
+      dragIds.forEach((id) => this.el.querySelector(`.thumb[data-id="${id}"]`)?.classList.add("dragging"));
     });
     this.el.addEventListener("dragend", (e) => {
-      const id = dragId;
-      dragId = null;
+      const ids = dragIds;
+      const saved = dropSave;
+      dragIds = dropSave = null;
       hide();
       this.el.querySelectorAll(".dragging").forEach((n) => n.classList.remove("dragging"));
-      if (!id || e.dataTransfer?.dropEffect !== "none") return;
-      // ブラウザの画面の外で離した → そのページだけのPDFを作る(画面内で離した・Escで取り消したときは何もしない)
+      if (!ids) return;
+      const effect = e.dataTransfer?.dropEffect;
+      // デスクトップ・フォルダに落とした → ブラウザがその場所に保存した
+      if (saved && effect === "copy") return toast(`「${saved}」をドロップした場所に保存しました`);
+      if (effect !== "none") return;
+      // ブラウザの画面の外で離した(その場所には保存できなかった) → 保存先を選んで保存
+      // (画面内で離した・Escで取り消したときは何もしない)
       const { clientX: x, clientY: y } = e;
       const outside = x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight || (x === 0 && y === 0 && Date.now() - lastOver > 150);
-      if (outside && this.model.page(id)) this.onExport?.([id]);
+      const live = ids.filter((id) => this.model.page(id));
+      if (outside && live.length) this.onExport?.(live);
     });
     ["dragenter", "dragover"].forEach((type) => this.el.addEventListener(type, (e) => {
-      if (!dragId) return;
+      if (!dragIds) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       const slot = this.slot(e.clientY);
@@ -74,15 +113,42 @@ export class Thumbs {
     });
     this.el.addEventListener("drop", (e) => {
       hide();
-      const id = dragId;
-      if (!id) return;
+      const ids = dragIds;
+      if (!ids) return;
       e.preventDefault();
+      dragIds = dropSave = null; // 並べ替えで一覧を作り直すと、元の要素に dragend が届かないことがある
       const slot = this.slot(e.clientY);
-      const at = slot ? slot.index : this.model.pages.length;
-      // 挿入位置(ページの間)へ移動。自分より後ろへ動かすときは、抜いた分だけ番号が1つ前にずれる
-      const from = this.model.indexOf(id);
-      if (from >= 0) this.model.movePage(id, at > from ? at - 1 : at);
+      // 挿入位置(ページの間)へ移動。複数ページは文書の順のまま、まとめてそこへ
+      this.model.movePages(ids, slot ? slot.index : this.model.pages.length);
     });
+  }
+
+  /** ドラッグで運ぶページ: チェックしたページをドラッグしたらチェックしたページ全部(文書の順)、それ以外はそのページだけ */
+  dragSet(id) {
+    if (this.checked.has(id) && this.checked.size > 1) return this.model.pages.filter((p) => this.checked.has(p.id)).map((p) => p.id);
+    return [id];
+  }
+
+  /** ドロップした場所へ保存するPDFを裏で作る。作成中に別のページを頼まれたら、終わってから最後の1件だけ作る */
+  prepare(ids) {
+    if (!this.canDropSave || !ids.length || ids.some((id) => !this.model.page(id))) return;
+    const key = this.pdfKey(ids);
+    if (this.ready?.key === key || this.making === key) return;
+    if (this.making) return void (this.queued = ids);
+    this.making = key;
+    this.makePdf(ids)
+      .then(({ bytes, name }) => {
+        const old = this.ready?.url;
+        if (old) setTimeout(() => URL.revokeObjectURL(old), 60_000); // ドロップ直後の保存が読み終わるまで残す
+        this.ready = { key, name, url: URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })) };
+      })
+      .catch((e) => console.warn("prepare", e))
+      .finally(() => {
+        this.making = null;
+        const q = this.queued;
+        this.queued = null;
+        if (q) this.prepare(q);
+      });
   }
 
   /** ドロップ位置(サムネイルの間)。index: 挿入位置(0=先頭)、y: 線を出す画面Y */
@@ -125,12 +191,24 @@ export class Thumbs {
     const id = t.dataset.id;
     const cb = e.target.closest("input[type=checkbox]");
     if (cb) {
-      if (cb.checked) this.checked.add(id);
+      if (e.shiftKey && this.anchor) this.checkRange(this.anchor, id, cb.checked);
+      else if (cb.checked) this.checked.add(id);
       else this.checked.delete(id);
-      this.updateBar();
+      this.anchor = id;
+      this.syncChecks();
       return;
     }
+    if (e.target.closest(".tn label")) return; // 番号の文字 → チェックボックスのクリックとして届く
     const act = e.target.closest("button[data-act]")?.dataset.act;
+    // Ctrl(⌘)+クリック: チェックの付け外し / Shift+クリック: 前にクリックしたページからここまでをチェック
+    if (!act && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+      if (e.shiftKey && this.anchor) this.checkRange(this.anchor, id, true);
+      else if (this.checked.has(id)) this.checked.delete(id);
+      else this.checked.add(id);
+      this.anchor = id;
+      this.syncChecks();
+      return;
+    }
     const i = this.model.indexOf(id);
     if (act === "up") this.model.movePage(id, i - 1);
     else if (act === "down") this.model.movePage(id, i + 1);
@@ -149,6 +227,28 @@ export class Thumbs {
       this.checked.clear();
       this.model.deletePages(ids);
     }
+  }
+
+  checkRange(fromId, toId, on) {
+    let a = this.model.indexOf(fromId);
+    let b = this.model.indexOf(toId);
+    if (a < 0) a = b;
+    if (a > b) [a, b] = [b, a];
+    for (const p of this.model.pages.slice(a, b + 1)) {
+      if (on) this.checked.add(p.id);
+      else this.checked.delete(p.id);
+    }
+  }
+
+  /** チェックの状態を画面(チェックボックス・枠の色)に反映 */
+  syncChecks() {
+    this.el.querySelectorAll(".thumb").forEach((t) => {
+      const on = this.checked.has(t.dataset.id);
+      t.classList.toggle("checked", on);
+      const cb = t.querySelector("input[type=checkbox]");
+      if (cb) cb.checked = on;
+    });
+    this.updateBar();
   }
 
   updateBar() {
@@ -176,11 +276,11 @@ export class Thumbs {
       <button class="btn" data-bar="add">${icon("plus", 16)}追加</button>
       <button class="btn danger" data-bar="del">削除</button>
       <button class="btn" data-bar="all">全選択</button>
-      <button class="btn" data-bar="exp" title="チェックしたページだけのPDFを作る(ページを画面の外へドラッグしても作れます)">${icon("download", 16)}書き出し</button></div>`;
+      <button class="btn" data-bar="exp" title="チェックしたページだけのPDFを作って保存先を選ぶ(Ctrl+クリックで複数選択・ページをデスクトップなどへドラッグしても保存できます)">${icon("download", 16)}書き出し</button></div>`;
     pages.forEach((p, i) => {
       const th = TW * (p.h / p.w);
       const d = document.createElement("div");
-      d.className = "thumb";
+      d.className = this.checked.has(p.id) ? "thumb checked" : "thumb";
       d.dataset.id = p.id;
       d.draggable = true;
       d.innerHTML = `<div class="tv" style="width:${TW}px;height:${th}px"><canvas></canvas><svg viewBox="0 0 ${p.w} ${p.h}" preserveAspectRatio="none"></svg></div>

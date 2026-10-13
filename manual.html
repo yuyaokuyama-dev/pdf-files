@@ -130,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.7.2(2026-10-11)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.8.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -309,11 +309,13 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
       <h2><span class="n">9</span>ページの操作</h2>
       <p>ツールバーの<span class="ui">ページ</span>でページ一覧を開きます。</p>
       <ul>
-        <li><b>並べ替え</b>:ページをドラッグして好きな位置へ動かします。</li>
+        <li><b>複数のページを選ぶ</b>:ページのチェックボックスに入れるほか、パソコンでは<span class="ui">Ctrl</span>(Macは<span class="ui">⌘</span>)を押しながらページをクリックすると、チェックを付けたり外したりできます。<span class="ui">Shift</span>を押しながらクリックすると、前にクリックしたページからそこまでをまとめて選べます。</li>
+        <li><b>並べ替え</b>:ページをドラッグして好きな位置へ動かします。チェックを入れたページをドラッグすると、チェックしたページをまとめて動かせます。</li>
         <li><b>回転</b>:ページの回転ボタンで90°ずつ回します。</li>
         <li><b>削除</b>:ページのゴミ箱ボタンで1ページずつ、チェックを入れてまとめて削除もできます。最後の1ページは削除できません。</li>
         <li><b>追加</b>:白紙ページ(A4縦・横)、別のPDF、カメラの写真、画像ファイルを追加できます。パソコンでは、ページ一覧に別のPDFをドロップするとその位置に入ります。</li>
-        <li><b>そのページだけ書き出す</b>:パソコンでは、ページを画面の外へドラッグすると、そのページだけのPDFを作れます。チェックを入れた複数ページの書き出しもできます。</li>
+        <li><b>そのページだけ書き出す</b>:チェックを入れたページを<span class="ui">書き出し</span>で、そのページだけのPDFにして保存します。パソコン(Chrome・Edge)では保存先を選ぶ画面が開き、最初は今開いているファイルと同じフォルダが表示されます。iPhoneでは共有メニューから<span class="ui">"ファイル"に保存</span>などを選びます。</li>
+        <li><b>ドラッグして保存</b>:パソコンのChrome・Edgeでは、ページをデスクトップやフォルダへドラッグして離すと、その場所にそのページのPDFが保存されます(チェックを入れたページをドラッグすると、チェックしたページ全部が1つのPDFになります)。ページにマウスを乗せた時点でPDFを作り始めるので、乗せてすぐにドラッグして間に合わなかったときや、他のブラウザでは、保存先を選ぶ画面になるか、ダウンロードフォルダに保存されます。</li>
       </ul>
     </section>
 
@@ -325,7 +327,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
         <tbody>
           <tr><td>上書き保存</td><td>開いた元のファイルに上書きします。パソコンで開いたPDFはそのファイル、Googleドライブから開いたPDFはドライブのファイルが更新されます。元の場所が分からないファイル(iPhoneで開いたPDFや白紙から作ったPDF)は、保存先を選びます。</td></tr>
           <tr><td>Googleドライブに保存</td><td>上書きするか、別のファイルとして保存するかを選べます。</td></tr>
-          <tr><td>PDFを端末に保存</td><td>ファイル名とファイルサイズの最適化を選んで保存します。iPhoneでは共有メニューから<span class="ui">"ファイル"に保存</span>などを選びます。</td></tr>
+          <tr><td>PDFを端末に保存</td><td>ファイル名とファイルサイズの最適化を選んで保存します。パソコン(Chrome・Edge)では保存先を選べ、最初は今開いているファイルと同じフォルダが表示されます。iPhoneでは共有メニューから<span class="ui">"ファイル"に保存</span>などを選びます。</td></tr>
           <tr><td>Gmailでメール送信</td><td>PDFを添付してGmailで送ります。添付できるのは約24MBまでです。</td></tr>
           <tr><td>ファイル名を変更</td><td>表示中のPDFの名前を変えます。</td></tr>
         </tbody>
@@ -471,7 +473,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.7.2 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.8.0 対応</footer>
 </div>
 </body>
 </html>

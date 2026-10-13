@@ -92,8 +92,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .thumbs { width: 170px; flex: none; overflow-y: auto; background: #f5f6f8; border-right: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 10px; }
 .thumbs .thumb-bar { display: flex; gap: 4px; flex-wrap: wrap; }
 .thumbs .thumb-bar .btn { min-height: 32px; padding: 0 8px; font-size: 12px; flex: 1; }
-.thumb { position: relative; background: #fff; border: 2px solid transparent; border-radius: 8px; padding: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.15); cursor: pointer; }
+.thumb { user-select: none; -webkit-user-select: none; position: relative; background: #fff; border: 2px solid transparent; border-radius: 8px; padding: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.15); cursor: pointer; }
 .thumb.cur { border-color: var(--accent); }
+.thumb.checked { background: #e8f0fe; box-shadow: 0 0 0 2px #93b4f5, 0 1px 4px rgba(0,0,0,.15); }
 .thumb.dragging { opacity: .45; }
 .thumb .tv { position: relative; margin: 0 auto; background: #fff; outline: 1px solid var(--line); }
 .thumb .tv canvas, .thumb .tv svg { position: absolute; inset: 0; width: 100%; height: 100%; }
