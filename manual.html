@@ -130,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.13.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.14.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -306,6 +306,10 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
       <p><b>移動・コピー</b>: 基点→移動先の順にタップします。コピーは続けて何度でも置けます。<b>回転</b>: 角度(右回り)を入れて、中心をタップします。<b>尺度</b>: 倍率を入れて、基点をタップします。<b>鏡像</b>: 軸になる直線の2点をタップします(「元を残す」で左右対称の複製)。回転・尺度・鏡像は「元を残してコピー」もできます。</p>
       <p><b>配列複写(矩形)</b>: 行・列の数と間隔を入れて「配列する」。<b>配列複写(円形)</b>: 個数と全体の角度(360で一周)を入れて、中心をタップします。<b>オフセット</b>: 距離を入れて、ずらしたい側をタップすると、線・四角・丸・円弧・多角形が平行にずれた複製ができます(四角・丸は外か内かで大きくも小さくもなります)。</p>
       <p>画像・スタンプ・署名は、移動とコピーはできますが、回転や斜めの鏡像はできません。丸や四角を斜めに回すと多角形になります。</p>
+      <h3>トリム・延長・フィレット・面取り・切断・ストレッチ・結合・分解</h3>
+      <p>ツールバーの<span class="ui">修正</span>ボタンからメニューを開きます(図形を選ばずに始められます)。画面の案内に従ってタップし、続けて何度でも使えます。やめるときは<span class="ui">中止</span>か<kbd>Esc</kbd>です。</p>
+      <p><b>トリム</b>: 消したい部分をタップすると、他の図形との交点から交点までが消えます(線・矢印・ポリライン)。<b>延長</b>: 線の端の近くをタップすると、次に当たる図形まで伸びます。<b>フィレット</b>: 半径を入れて、残したい側の2本の線をタップすると、角が円弧で丸まります(半径0なら角をそろえるだけ)。<b>面取り</b>: 距離を入れて、2本の線をタップすると角が斜めに切れます。<b>切断</b>: 線の途中をタップすると、そこで2本に分かれます。</p>
+      <p><b>ストレッチ</b>: 動かしたい部分を窓(対角の2点)で囲み、基点→移動先をタップすると、窓に入った頂点だけが動いて図形が伸び縮みします(窓に完全に入った図形は丸ごと動きます)。<b>結合</b>: 端点がつながっている線を選んで押すと、ひとつのポリライン(輪になれば多角形)になります(<kbd>J</kbd>)。<b>分解</b>: 選んだ四角・多角形・ポリラインを1本ずつの線にばらします(<kbd>X</kbd>)。</p>
       <h3>レイヤー</h3>
       <p>ツールバー左の<span class="ui">レイヤー</span>ボタンでパネルを開きます。レイヤーごとに表示/非表示・ロック・色・太さ・線種を設定でき、<span class="ui">図形を選択</span>でそのレイヤーの図形をまとめて選べます。レイヤー「0」以外に描いた図形は、色・太さ・線種がレイヤーに従います(図形ごとに個別指定も可)。非表示のレイヤーはPDFにも書き出されません。レイヤーを削除すると中の図形も消えます(取り消しで戻せます)。</p>
     </section>
@@ -470,6 +474,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
           <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>このページの図形をすべて選ぶ</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>選んだ図形を複製</td></tr>
           <tr><td><kbd>V</kbd> <kbd>W</kbd> <kbd>N</kbd> <kbd>L</kbd> <kbd>R</kbd> <kbd>C</kbd> <kbd>A</kbd> <kbd>P</kbd> <kbd>O</kbd> <kbd>T</kbd> <kbd>D</kbd> <kbd>E</kbd> <kbd>H</kbd></td><td>ツールを切り替え(V=選択 / W=範囲選択 / N=ペン / L=線 / R=四角 / C=丸 / A=円弧 / P=多角形 / O=雲 / T=文字 / D=寸法線 / E=消しゴム / H=移動)</td></tr>
+          <tr><td><kbd>J</kbd> / <kbd>X</kbd></td><td>選んだ線を結合 / 分解</td></tr>
           <tr><td><kbd>M</kbd> / <kbd>K</kbd></td><td>選んだ図形を、基点を指定して移動 / コピー</td></tr>
           <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>選んだ図形を削除</td></tr>
           <tr><td>矢印キー</td><td>選んだ図形を少しずつ動かす(<kbd>Shift</kbd>を押しながらで大きく)</td></tr>
@@ -500,7 +505,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.13.0 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.14.0 対応</footer>
 </div>
 </body>
 </html>

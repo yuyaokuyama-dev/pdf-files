@@ -308,6 +308,7 @@ const TOOLS = [
   { sep: true },
   { id: "sign", icon: "sign", label: "署名", hint: "署名したい範囲を四角でドラッグ(タップでも可)" },
   { id: "stamp", icon: "stamp", label: "印影", hint: "押したい位置をタップします" },
+  { id: "modify", icon: "modify", label: "修正", action: true },
   { id: "camera", icon: "camera", label: "写真", action: true },
 ];
 
@@ -385,9 +386,56 @@ function buildTools() {
     if (!b) return;
     const id = b.dataset.tool;
     if (id === "camera") return photoMenu(b);
+    if (id === "modify") return modifyMenu(b);
     if (id === "stamp") return enterStampTool();
     S.editor.setTool(id);
   });
+}
+
+/** 「修正」メニュー: トリム・延長・フィレット・面取り・切断・ストレッチ・結合・分解 */
+async function modifyMenu(anchor) {
+  const ed = S.editor;
+  const page = ed.model.page(ed.curPageId) || ed.model.pages[0];
+  const sc = page?.scale;
+  const k = sc?.ptsPerUnit || 1;
+  const unit = sc?.unit || "pt";
+  const ask = async (title, label, v) => {
+    const r = await promptDialog({ title, label: `${label}(${unit})`, value: String(v), type: "number", inputmode: "decimal", ok: "決定" });
+    const n = Number(r);
+    return r == null || !Number.isFinite(n) || n < 0 ? null : n;
+  };
+  const sel = ed.selectedIds().length;
+  const mv = S.modv || (S.modv = { radius: 10, d1: 10, d2: 10 });
+  showMenu(anchor, [
+    { header: "線を整える(図形を選ばずに始められます)" },
+    { label: "トリム(交点までを消す)", icon: "eraser", onClick: () => ed.startCommand("trim") },
+    { label: "延長(次の図形まで伸ばす)", icon: "line", onClick: () => ed.startCommand("extend") },
+    {
+      label: "フィレット(角を丸める)",
+      icon: "arc",
+      onClick: async () => {
+        const r = await ask("フィレット", "半径(0なら角をそろえるだけ)", mv.radius);
+        if (r == null) return;
+        mv.radius = r;
+        ed.startCommand("fillet", { radius: r * k });
+      },
+    },
+    {
+      label: "面取り(角を斜めに切る)",
+      icon: "polygon",
+      onClick: async () => {
+        const d = await ask("面取り", "角からの距離", mv.d1);
+        if (d == null) return;
+        mv.d1 = d;
+        ed.startCommand("chamfer", { d1: d * k, d2: d * k });
+      },
+    },
+    { label: "切断(線を2つに分ける)", icon: "line", onClick: () => ed.startCommand("break") },
+    { label: "ストレッチ(窓で囲んだ部分を引き伸ばす)", icon: "rect", onClick: () => ed.startCommand("stretch") },
+    { header: "選んだ図形に対して" },
+    { label: "結合(つながる線をひとつに)", icon: "polygon", disabled: sel < 2, onClick: () => ed.joinSelected() },
+    { label: "分解(四角・多角形を線にばらす)", icon: "rect", disabled: !sel, onClick: () => ed.explodeSelected() },
+  ]);
 }
 
 function showHint(text, ms = 4200, actions = []) {

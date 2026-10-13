@@ -235,3 +235,308 @@ export function offsetShape(shape, d, p) {
       return null;
   }
 }
+
+/* =========================================================
+ * トリム・延長・フィレット・面取り・ストレッチ・切断・結合・分解
+ * ======================================================= */
+const EPS = 1e-6;
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+const unit = (v) => {
+  const L = Math.hypot(v[0], v[1]) || 1;
+  return [v[0] / L, v[1] / L];
+};
+
+/** 線分 ab 上の位置 t(0〜1)で線分 cd と交わるなら t。なければ null */
+function segHitT(a, b, c, d) {
+  const r = sub(b, a);
+  const s = sub(d, c);
+  const den = r[0] * s[1] - r[1] * s[0];
+  if (Math.abs(den) < 1e-12) return null;
+  const qp = sub(c, a);
+  const t = (qp[0] * s[1] - qp[1] * s[0]) / den;
+  const u = (qp[0] * r[1] - qp[1] * r[0]) / den;
+  if (t < -EPS || t > 1 + EPS || u < -EPS || u > 1 + EPS) return null;
+  return t;
+}
+
+/** 折れ線の累積長さ */
+function cumLen(pts) {
+  const out = [0];
+  for (let i = 1; i < pts.length; i++) out.push(out[i - 1] + dist(pts[i - 1], pts[i]));
+  return out;
+}
+/** 折れ線の弧長 s の位置の点 */
+function pointAtLen(pts, cum, s) {
+  for (let i = 1; i < pts.length; i++) {
+    if (s <= cum[i] + EPS) {
+      const seg = cum[i] - cum[i - 1] || 1;
+      const t = Math.max(0, Math.min(1, (s - cum[i - 1]) / seg));
+      return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t];
+    }
+  }
+  return pts[pts.length - 1];
+}
+/** 弧長 s0〜s1 の部分の折れ線 */
+function subPolyline(pts, cum, s0, s1) {
+  const out = [pointAtLen(pts, cum, s0)];
+  for (let i = 1; i < pts.length - 1; i++) if (cum[i] > s0 + EPS && cum[i] < s1 - EPS) out.push(pts[i]);
+  out.push(pointAtLen(pts, cum, s1));
+  return out;
+}
+/** 点 p に最も近い折れ線上の位置 { s: 弧長, d: 距離, i: 区間, q: 点 } */
+function project(pts, cum, p) {
+  let best = null;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const L2 = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 || 1;
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / L2));
+    const q = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    const d = dist(p, q);
+    if (!best || d < best.d) best = { s: cum[i - 1] + (cum[i] - cum[i - 1]) * t, d, i, q };
+  }
+  return best;
+}
+
+/**
+ * トリム: 他の図形の線分(cutters: [[a,b],...])との交点で区切って、pick に近い区間を消す。
+ * 戻り値は残る折れ線の配列(0〜2個)。交点がなければ null
+ */
+export function trimPolyline(pts, cutters, pick) {
+  if (pts.length < 2) return null;
+  const cum = cumLen(pts);
+  const total = cum[cum.length - 1];
+  const cuts = [];
+  for (let i = 1; i < pts.length; i++) {
+    for (const [c, d] of cutters) {
+      const t = segHitT(pts[i - 1], pts[i], c, d);
+      if (t == null) continue;
+      const s = cum[i - 1] + (cum[i] - cum[i - 1]) * t;
+      if (s > EPS && s < total - EPS) cuts.push(s);
+    }
+  }
+  if (!cuts.length) return null;
+  cuts.sort((a, b) => a - b);
+  const bounds = [0, ...cuts.filter((s, i) => i === 0 || s - cuts[i - 1] > EPS), total];
+  const sp = project(pts, cum, pick).s;
+  let k = 0;
+  while (k < bounds.length - 2 && sp > bounds[k + 1]) k++;
+  const lo = bounds[k];
+  const hi = bounds[k + 1];
+  const out = [];
+  if (lo > EPS) out.push(subPolyline(pts, cum, 0, lo));
+  if (hi < total - EPS) out.push(subPolyline(pts, cum, hi, total));
+  return out;
+}
+
+/** 延長: pick に近い側の端を、いまの向きのまま最初に当たる線分まで伸ばす。当たらなければ null */
+export function extendPolyline(pts, cutters, pick) {
+  if (pts.length < 2) return null;
+  const atStart = dist(pick, pts[0]) < dist(pick, pts[pts.length - 1]);
+  const E = atStart ? pts[0] : pts[pts.length - 1];
+  const P = atStart ? pts[1] : pts[pts.length - 2];
+  if (dist(E, P) < EPS) return null;
+  const u = unit(sub(E, P));
+  const far = [E[0] + u[0] * 1e5, E[1] + u[1] * 1e5];
+  let best = null;
+  for (const [c, d] of cutters) {
+    const t = segHitT(E, far, c, d);
+    if (t == null) continue;
+    const s = t * 1e5;
+    if (s > 1e-3 && (best == null || s < best)) best = s;
+  }
+  if (best == null) return null;
+  const tip = [E[0] + u[0] * best, E[1] + u[1] * best];
+  const out = pts.map((p) => [p[0], p[1]]);
+  out[atStart ? 0 : out.length - 1] = tip;
+  return out;
+}
+
+/**
+ * フィレット/面取りの共通部分: 2本の線 l1, l2 ([a,b])の延長上の交点 X と、pick の側に残る端 F1, F2
+ */
+function corner(l1, l2, p1, p2) {
+  const r = sub(l1[1], l1[0]);
+  const s = sub(l2[1], l2[0]);
+  const den = r[0] * s[1] - r[1] * s[0];
+  if (Math.abs(den) < 1e-9) return null;
+  const qp = sub(l2[0], l1[0]);
+  const t = (qp[0] * s[1] - qp[1] * s[0]) / den;
+  const X = [l1[0][0] + r[0] * t, l1[0][1] + r[1] * t];
+  // pick の側 = 交点から見て pick と同じ向きにある端
+  const side = (l, p) => {
+    const d0 = dot(sub(p, X), sub(l[0], X));
+    const d1 = dot(sub(p, X), sub(l[1], X));
+    return d0 > d1 ? l[0] : l[1];
+  };
+  const F1 = side(l1, p1);
+  const F2 = side(l2, p2);
+  if (dist(F1, X) < EPS || dist(F2, X) < EPS) return null;
+  return { X, F1, F2, u1: unit(sub(F1, X)), u2: unit(sub(F2, X)) };
+}
+
+/**
+ * フィレット: 2本の線 l1, l2 を半径 r の円弧でつなぐ(r=0 なら角をそろえる)。
+ * { l1:[a,b], l2:[a,b], arc:{ pts:[中心,始点], sweep }|null }。作れなければ null
+ */
+export function filletLines(l1, l2, r, p1, p2) {
+  const c = corner(l1, l2, p1, p2);
+  if (!c) return null;
+  if (!(r > 0)) return { l1: [c.X, c.F1], l2: [c.X, c.F2], arc: null };
+  const cosT = Math.max(-1, Math.min(1, dot(c.u1, c.u2)));
+  const th = Math.acos(cosT);
+  if (th < 1e-3 || th > Math.PI - 1e-3) return null;
+  const t = r / Math.tan(th / 2);
+  if (t > dist(c.X, c.F1) + EPS || t > dist(c.X, c.F2) + EPS) return null;
+  const T1 = [c.X[0] + c.u1[0] * t, c.X[1] + c.u1[1] * t];
+  const T2 = [c.X[0] + c.u2[0] * t, c.X[1] + c.u2[1] * t];
+  const bis = unit([c.u1[0] + c.u2[0], c.u1[1] + c.u2[1]]);
+  const k = r / Math.sin(th / 2);
+  const C = [c.X[0] + bis[0] * k, c.X[1] + bis[1] * k];
+  const a = sub(T1, C);
+  const b = sub(T2, C);
+  const cross = a[0] * b[1] - a[1] * b[0];
+  const sweep = 180 - (th * 180) / Math.PI;
+  return { l1: [T1, c.F1], l2: [T2, c.F2], arc: { pts: [C, cross > 0 ? T1 : T2], sweep } };
+}
+
+/** 面取り: 交点から d1, d2 の距離で2本の線を切り、斜めの線でつなぐ。{ l1, l2, line:[a,b] }。作れなければ null */
+export function chamferLines(l1, l2, d1, d2, p1, p2) {
+  const c = corner(l1, l2, p1, p2);
+  if (!c || !(d1 >= 0) || !(d2 >= 0)) return null;
+  if (d1 > dist(c.X, c.F1) + EPS || d2 > dist(c.X, c.F2) + EPS) return null;
+  if (d1 < EPS && d2 < EPS) return { l1: [c.X, c.F1], l2: [c.X, c.F2], line: null };
+  const T1 = [c.X[0] + c.u1[0] * d1, c.X[1] + c.u1[1] * d1];
+  const T2 = [c.X[0] + c.u2[0] * d2, c.X[1] + c.u2[1] * d2];
+  return { l1: [T1, c.F1], l2: [T2, c.F2], line: [T1, T2] };
+}
+
+const inWin = (p, w) => p[0] >= w.x - EPS && p[0] <= w.x + w.w + EPS && p[1] >= w.y - EPS && p[1] <= w.y + w.h + EPS;
+
+/**
+ * ストレッチ: 窓 w(交差窓 {x,y,w,h})に入る頂点だけを (dx,dy) 動かす。
+ * bounds は図形の外接枠。完全に窓の中なら図形ごと動かす。動かせない(変化なし・対象外)なら null
+ */
+export function stretchShape(shape, w, dx, dy, bounds) {
+  const inside = bounds && bounds.x >= w.x - EPS && bounds.y >= w.y - EPS && bounds.x + bounds.w <= w.x + w.w + EPS && bounds.y + bounds.h <= w.y + w.h + EPS;
+  if (inside) return transformShape(shape, moveM(dx, dy));
+  const s = clone(shape);
+  const mv = (p) => [p[0] + dx, p[1] + dy];
+  switch (shape.type) {
+    case "line":
+    case "arrow":
+    case "polyline":
+    case "polygon":
+    case "cloud":
+    case "measure":
+    case "dim": {
+      let any = false;
+      s.pts = shape.pts.map((p) => {
+        if (inWin(p, w)) {
+          any = true;
+          return mv(p);
+        }
+        return p;
+      });
+      return any ? s : null;
+    }
+    case "rect": {
+      const [a, b] = shape.pts;
+      let x0 = Math.min(a[0], b[0]);
+      let x1 = Math.max(a[0], b[0]);
+      let y0 = Math.min(a[1], b[1]);
+      let y1 = Math.max(a[1], b[1]);
+      const c = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map((p) => inWin(p, w));
+      // 辺(隣り合う2頂点)が窓に入っているときだけ、その辺を動かす
+      if (c[0] && c[1] && !c[2] && !c[3]) y0 += dy;
+      else if (c[1] && c[2] && !c[0] && !c[3]) x1 += dx;
+      else if (c[2] && c[3] && !c[0] && !c[1]) y1 += dy;
+      else if (c[3] && c[0] && !c[1] && !c[2]) x0 += dx;
+      else return null;
+      if (x1 - x0 < 1e-6 || y1 - y0 < 1e-6) return null;
+      s.pts = [[x0, y0], [x1, y1]];
+      return s;
+    }
+    default:
+      return null;
+  }
+}
+
+/** 切断: 点 p に最も近い位置で折れ線を2つに分ける。端に近すぎるときは null */
+export function splitPolyline(pts, p, tol = 0.5) {
+  if (pts.length < 2) return null;
+  const cum = cumLen(pts);
+  const pr = project(pts, cum, p);
+  if (pr.s < tol || cum[cum.length - 1] - pr.s < tol) return null;
+  const A = pts.slice(0, pr.i).map((q) => [q[0], q[1]]);
+  A.push(pr.q);
+  const B = [pr.q, ...pts.slice(pr.i).map((q) => [q[0], q[1]])];
+  return [A, B];
+}
+
+/**
+ * 結合: 端点が tol 以内でつながる折れ線をひと続きにする。
+ * items: [{ id, pts }]。戻り値: [{ ids, pts, closed }](つながらなかった単独のものも含む)
+ */
+export function joinChains(items, tol = 0.5) {
+  const left = items.map((it) => ({ ids: [it.id], pts: it.pts.map((p) => [p[0], p[1]]) }));
+  const out = [];
+  while (left.length) {
+    const cur = left.shift();
+    let grown = true;
+    while (grown) {
+      grown = false;
+      for (let i = 0; i < left.length; i++) {
+        const o = left[i];
+        const cs = cur.pts[0];
+        const ce = cur.pts[cur.pts.length - 1];
+        const os = o.pts[0];
+        const oe = o.pts[o.pts.length - 1];
+        let next = null;
+        if (dist(ce, os) <= tol) next = [...cur.pts, ...o.pts.slice(1)];
+        else if (dist(ce, oe) <= tol) next = [...cur.pts, ...o.pts.slice(0, -1).reverse()];
+        else if (dist(cs, oe) <= tol) next = [...o.pts, ...cur.pts.slice(1)];
+        else if (dist(cs, os) <= tol) next = [...o.pts.slice(1).reverse(), ...cur.pts];
+        if (next) {
+          cur.pts = next;
+          cur.ids.push(...o.ids);
+          left.splice(i, 1);
+          grown = true;
+          break;
+        }
+      }
+    }
+    const closed = cur.pts.length >= 4 && dist(cur.pts[0], cur.pts[cur.pts.length - 1]) <= tol;
+    if (closed) cur.pts = cur.pts.slice(0, -1);
+    out.push({ ids: cur.ids, pts: cur.pts, closed });
+  }
+  return out;
+}
+
+/** 分解: ポリライン・多角形・四角を1本ずつの線にする(id なしの線の一覧)。分解できなければ null */
+export function explodeShape(shape) {
+  let pts;
+  let closed = false;
+  if (shape.type === "polyline") pts = shape.pts;
+  else if (shape.type === "polygon") {
+    pts = shape.pts;
+    closed = true;
+  } else if (shape.type === "rect") {
+    pts = rectPoints(shape.pts[0], shape.pts[1]);
+    closed = true;
+  } else return null;
+  const n = closed ? pts.length : pts.length - 1;
+  if (n < 2 && !(n === 1 && !closed)) return null;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const l = clone(shape);
+    delete l.pitch;
+    delete l.sweep;
+    l.type = "line";
+    l.pts = [pts[i].slice(), pts[(i + 1) % pts.length].slice()];
+    if (l.style) l.style = { ...l.style, fill: "none" };
+    out.push(l);
+  }
+  return out;
+}

@@ -8,7 +8,7 @@ import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, tex
 import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
 import { isLayerLocked, isLayerVisible, BL_KEYS } from "./layers.js";
 import { DrawAid, DYN_TOOLS } from "./drawaid.js";
-import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape } from "./modify.js";
+import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, extendPolyline, filletLines, chamferLines, stretchShape, splitPolyline, joinChains, explodeShape } from "./modify.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "dim", "calib", "measure", "sign", "stamp"]);
@@ -44,8 +44,9 @@ function edgesOf(sh) {
   return null;
 }
 
+const PICK_CMDS = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch"]);
 /** 1キーで切り替えるツール・コマンド(パソコン) */
-const TOOL_KEYS = { v: "select", w: "marquee", n: "pen", l: "line", r: "rect", c: "ellipse", a: "arc", p: "polygon", o: "cloud", t: "text", d: "dim", e: "eraser", h: "hand", m: "cmd:move", k: "cmd:copy" };
+const TOOL_KEYS = { v: "select", w: "marquee", n: "pen", l: "line", r: "rect", c: "ellipse", a: "arc", p: "polygon", o: "cloud", t: "text", d: "dim", e: "eraser", h: "hand", m: "cmd:move", k: "cmd:copy", x: "cmd:explode", j: "cmd:join" };
 
 export class Editor {
   /**
@@ -1874,10 +1875,18 @@ export class Editor {
    */
   startCommand(name, opts = {}) {
     this.cancelCommand();
+    const PICK = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch"]); // 図形を選ばずに始めるコマンド
+    if (!isSelectTool(this.tool)) this.setTool("select");
     const items = this.selectedItems().filter((f) => !f.shape.locked);
-    if (!items.length) return this.emit("toast", { text: "先に図形を選んでください" });
+    if (!PICK.has(name) && !items.length) return this.emit("toast", { text: "先に図形を選んでください" });
     if (name === "offset" && items.length !== 1) return this.emit("toast", { text: "オフセットは図形を1つだけ選んでください" });
     const prompts = {
+      trim: ["消したい部分をタップ(他の図形との交点までが消えます。続けて何度でも)"],
+      extend: ["伸ばしたい線の端の近くをタップ(続けて何度でも)"],
+      fillet: ["1本目の線の、残す側をタップ", "2本目の線の、残す側をタップ"],
+      chamfer: ["1本目の線の、残す側をタップ", "2本目の線の、残す側をタップ"],
+      break: ["線を切りたい位置をタップ(続けて何度でも)"],
+      stretch: ["動かしたい部分を囲む窓の1つめの角をタップ", "窓の2つめの角をタップ", "基点をタップ", "移動先をタップ"],
       move: ["基点をタップ", "移動先をタップ"],
       copy: ["基点をタップ", "コピー先をタップ(続けて何度でも。終わるには中止)"],
       rotate: ["回転の中心(基点)をタップ"],
@@ -1887,8 +1896,7 @@ export class Editor {
       offset: ["ずらす側をタップ(続けて何度でも。終わるには中止)"],
     }[name];
     if (!prompts) return;
-    const pageId = items[0].page.id;
-    this.cmd = { name, opts, pageId, prompts, pts: [], snapPts: this.aid.pointsFor(pageId, new Set()), hover: null, mark: null };
+    this.cmd = { name, opts, pageId: null, prompts, pts: [], hover: null, mark: null, picks: [] };
     this.cmdMoveFn = (ev) => {
       if (!this.cmd) return;
       const r = this.aid.resolve(this.clampToPage(this.pt(ev, this.cmd.pageId), this.cmd.pageId), { pts: this.cmd.snapPts, p0: this.cmd.pts[this.cmd.pts.length - 1] || null, ev });
@@ -1896,13 +1904,21 @@ export class Editor {
       this.cmd.mark = r.mark;
       this.drawCmdDraft();
     };
-    this.els.get(pageId)?.svg.addEventListener("pointermove", this.cmdMoveFn);
+    if (items.length) this.bindCmdPage(items[0].page.id);
     this.emit("cmd", { text: prompts[0] });
+  }
+  /** コマンドの対象ページを決めて、点の吸い付き候補と動きの追従を用意する */
+  bindCmdPage(pageId) {
+    const c = this.cmd;
+    c.pageId = pageId;
+    c.snapPts = this.aid.pointsFor(pageId, new Set());
+    this.els.get(pageId)?.svg.addEventListener("pointermove", this.cmdMoveFn);
   }
   cancelCommand() {
     if (!this.cmd) return;
-    this.els.get(this.cmd.pageId)?.svg.removeEventListener("pointermove", this.cmdMoveFn);
-    this.els.get(this.cmd.pageId)?.draft.replaceChildren();
+    const el = this.cmd.pageId && this.els.get(this.cmd.pageId);
+    el?.svg.removeEventListener("pointermove", this.cmdMoveFn);
+    el?.draft.replaceChildren();
     this.cmd = null;
     this.emit("cmd", null);
   }
@@ -1913,16 +1929,23 @@ export class Editor {
     el.draft.replaceChildren();
     const z = this.zoom;
     const last = c.pts[c.pts.length - 1];
-    if (last && c.hover) {
+    if (last && c.hover && !(c.name === "stretch" && c.pts.length <= 2)) {
       el.draft.appendChild(sv("line", { x1: last[0], y1: last[1], x2: c.hover[0], y2: c.hover[1], stroke: "#2563eb", "stroke-width": 1.4 / z, "stroke-dasharray": `${5 / z} ${4 / z}`, "pointer-events": "none" }));
       el.draft.appendChild(sv("circle", { cx: last[0], cy: last[1], r: 3.5 / z, fill: "#2563eb", "pointer-events": "none" }));
+    }
+    if (c.name === "stretch" && c.pts.length >= 1 && c.pts.length <= 2) {
+      const a = c.pts[0];
+      const b = c.pts.length === 2 ? c.pts[1] : c.hover;
+      if (b) el.draft.appendChild(sv("rect", { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), width: Math.abs(b[0] - a[0]), height: Math.abs(b[1] - a[1]), fill: "rgba(37,99,235,.08)", stroke: "#2563eb", "stroke-width": 1.2 / z, "stroke-dasharray": `${5 / z} ${4 / z}`, "pointer-events": "none" }));
     }
     this.aid.drawMark(el.draft, c.mark);
   }
   cmdDown(e, pageId, p) {
     const c = this.cmd;
     e.preventDefault();
+    if (c.pageId == null) this.bindCmdPage(pageId);
     if (pageId !== c.pageId) return;
+    if (PICK_CMDS.has(c.name) && c.name !== "stretch") return this.pickCommandDown(e, pageId, p);
     const r = this.aid.resolve(this.clampToPage(p, pageId), { pts: c.snapPts, p0: c.pts[c.pts.length - 1] || null, ev: e });
     const q = this.clampToPage(r.p, pageId);
     const o = c.opts;
@@ -1935,7 +1958,13 @@ export class Editor {
       return;
     }
     c.pts.push(q);
-    if (c.name === "move" || c.name === "copy") {
+    if (c.name === "stretch") {
+      if (c.pts.length === 4) {
+        const [a, b, base, to] = c.pts;
+        this.stretchWindow({ x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) }, to[0] - base[0], to[1] - base[1]);
+        return this.cancelCommand();
+      }
+    } else if (c.name === "move" || c.name === "copy") {
       if (c.pts.length === 2) {
         const [a, b] = c.pts;
         this.applyMatrices([moveM(b[0] - a[0], b[1] - a[1])], { copy: c.name === "copy" });
@@ -1961,6 +1990,167 @@ export class Editor {
     }
     this.emit("cmd", { text: c.prompts[Math.min(c.pts.length, c.prompts.length - 1)] });
     this.drawCmdDraft();
+  }
+
+  /** ページ内で、他の図形の線分(トリム・延長の境界)。pen・文字・画像は除く */
+  cutterSegments(page, excludeId) {
+    const segs = [];
+    for (const sh of page.shapes) {
+      if (sh.id === excludeId || sh.type === "pen" || sh.type === "text" || sh.type === "image" || sh.type === "stamp") continue;
+      if (!isLayerVisible(sh.layer || "0", this.model.layers)) continue;
+      const poly = shapePolyline(sh);
+      if (!poly) continue;
+      const n = poly.closed ? poly.pts.length : poly.pts.length - 1;
+      for (let i = 0; i < n; i++) segs.push([poly.pts[i], poly.pts[(i + 1) % poly.pts.length]]);
+    }
+    return segs;
+  }
+  /** タップした位置の図形(ロック・非表示は除く) */
+  shapeUnder(e) {
+    const id = e.target.closest?.(".shape")?.dataset.id;
+    const f = id && this.model.findShape(id);
+    return f && !f.shape.locked ? f : null;
+  }
+  /** トリム・延長・フィレット・面取り・切断: 図形をタップして実行する */
+  pickCommandDown(e, pageId, p) {
+    const c = this.cmd;
+    const f = this.shapeUnder(e);
+    const name = c.name;
+    const LINEISH = new Set(["line", "arrow", "polyline"]);
+    const warn = (text) => this.emit("toast", { text });
+    if (!f || f.page.id !== pageId) return warn("線をタップしてください");
+    const sh = f.shape;
+    if (name === "trim" || name === "extend" || name === "break") {
+      if (!LINEISH.has(sh.type) || (name === "break" && sh.type === "arrow")) return warn(name === "break" ? "線・ポリラインをタップしてください" : "線・矢印・ポリラインをタップしてください");
+      if (name === "break") {
+        const q = this.aid.resolve(this.clampToPage(p, pageId), { pts: c.snapPts, ev: e }).p;
+        const parts = splitPolyline(sh.pts, q);
+        if (!parts) return warn("端では切れません");
+        const second = clone(sh);
+        second.id = "h" + uid();
+        second.pts = parts[1];
+        this.model.mutate(() => {
+          sh.pts = parts[0];
+          f.page.shapes.splice(f.page.shapes.indexOf(sh) + 1, 0, second);
+        });
+        return;
+      }
+      const cutters = this.cutterSegments(f.page, sh.id);
+      if (name === "trim") {
+        const out = trimPolyline(sh.pts, cutters, p);
+        if (!out) return warn("交わる図形がないのでトリムできません");
+        this.model.mutate(() => {
+          const i = f.page.shapes.indexOf(sh);
+          const extra = out.slice(1).map((pts) => Object.assign(clone(sh), { id: "h" + uid(), pts }));
+          if (out.length) sh.pts = out[0];
+          f.page.shapes.splice(i + 1, 0, ...extra);
+        });
+        return;
+      }
+      const ext = extendPolyline(sh.pts, cutters, p);
+      if (!ext) return warn("延長先の図形が見つかりません");
+      this.model.mutate(() => (sh.pts = ext));
+      return;
+    }
+    // フィレット・面取り: 線を2本
+    if (sh.type !== "line") return warn("線(直線)をタップしてください");
+    c.picks.push({ shape: sh, page: f.page, p });
+    if (c.picks.length < 2) return this.emit("cmd", { text: c.prompts[1] });
+    const [a, b] = c.picks;
+    c.picks = [];
+    this.emit("cmd", { text: c.prompts[0] });
+    if (a.shape.id === b.shape.id) return warn("別々の2本をタップしてください");
+    const o = c.opts;
+    if (name === "fillet") {
+      const r = filletLines(a.shape.pts, b.shape.pts, o.radius || 0, a.p, b.p);
+      if (!r) return warn("この2本・半径ではフィレットできません(平行、または半径が大きすぎます)");
+      this.model.mutate(() => {
+        a.shape.pts = r.l1;
+        b.shape.pts = r.l2;
+        if (r.arc) {
+          const arc = { id: "h" + uid(), type: "arc", pts: r.arc.pts, sweep: r.arc.sweep, style: { ...(a.shape.style || {}), fill: "none" } };
+          if (a.shape.layer) arc.layer = a.shape.layer;
+          if (a.shape.bl) arc.bl = [...a.shape.bl];
+          a.page.shapes.push(arc);
+        }
+      });
+      return;
+    }
+    const r = chamferLines(a.shape.pts, b.shape.pts, o.d1 || 0, o.d2 ?? o.d1 ?? 0, a.p, b.p);
+    if (!r) return warn("この2本・距離では面取りできません(平行、または距離が長すぎます)");
+    this.model.mutate(() => {
+      a.shape.pts = r.l1;
+      b.shape.pts = r.l2;
+      if (r.line) {
+        const ln = Object.assign(clone(a.shape), { id: "h" + uid(), pts: r.line });
+        a.page.shapes.push(ln);
+      }
+    });
+  }
+  /** ストレッチ: 窓に入る頂点を (dx,dy) 動かす */
+  stretchWindow(win, dx, dy) {
+    const page = this.model.page(this.cmd.pageId);
+    if (!page || (!dx && !dy)) return;
+    let n = 0;
+    this.model.mutate(() => {
+      page.shapes.forEach((sh, i) => {
+        if (sh.locked || !isLayerVisible(sh.layer || "0", this.model.layers)) return;
+        const t = stretchShape(sh, win, dx, dy, shapeBounds(sh, page));
+        if (t) {
+          page.shapes[i] = t;
+          n++;
+        }
+      });
+    });
+    if (!n) this.emit("toast", { text: "窓の中に動かせる頂点がありません" });
+  }
+  /** 選んだ線・ポリラインの端点がつながるものをひとつのポリラインにする */
+  joinSelected() {
+    const items = this.selectedItems().filter((f) => !f.shape.locked && (f.shape.type === "line" || f.shape.type === "polyline"));
+    if (items.length < 2) return this.emit("toast", { text: "つなげたい線を2本以上選んでください" });
+    const page = items[0].page;
+    const chains = joinChains(items.map((f) => ({ id: f.shape.id, pts: f.shape.pts })), 0.5).filter((ch) => ch.ids.length > 1);
+    if (!chains.length) return this.emit("toast", { text: "端点がつながっている線がありません" });
+    const made = [];
+    this.model.mutate(() => {
+      for (const ch of chains) {
+        const first = page.shapes.find((s) => s.id === ch.ids[0]);
+        const joined = clone(first);
+        joined.id = "h" + uid();
+        joined.type = ch.closed ? "polygon" : "polyline";
+        joined.pts = ch.pts;
+        if (joined.style && ch.closed) joined.style = { ...joined.style, fill: "none" };
+        const gone = new Set(ch.ids);
+        const at = page.shapes.findIndex((s) => gone.has(s.id));
+        page.shapes = page.shapes.filter((s) => !gone.has(s.id));
+        page.shapes.splice(at, 0, joined);
+        made.push(joined.id);
+      }
+    });
+    this.setMultiSelection(page.id, made);
+  }
+  /** 選んだ四角・多角形・ポリラインを1本ずつの線にばらす */
+  explodeSelected() {
+    const items = this.selectedItems().filter((f) => !f.shape.locked);
+    if (!items.length) return this.emit("toast", { text: "先に図形を選んでください" });
+    const page = items[0].page;
+    const made = [];
+    let skipped = 0;
+    this.model.mutate(() => {
+      for (const { shape } of items) {
+        const lines = explodeShape(shape);
+        if (!lines) {
+          skipped++;
+          continue;
+        }
+        lines.forEach((l) => (l.id = "h" + uid()));
+        const at = page.shapes.indexOf(shape);
+        page.shapes.splice(at, 1, ...lines);
+        made.push(...lines.map((l) => l.id));
+      }
+    });
+    if (made.length) this.setMultiSelection(page.id, made);
+    if (skipped) this.emit("toast", { text: made.length ? `分解できない図形${skipped}個はそのままです` : "分解できるのは四角・多角形・ポリラインです" });
   }
 
   duplicateSelected() {
@@ -2054,7 +2244,9 @@ export class Editor {
     } else if (!mod && !e.altKey && !e.shiftKey && TOOL_KEYS[e.key.toLowerCase()] && !this.editingId) {
       const k = TOOL_KEYS[e.key.toLowerCase()];
       e.preventDefault();
-      if (k === "cmd:move" || k === "cmd:copy") this.startCommand(k.slice(4));
+      if (k === "cmd:explode") this.explodeSelected();
+      else if (k === "cmd:join") this.joinSelected();
+      else if (k === "cmd:move" || k === "cmd:copy") this.startCommand(k.slice(4));
       else this.setTool(k);
     } else if (e.key === "Escape") {
       if (this.cmd) this.cancelCommand();
