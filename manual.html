@@ -130,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.10.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.11.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -342,6 +342,12 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
           <tr><td>ファイル名を変更</td><td>表示中のPDFの名前を変えます。</td></tr>
         </tbody>
       </table></div>
+      <h3>編集データを残す保存と、焼き込みの書き出し</h3>
+      <ul>
+        <li><b>上書き保存・Googleドライブに保存</b>:PDFの中に編集用データ(図形・文字・寸法とレイヤー)を入れます。他のPDFソフトでは普通のPDFとして開け、このアプリで開き直すと図形とレイヤー(表示/非表示・ロックも)が編集できる状態で戻ります。図形はPDF内の専用レイヤー「PDF Files/レイヤー名」に描かれます。</li>
+        <li><b>PDFを端末に保存・Gmailで送信・ページの書き出し</b>:編集用データは入れず、図形を焼き込みます。受け取った人は図形を編集できません。</li>
+        <li>写真・スタンプ・署名は、既定では焼き込みです。<span class="ui">設定</span>の「上書き保存・ドライブ保存に入れる編集データ」で「写真・スタンプ・署名も含める」にすると、これらも開き直して動かせます(容量が増えます)。ロックした署名・印影、最小(画像化)は、編集データを入れられません。</li>
+      </ul>
       <h3>ファイルサイズの最適化</h3>
       <ul>
         <li><b>標準(画質優先)</b>:元のPDFの内容を保ち、挿入した写真だけを適度に圧縮します。</li>
@@ -484,7 +490,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.10.0 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.11.0 対応</footer>
 </div>
 </body>
 </html>

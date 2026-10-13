@@ -1,5 +1,5 @@
 // 編集内容をPDFに書き出す。図形はベクターのまま、文字は画像化(日本語・任意フォント対応)して焼き込む。
-import { PDFDocument, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
+import { PDFDocument, PDFName, PDFDict, PDFArray, PDFHexString, PDFOperator, PDFOperatorNames, PDFBool, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
   dimensionGeometry, rectPoints, dashArray, dimOpts, arcPath,
@@ -7,7 +7,8 @@ import {
 import { textMetrics, labelFor, serializeOverlay, arcLines } from "./render.js";
 import { TEXT_LINE } from "./render.js";
 import { renderTextPng, recompressImage, renderPageJpeg } from "./raster.js";
-import { visibleShapes } from "./layers.js";
+import { visibleShapes, layerIdOf } from "./layers.js";
+import { packEdit, pageOf, EDIT_FILE, OC_PREFIX } from "./editdata.js";
 
 /** 最適化レベル */
 export const LEVELS = {
@@ -33,8 +34,28 @@ export function makeViewMapper(box, R) {
   }
 }
 
-export async function exportPdf(doc, { level = "small", onProgress } = {}) {
+/** 専用レイヤーの内容を入れた内容ストリームの印(開き直して書き出すときに取り除く) */
+const EDIT_MARK = "PFEdit";
+
+function stripEditStreams(pg) {
+  const c = pg.node.Contents();
+  if (!(c instanceof PDFArray)) return;
+  for (let i = c.size() - 1; i >= 0; i--) {
+    const st = pg.node.context.lookup(c.get(i));
+    if (st?.dict?.get(PDFName.of(EDIT_MARK))) c.remove(i);
+  }
+}
+
+/**
+ * PDFを作る。
+ * embedEdit: 図形をPDF内の専用レイヤーに描き、編集用データ(図形・レイヤー)を添付する。
+ * editImages: 写真・スタンプ・署名も編集用データに含める(容量が増える)
+ */
+export async function exportPdf(doc, { level = "small", onProgress, embedEdit = false, editImages = false } = {}) {
   const cfg = LEVELS[level] || LEVELS.small;
+  const wantEdit = !!embedEdit && !cfg.rasterize;
+  const ocgs = new Map(); // レイヤーid → { ref, key }
+  const editPages = [];
   const out = await PDFDocument.create();
   out.setTitle(doc.meta.name.replace(/\.pdf$/i, ""));
   out.setProducer("PDF Files");
@@ -66,7 +87,7 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
       const dpi = cfg.rasterize ? cfg.dpi : 200;
       const quality = cfg.rasterize ? cfg.quality : 0.8;
       const src = page.srcId ? doc.sources.get(page.srcId) : null;
-      const pdfPage = src ? await src.pdf.getPage(page.srcIndex + 1) : null;
+      const pdfPage = src ? await pageOf(src.pdf, page.srcIndex + 1) : null;
       const overlaySvg = shapes.length ? serializeOverlay(page, doc.images, page.w, page.h, doc.layers) : null;
       const r = await renderPageJpeg({
         pdfPage, rotation: ((page.baseRot || 0) + page.rot) % 360, w: page.w, h: page.h, overlaySvg, dpi, quality,
@@ -74,6 +95,7 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
       const pg = out.addPage([page.w, page.h]);
       const img = await out.embedJpg(r.bytes);
       pg.drawImage(img, { x: 0, y: 0, width: page.w, height: page.h });
+      editPages.push(null);
       continue;
     }
 
@@ -85,10 +107,46 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
       out.addPage(pg);
       R = (((page.baseRot || 0) + page.rot) % 360 + 360) % 360;
       pg.setRotation(degrees(R));
+      if (doc.sources.get(page.srcId)?.edit) stripEditStreams(pg); // 前回の編集用レイヤーは、図形として復元済みなので外す
     } else {
       pg = out.addPage([page.w, page.h]);
     }
+    if (wantEdit) {
+      // 隠れているレイヤーの図形も含めて、すべての図形を編集用データに残す
+      const keep = page.shapes.filter((s) => s.type !== "image" || editImages);
+      editPages.push(keep.length || page.scale ? { shapes: keep, scale: page.scale || null } : {});
+    }
     if (!shapes.length) continue;
+
+    let baseStream = null;
+    let baseRef = null;
+    let editStream = null;
+    let editRef = null;
+    if (wantEdit) {
+      // 画像などの焼き込みと、編集用レイヤーの図形を別々の内容ストリームに分ける
+      baseStream = pg.getContentStream(false);
+      baseRef = pg.contentStreamRef;
+      editStream = pg.getContentStream(false);
+      editRef = pg.contentStreamRef;
+      editStream.dict.set(PDFName.of(EDIT_MARK), PDFBool.True);
+    }
+    const ocgFor = (layerId) => {
+      let o = ocgs.get(layerId);
+      if (!o) {
+        const L = (doc.layers || []).find((l) => l.id === layerId);
+        const ref = out.context.register(out.context.obj({ Type: "OCG", Name: PDFHexString.fromText(OC_PREFIX + (L?.name ?? layerId)) }));
+        o = { ref, key: `PFL${ocgs.size}` };
+        ocgs.set(layerId, o);
+      }
+      const res = pg.node.Resources();
+      let props = res.lookupMaybe(PDFName.of("Properties"), PDFDict);
+      if (!props) {
+        props = out.context.obj({});
+        res.set(PDFName.of("Properties"), props);
+      }
+      props.set(PDFName.of(o.key), o.ref);
+      return o;
+    };
 
     const box = typeof pg.getCropBox === "function" ? pg.getCropBox() : pg.getMediaBox();
     const map = makeViewMapper(box, R);
@@ -121,6 +179,12 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
     };
 
     for (const sh of shapes) {
+      const inEdit = wantEdit && (sh.type !== "image" || editImages);
+      if (wantEdit) {
+        pg.contentStream = inEdit ? editStream : baseStream;
+        pg.contentStreamRef = inEdit ? editRef : baseRef;
+      }
+      if (inEdit) pg.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of("OC"), PDFName.of(ocgFor(layerIdOf(sh)).key)]));
       const st = sh.style || {};
       const color = hexToRgb(st.color || "#e11d48");
       const width = st.width ?? 2;
@@ -204,7 +268,16 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
         default:
           break;
       }
+      if (inEdit) pg.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
     }
+  }
+  if (wantEdit && editPages.some((e) => e && e.shapes)) {
+    const refs = [...ocgs.values()].map((o) => o.ref);
+    if (refs.length) out.catalog.set(PDFName.of("OCProperties"), out.context.obj({ OCGs: refs, D: { Order: refs, ON: refs } }));
+    const images = {};
+    if (editImages) for (const e of editPages) for (const s of e?.shapes || []) if (s.imgId && doc.images.get(s.imgId)) images[s.imgId] = doc.images.get(s.imgId);
+    const packed = await packEdit({ app: "PDF Files", layers: doc.layers || [], pages: editPages, images });
+    await out.attach(packed, EDIT_FILE, { mimeType: "application/octet-stream", description: "PDF Files 編集用データ(図形・レイヤー)", creationDate: new Date(), modificationDate: new Date() });
   }
   onProgress?.(1, "保存データを作成中");
   const bytes = await out.save({ useObjectStreams: true, addDefaultPage: false });

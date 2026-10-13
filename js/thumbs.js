@@ -329,7 +329,7 @@ export class Thumbs {
         const pdfPage = await this.getPdfPage(p);
         if (pdfPage) {
           const vp = pdfPage.getViewport({ scale, rotation: ((p.baseRot || 0) + p.rot) % 360 });
-          await pdfPage.render({ canvasContext: g, canvas: src, viewport: vp }).promise;
+          await pdfPage.render({ canvasContext: g, canvas: src, viewport: vp, optionalContentConfigPromise: pdfPage.pfOc }).promise;
         }
       } catch (e) {
         console.warn("thumb", e);
