@@ -244,7 +244,10 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           if (geo.tipShape?.type === "arrow") path(polygonPath(geo.tipShape.poly), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: 1 });
           else if (geo.tipShape?.type === "dot") path(ellipsePath([geo.tipShape.c[0] - geo.tipShape.r, geo.tipShape.c[1] - geo.tipShape.r], [geo.tipShape.c[0] + geo.tipShape.r, geo.tipShape.c[1] + geo.tipShape.r]), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
           if (geo.box?.type === "underline") path(linePath(geo.box.pts), strokeOpts);
-          else if (geo.box?.type === "stadium") path(stadiumPath(geo.box), strokeOpts);
+          else if (geo.box?.type === "stadium") {
+            path(stadiumPath(geo.box), strokeOpts);
+            path(linePath(geo.box.stub), strokeOpts);
+          }
           if (m) await placeText({ lines: m.lines, size: sz, font: sh.font, bold: !!sh.bold, color: sh.color || color, bg: null, w: m.w, h: m.h }, geo.textTL, 0);
           break;
         }

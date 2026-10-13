@@ -233,7 +233,10 @@ export function renderShape(shape, parent, opts = {}) {
       if (geo.tipShape?.type === "arrow") el("path", { d: polygonPath(geo.tipShape.poly), fill: color, stroke: color, "stroke-width": 1, "stroke-linejoin": "round", opacity: common.opacity }, g);
       else if (geo.tipShape?.type === "dot") el("circle", { cx: geo.tipShape.c[0], cy: geo.tipShape.c[1], r: geo.tipShape.r, fill: color, opacity: common.opacity }, g);
       if (geo.box?.type === "underline") el("path", { d: linePath(geo.box.pts), fill: "none", ...common }, g);
-      else if (geo.box?.type === "stadium") el("path", { d: stadiumPath(geo.box), fill: "none", ...common }, g);
+      else if (geo.box?.type === "stadium") {
+        el("path", { d: stadiumPath(geo.box), fill: "none", ...common }, g);
+        el("path", { d: linePath(geo.box.stub), fill: "none", ...common }, g);
+      }
       if (m) {
         const [x, y] = geo.textTL;
         const t = el("text", { x, y: y + sz * TEXT_ASCENT, "font-size": sz, "font-family": fontCss(shape.font), "font-weight": shape.bold ? "bold" : null, fill: shape.color || color, style: "white-space:pre" }, g);

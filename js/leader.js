@@ -54,9 +54,10 @@ export function leaderGeometry(shape, m) {
     if (boxMode === "circle") {
       const H = m.h + 2 * pad;
       const W = Math.max(H, m.w + H * 0.45);
-      const x = dir > 0 ? anchor[0] : anchor[0] - W;
+      const stub = Math.max(6, size * 0.7); // 引出線は少し水平に出してから丸に接続する
+      const x = dir > 0 ? anchor[0] + stub : anchor[0] - stub - W;
       const y = anchor[1] - H / 2;
-      box = { type: "stadium", x, y, w: W, h: H };
+      box = { type: "stadium", x, y, w: W, h: H, stub: [anchor, [anchor[0] + dir * stub, anchor[1]]] };
       textTL = [x + (W - m.w) / 2, y + (H - m.h) / 2];
       pts.push([x, y], [x + W, y + H]);
     } else if (boxMode === "underline") {

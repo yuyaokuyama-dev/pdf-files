@@ -34,7 +34,8 @@ test("丸で囲う: 1文字は円、長い文字は長丸。引出線は囲み�
   assert.equal(one.box.type, "stadium");
   assert.ok(near(one.box.w, one.box.h)); // 円
   assert.ok(near(one.box.y + one.box.h / 2, 50)); // 高さの中央
-  assert.ok(near(one.box.x, 100)); // 縁に接する
+  assert.ok(near(one.box.x, 100 + (one.box.stub[1][0] - 100))); // 水平線を少し出してから丸に接する
+  assert.ok(one.box.stub[1][0] > 104 && near(one.box.stub[1][1], 50));
   const many = leaderGeometry({ ...base, box: "circle" }, { w: 60, h: 17.5 });
   assert.ok(many.box.w > many.box.h);
   // 文字は囲みの中央
