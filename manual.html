@@ -130,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.12.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.13.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -301,6 +301,11 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
       <h3>円・3点円弧・ポリライン・正多角形</h3>
       <p>ツールを選ぶと、右のパネルの<span class="ui">描き方</span>で切り替えられます。<b>丸</b>は「楕円(対角)」と「円(中心→半径)」、<b>円弧</b>は「中心と半径」と「3点」(通る3点を順にタップ)、<b>多角形</b>は「多角形」「ポリライン(開いた線。ダブルタップか「完了」で終了)」「正多角形(中心から外へドラッグ。辺の数はパネルで指定)」です。選んだ描き方は次回も引き継がれます。</p>
       <p>四角・多角形・ポリラインを選ぶと、各辺の中点に四角いハンドルが出ます。これをドラッグすると、その辺だけが垂直方向に動きます。四角・丸・多角形は、パネルの<span class="ui">雲マークに変換</span>で改訂雲にできます。</p>
+      <h3>移動・回転・拡大縮小・鏡像・配列・オフセット</h3>
+      <p>図形を選ぶと、右のパネルに<span class="ui">修正コマンド</span>が出ます(複数選択でも使えます)。ボタンを押したら、画面の案内に従って点をタップします(端点・中点などには吸い付きます)。やめるときは<span class="ui">中止</span>か<kbd>Esc</kbd>です。</p>
+      <p><b>移動・コピー</b>: 基点→移動先の順にタップします。コピーは続けて何度でも置けます。<b>回転</b>: 角度(右回り)を入れて、中心をタップします。<b>尺度</b>: 倍率を入れて、基点をタップします。<b>鏡像</b>: 軸になる直線の2点をタップします(「元を残す」で左右対称の複製)。回転・尺度・鏡像は「元を残してコピー」もできます。</p>
+      <p><b>配列複写(矩形)</b>: 行・列の数と間隔を入れて「配列する」。<b>配列複写(円形)</b>: 個数と全体の角度(360で一周)を入れて、中心をタップします。<b>オフセット</b>: 距離を入れて、ずらしたい側をタップすると、線・四角・丸・円弧・多角形が平行にずれた複製ができます(四角・丸は外か内かで大きくも小さくもなります)。</p>
+      <p>画像・スタンプ・署名は、移動とコピーはできますが、回転や斜めの鏡像はできません。丸や四角を斜めに回すと多角形になります。</p>
       <h3>レイヤー</h3>
       <p>ツールバー左の<span class="ui">レイヤー</span>ボタンでパネルを開きます。レイヤーごとに表示/非表示・ロック・色・太さ・線種を設定でき、<span class="ui">図形を選択</span>でそのレイヤーの図形をまとめて選べます。レイヤー「0」以外に描いた図形は、色・太さ・線種がレイヤーに従います(図形ごとに個別指定も可)。非表示のレイヤーはPDFにも書き出されません。レイヤーを削除すると中の図形も消えます(取り消しで戻せます)。</p>
     </section>
@@ -464,6 +469,8 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
           <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>やり直し</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>このページの図形をすべて選ぶ</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>選んだ図形を複製</td></tr>
+          <tr><td><kbd>V</kbd> <kbd>W</kbd> <kbd>N</kbd> <kbd>L</kbd> <kbd>R</kbd> <kbd>C</kbd> <kbd>A</kbd> <kbd>P</kbd> <kbd>O</kbd> <kbd>T</kbd> <kbd>D</kbd> <kbd>E</kbd> <kbd>H</kbd></td><td>ツールを切り替え(V=選択 / W=範囲選択 / N=ペン / L=線 / R=四角 / C=丸 / A=円弧 / P=多角形 / O=雲 / T=文字 / D=寸法線 / E=消しゴム / H=移動)</td></tr>
+          <tr><td><kbd>M</kbd> / <kbd>K</kbd></td><td>選んだ図形を、基点を指定して移動 / コピー</td></tr>
           <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>選んだ図形を削除</td></tr>
           <tr><td>矢印キー</td><td>選んだ図形を少しずつ動かす(<kbd>Shift</kbd>を押しながらで大きく)</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>多角形を閉じる / 選んだ文字・寸法を編集</td></tr>
@@ -493,7 +500,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.12.0 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.13.0 対応</footer>
 </div>
 </body>
 </html>

@@ -8,6 +8,7 @@ import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, tex
 import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
 import { isLayerLocked, isLayerVisible, BL_KEYS } from "./layers.js";
 import { DrawAid, DYN_TOOLS } from "./drawaid.js";
+import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape } from "./modify.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "dim", "calib", "measure", "sign", "stamp"]);
@@ -42,6 +43,9 @@ function edgesOf(sh) {
   }
   return null;
 }
+
+/** 1キーで切り替えるツール・コマンド(パソコン) */
+const TOOL_KEYS = { v: "select", w: "marquee", n: "pen", l: "line", r: "rect", c: "ellipse", a: "arc", p: "polygon", o: "cloud", t: "text", d: "dim", e: "eraser", h: "hand", m: "cmd:move", k: "cmd:copy" };
 
 export class Editor {
   /**
@@ -121,6 +125,7 @@ export class Editor {
     this.cancelGesture();
     this.cancelPolygon();
     this.cancelArc3();
+    this.cancelCommand();
     this.aid.cancelPending();
     if (this.editing) this.finishTextEdit(true);
     this.unsub?.();
@@ -349,6 +354,7 @@ export class Editor {
     if (this.poly && t !== "polygon") this.cancelPolygon();
     if (t !== "arc") this.cancelArc3();
     this.aid.cancelPending();
+    this.cancelCommand();
     this.cancelGesture();
     this.returnTool = null;
     this.tool = t;
@@ -466,6 +472,7 @@ export class Editor {
     const el = this.els.get(pageId);
     const p = this.pt(e, pageId);
 
+    if (this.cmd && isSelectTool(tool)) return this.cmdDown(e, pageId, p);
     if (isSelectTool(tool)) return this.selectDown(e, pageId, p);
     e.preventDefault();
 
@@ -1785,6 +1792,177 @@ export class Editor {
     this.setSelection(null);
     this.model.removeShapes(pageId, items.map((f) => f.shape.id));
   }
+  /* =========================================================
+   * 修正コマンド(基点つき移動/コピー・回転・尺度・鏡像・配列・オフセット)
+   * ======================================================= */
+  /** 変換した図形の一覧(対象外の数も返す)。copy なら新しい図形、そうでなければ元の図形と同じ id */
+  transformItems(items, m, copy) {
+    const out = [];
+    let skipped = 0;
+    for (const { shape } of items) {
+      const t = transformShape(shape, m, { metrics: textMetrics });
+      if (!t) {
+        skipped++;
+        continue;
+      }
+      if (copy) t.id = "h" + uid();
+      out.push(t);
+    }
+    return { out, skipped };
+  }
+  /** 選択中の図形に変換(matrices)をかける。copy=true なら元を残して複製、false なら元を動かす(matrices は1つ) */
+  applyMatrices(matrices, { copy = false, select = false } = {}) {
+    const items = this.selectedItems().filter((f) => !f.shape.locked);
+    if (!items.length || !matrices.length) return 0;
+    const page = items[0].page;
+    let skipped = 0;
+    const added = [];
+    this.model.mutate(() => {
+      for (const m of matrices) {
+        const mm = typeof m === "function" ? m(items) : m;
+        const { out, skipped: sk } = this.transformItems(items, mm, copy);
+        skipped += sk;
+        if (copy) {
+          page.shapes.push(...out);
+          added.push(...out.map((o) => o.id));
+        } else {
+          for (const t of out) {
+            const i = page.shapes.findIndex((x) => x.id === t.id);
+            if (i >= 0) page.shapes[i] = t;
+          }
+        }
+      }
+    });
+    if (select && added.length) this.setMultiSelection(page.id, [...items.map((f) => f.shape.id), ...added]);
+    if (skipped) this.emit("toast", { text: `向きを変えられない図形(画像・スタンプなど)${skipped}個はそのままです` });
+    return added.length || items.length;
+  }
+  /** 選択範囲の中心(図形の外接枠の中心) */
+  selectionCenter() {
+    const items = this.selectedItems();
+    if (!items.length) return [0, 0];
+    const bs = items.map((f) => shapeBounds(f.shape, f.page));
+    const x0 = Math.min(...bs.map((b) => b.x));
+    const y0 = Math.min(...bs.map((b) => b.y));
+    const x1 = Math.max(...bs.map((b) => b.x + b.w));
+    const y1 = Math.max(...bs.map((b) => b.y + b.h));
+    return [(x0 + x1) / 2, (y0 + y1) / 2];
+  }
+  /** 矩形状配列(行×列。間隔はpt。右・下が正) */
+  arrayRect(rows, cols, dx, dy) {
+    rows = Math.max(1, Math.min(100, Math.round(rows) || 1));
+    cols = Math.max(1, Math.min(100, Math.round(cols) || 1));
+    if (rows * cols > 500) return this.emit("toast", { text: "配列は500個までです", error: true });
+    if (rows * cols <= 1) return;
+    this.applyMatrices(rectArray(rows, cols, dx, dy), { copy: true, select: true });
+  }
+  /** 円形状配列(中心 c、元を含む count 個、angle は全体の角度) */
+  arrayPolar(c, count, angle, rotateItems) {
+    count = Math.max(2, Math.min(500, Math.round(count) || 2));
+    const center = this.selectionCenter();
+    const mats = polarArray(c, count, angle).map((m) => {
+      if (rotateItems) return m;
+      const q = applyM(m, center);
+      return moveM(q[0] - center[0], q[1] - center[1]);
+    });
+    this.applyMatrices(mats, { copy: true, select: true });
+  }
+
+  /**
+   * 点を順に指定するコマンドを始める。name: move | copy | rotate | scale | mirror | polar | offset
+   * opts: rotate { angle, copy } / scale { k, copy } / mirror { keep } / polar { count, angle, rotateItems } / offset { dist }(pt)
+   */
+  startCommand(name, opts = {}) {
+    this.cancelCommand();
+    const items = this.selectedItems().filter((f) => !f.shape.locked);
+    if (!items.length) return this.emit("toast", { text: "先に図形を選んでください" });
+    if (name === "offset" && items.length !== 1) return this.emit("toast", { text: "オフセットは図形を1つだけ選んでください" });
+    const prompts = {
+      move: ["基点をタップ", "移動先をタップ"],
+      copy: ["基点をタップ", "コピー先をタップ(続けて何度でも。終わるには中止)"],
+      rotate: ["回転の中心(基点)をタップ"],
+      scale: ["尺度の基点をタップ"],
+      mirror: ["鏡像の軸の1点目をタップ", "軸の2点目をタップ"],
+      polar: ["配列の中心をタップ"],
+      offset: ["ずらす側をタップ(続けて何度でも。終わるには中止)"],
+    }[name];
+    if (!prompts) return;
+    const pageId = items[0].page.id;
+    this.cmd = { name, opts, pageId, prompts, pts: [], snapPts: this.aid.pointsFor(pageId, new Set()), hover: null, mark: null };
+    this.cmdMoveFn = (ev) => {
+      if (!this.cmd) return;
+      const r = this.aid.resolve(this.clampToPage(this.pt(ev, this.cmd.pageId), this.cmd.pageId), { pts: this.cmd.snapPts, p0: this.cmd.pts[this.cmd.pts.length - 1] || null, ev });
+      this.cmd.hover = r.p;
+      this.cmd.mark = r.mark;
+      this.drawCmdDraft();
+    };
+    this.els.get(pageId)?.svg.addEventListener("pointermove", this.cmdMoveFn);
+    this.emit("cmd", { text: prompts[0] });
+  }
+  cancelCommand() {
+    if (!this.cmd) return;
+    this.els.get(this.cmd.pageId)?.svg.removeEventListener("pointermove", this.cmdMoveFn);
+    this.els.get(this.cmd.pageId)?.draft.replaceChildren();
+    this.cmd = null;
+    this.emit("cmd", null);
+  }
+  drawCmdDraft() {
+    const c = this.cmd;
+    const el = c && this.els.get(c.pageId);
+    if (!el) return;
+    el.draft.replaceChildren();
+    const z = this.zoom;
+    const last = c.pts[c.pts.length - 1];
+    if (last && c.hover) {
+      el.draft.appendChild(sv("line", { x1: last[0], y1: last[1], x2: c.hover[0], y2: c.hover[1], stroke: "#2563eb", "stroke-width": 1.4 / z, "stroke-dasharray": `${5 / z} ${4 / z}`, "pointer-events": "none" }));
+      el.draft.appendChild(sv("circle", { cx: last[0], cy: last[1], r: 3.5 / z, fill: "#2563eb", "pointer-events": "none" }));
+    }
+    this.aid.drawMark(el.draft, c.mark);
+  }
+  cmdDown(e, pageId, p) {
+    const c = this.cmd;
+    e.preventDefault();
+    if (pageId !== c.pageId) return;
+    const r = this.aid.resolve(this.clampToPage(p, pageId), { pts: c.snapPts, p0: c.pts[c.pts.length - 1] || null, ev: e });
+    const q = this.clampToPage(r.p, pageId);
+    const o = c.opts;
+    if (c.name === "offset") {
+      const f = this.selectedItems()[0];
+      const t = f && offsetShape(f.shape, o.dist, q);
+      if (!t) return this.emit("toast", { text: "この図形・距離ではオフセットできません" });
+      t.id = "h" + uid();
+      this.model.mutate(() => f.page.shapes.push(t));
+      return;
+    }
+    c.pts.push(q);
+    if (c.name === "move" || c.name === "copy") {
+      if (c.pts.length === 2) {
+        const [a, b] = c.pts;
+        this.applyMatrices([moveM(b[0] - a[0], b[1] - a[1])], { copy: c.name === "copy" });
+        if (c.name === "copy") c.pts = [a]; // 同じ基点から続けてコピー
+        else return this.cancelCommand();
+      }
+    } else if (c.name === "rotate") {
+      this.applyMatrices([rotateM(q, o.angle)], { copy: !!o.copy });
+      return this.cancelCommand();
+    } else if (c.name === "scale") {
+      if (!(o.k > 0)) return this.cancelCommand();
+      this.applyMatrices([scaleM(q, o.k)], { copy: !!o.copy });
+      return this.cancelCommand();
+    } else if (c.name === "mirror") {
+      if (c.pts.length === 2) {
+        const m = mirrorM(c.pts[0], c.pts[1]);
+        if (m) this.applyMatrices([m], { copy: !!o.keep });
+        return this.cancelCommand();
+      }
+    } else if (c.name === "polar") {
+      this.arrayPolar(q, o.count, o.angle, o.rotateItems);
+      return this.cancelCommand();
+    }
+    this.emit("cmd", { text: c.prompts[Math.min(c.pts.length, c.prompts.length - 1)] });
+    this.drawCmdDraft();
+  }
+
   duplicateSelected() {
     const items = this.selectedItems().filter((f) => !f.shape.locked);
     if (!items.length) return;
@@ -1873,8 +2051,14 @@ export class Editor {
     } else if (e.key === "F10") {
       e.preventDefault();
       this.aid.setConfig({ polar: !this.aid.cfg.polar });
+    } else if (!mod && !e.altKey && !e.shiftKey && TOOL_KEYS[e.key.toLowerCase()] && !this.editingId) {
+      const k = TOOL_KEYS[e.key.toLowerCase()];
+      e.preventDefault();
+      if (k === "cmd:move" || k === "cmd:copy") this.startCommand(k.slice(4));
+      else this.setTool(k);
     } else if (e.key === "Escape") {
-      if (this.aid.pending) this.aid.cancelPending();
+      if (this.cmd) this.cancelCommand();
+      else if (this.aid.pending) this.aid.cancelPending();
       else if (this.arc3) this.cancelArc3();
       else if (this.poly) this.cancelPolygon();
       else if (this.g) this.cancelGesture();
