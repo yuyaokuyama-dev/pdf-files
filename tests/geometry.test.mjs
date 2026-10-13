@@ -218,3 +218,33 @@ test("eraseStroke: なぞった軌跡(線分)が線を横切ると切れる", as
   assert.equal(r.length, 2);
   assert.ok(Math.abs(r[0].at(-1)[0] - 45) < 0.01 && Math.abs(r[1][0][0] - 55) < 0.01);
 });
+
+import { PAPERS, guessPaper, scaleFromPaper } from "../js/geometry.js";
+
+test("ページの大きさから用紙を推定する(A4・A3・横向き)", () => {
+  assert.equal(guessPaper(595.28, 841.89)?.id, "A4");
+  assert.equal(guessPaper(1190.55, 841.89)?.id, "A3");
+  assert.equal(guessPaper(500, 500), null);
+});
+
+test("用紙A3・1/100: 用紙上の1mm=実寸100mm", () => {
+  const sc = scaleFromPaper(1190.55, 841.89, PAPERS.find((p) => p.id === "A3"), 100);
+  assert.equal(sc.unit, "mm");
+  // 用紙上1mm = 72/25.4 pt なので、実寸1mm = (72/25.4)/100 pt
+  assert.ok(Math.abs(sc.ptsPerUnit - 72 / 25.4 / 100) < 1e-4);
+  assert.equal(sc.denom, 100);
+  assert.equal(sc.paper, "A3");
+});
+
+test("A4のPDFにA3の図面を入れた場合は、ページの長辺をA3の長辺とみなす", () => {
+  const sc = scaleFromPaper(595.28, 841.89, PAPERS.find((p) => p.id === "A3"), 100);
+  // 842pt = A3の420mm → 1mm あたり 2.0045pt、実寸1mm = その1/100
+  assert.ok(Math.abs(sc.ptsPerUnit - 841.89 / 420 / 100) < 1e-6);
+});
+
+test("用紙を選ばなければページの大きさのまま。縮尺が0以下なら null", () => {
+  const sc = scaleFromPaper(595.28, 841.89, null, 50);
+  assert.ok(Math.abs(sc.ptsPerUnit - 72 / 25.4 / 50) < 1e-6);
+  assert.equal(scaleFromPaper(595, 842, null, 0), null);
+  assert.equal(scaleFromPaper(595, 842, null, -5), null);
+});

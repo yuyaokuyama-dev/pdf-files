@@ -6,11 +6,12 @@ import { DocModel, A4 } from "./model.js";
 import { Editor } from "./editor.js";
 import { Thumbs } from "./thumbs.js";
 import { Props } from "./props.js";
+import { LayerPanel } from "./layerpanel.js";
 import { exportPdf, LEVELS } from "./export.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
 import { browseDrive } from "./drivebrowse.js";
-import { makeScale, formatLength } from "./geometry.js";
+import { makeScale, formatLength, PAPERS, guessPaper, scaleFromPaper } from "./geometry.js";
 import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, loadImage } from "./raster.js";
 import { createPad } from "./pad.js";
 import { icon } from "./icons.js";
@@ -280,6 +281,8 @@ async function enterApp(user) {
  * ======================================================= */
 const TOOLS = [
   { id: "select", icon: "select", label: "選択" },
+  { id: "marquee", icon: "marquee", label: "範囲選択", hint: "ドラッグで範囲選択(右へ=囲んだものだけ、左へ=触れたものも)。図形をタップで追加でき、ドラッグでまとめて動かせます" },
+  { id: "lasso", icon: "lasso", label: "投げ縄", hint: "なぞって囲むと、囲みの中に完全に入る図形を選びます" },
   { id: "hand", icon: "hand", label: "移動" },
   { sep: true },
   { id: "pen", icon: "pen", label: "ペン", hint: "指・ペン・マウスでなめらかに手書きできます" },
@@ -294,7 +297,7 @@ const TOOLS = [
   { id: "text", icon: "text", label: "文字", hint: "入れたい場所をタップして文字を入力します" },
   { sep: true },
   { id: "dim", icon: "dim", label: "寸法線", hint: "測りたい2点をドラッグ → 数値を入力します" },
-  { id: "calib", icon: "calib", label: "縮尺設定", hint: "実際の長さが分かる2点をドラッグ → 実寸を入力して縮尺を設定" },
+  { id: "calib", icon: "calib", label: "縮尺設定", hint: "実際の長さが分かる2点をドラッグ → 実寸を入力して縮尺を設定。右のパネルから、用紙と縮尺(1/100など)を数値で設定することもできます" },
   { id: "measure", icon: "measure", label: "計測", hint: "2点をドラッグすると、設定した縮尺で長さを計測します" },
   { sep: true },
   { id: "sign", icon: "sign", label: "署名", hint: "署名したい範囲を四角でドラッグ(タップでも可)" },
@@ -339,6 +342,13 @@ function initUI() {
     makePdf: (ids) => buildPagesPdf(ids),
     pdfKey: (ids) => pagesPdfKey(ids),
   });
+  S.layerPanel = new LayerPanel({
+    el: $("#layers"),
+    editor: S.editor,
+    onToast: toast,
+    onConfirm: confirmDialog,
+    onClose: () => $("#btnLayers").classList.remove("on"),
+  });
   S.props = new Props({
     el: $("#props"),
     editor: S.editor,
@@ -361,7 +371,7 @@ function initUI() {
 
 function buildTools() {
   const nav = $("#tools");
-  nav.innerHTML = `<button class="tool" id="btnPages" title="ページ一覧を開く・閉じる">${icon("pages", 24)}<span>ページ</span></button><span class="tool-sep"></span>` + TOOLS.map((t) =>
+  nav.innerHTML = `<button class="tool" id="btnPages" title="ページ一覧を開く・閉じる">${icon("pages", 24)}<span>ページ</span></button><button class="tool" id="btnLayers" title="レイヤーパネルを開く・閉じる">${icon("layers", 24)}<span>レイヤー</span></button><span class="tool-sep"></span>` + TOOLS.map((t) =>
     t.sep ? '<span class="tool-sep"></span>' : `<button class="tool" data-tool="${t.id}" title="${t.label}">${icon(t.icon, 24)}<span>${t.label}</span></button>`,
   ).join("");
   nav.addEventListener("click", (e) => {
@@ -396,6 +406,7 @@ function wireEditorEvents() {
     // 作成直後の調整中は、戻り先のツールを光らせたままにする
     const lit = ed.returnTool || t;
     document.querySelectorAll(".tool").forEach((b) => b.classList.toggle("on", b.dataset.tool === lit));
+    $("#btnLayers")?.classList.toggle("on", !!S.layerPanel?.open);
     const def = TOOLS.find((x) => x.id === t);
     if (ed.returnTool) showHint(`色や太さなどを調整できます。何もない所をタップすると確定して「${TOOLS.find((x) => x.id === ed.returnTool)?.label || ""}」に戻ります`, 3800);
     else if (t === "polygon") showHint(def.hint, 0, [{ label: "完了", primary: true, onClick: () => ed.finishPolygon() }, { label: "取消", onClick: () => ed.cancelPolygon() }]);
@@ -410,8 +421,9 @@ function wireEditorEvents() {
   ed.on("dim-request", dimRequest);
   ed.on("dim-edit", dimEdit);
   ed.on("calib-request", calibRequest);
+  ed.on("scale-preset", scalePresetDialog);
   ed.on("need-scale", () => {
-    toast("先に「縮尺設定」で、実際の長さが分かる2点を指定してください");
+    toast("先に「縮尺設定」で、実際の長さが分かる2点を指定するか、用紙と縮尺を数値で設定してください");
     ed.setTool("calib");
   });
   ed.on("need-stamp", () => manageStamps());
@@ -442,6 +454,10 @@ function wireTopbar() {
     t.hidden = !t.hidden;
     $("#btnPages").classList.toggle("on", !t.hidden);
     if (!t.hidden) S.thumbs.refresh(true);
+  };
+  $("#btnLayers").onclick = () => {
+    S.layerPanel.setOpen(!S.layerPanel.open);
+    $("#btnLayers").classList.toggle("on", S.layerPanel.open);
   };
   $("#btnFile").onclick = (e) => fileMenu(e.currentTarget);
   $("#btnSave").onclick = (e) => saveMenu(e.currentTarget);
@@ -504,6 +520,7 @@ function setDoc(model, { fit = true } = {}) {
   });
   S.editor.setModel(model);
   S.props.bindModel();
+  S.layerPanel.bindModel();
   S.editor.pendingStamp = null;
   updateEmpty();
   updateUndoRedo();
@@ -1607,6 +1624,55 @@ async function calibRequest({ pageId, p0, p1, length }) {
   });
   toast("縮尺を設定しました。「計測」ツールで他の2点の長さを測れます");
   S.editor.setTool("measure");
+}
+
+/** 用紙サイズと縮尺(1/〇〇)を数値で入力して、ページの縮尺を設定する */
+async function scalePresetDialog({ pageId }) {
+  const m = S.model;
+  const page = m.page(pageId);
+  if (!page) return;
+  const cur = page.scale || null;
+  const guessed = cur?.paper ? PAPERS.find((p) => p.id === cur.paper) : guessPaper(page.w, page.h);
+  const den0 = cur?.denom || 100;
+  let result = null;
+  const ok = await dialog({
+    title: "用紙と縮尺で設定",
+    body: `<p class="note">このページが何の用紙に、どの縮尺で作られた図面かを入力します。図面の実寸(mm)で寸法を入れたり、長さを計測できます。</p>
+      <label class="field">用紙サイズ<select id="spPaper" style="height:42px"><option value="">PDFのページの大きさのまま</option>${PAPERS.map((p) => `<option value="${p.id}"${guessed?.id === p.id ? " selected" : ""}>${p.label}(${p.long}×${p.short}mm)</option>`).join("")}</select></label>
+      <label class="field">縮尺 1 /<div class="row"><input type="number" id="spDen" inputmode="decimal" min="1" step="any" value="${den0}" style="flex:1;height:42px;font-size:18px"></div></label>
+      <div class="actions" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0">${[20, 50, 100, 200, 500].map((n) => `<button type="button" class="btn" data-den="${n}" style="min-height:32px;padding:0 10px">1/${n}</button>`).join("")}</div>
+      <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="spAll"> 全ページに同じ用紙・縮尺を適用</label>
+      <p class="note" id="spInfo"></p>`,
+    buttons: [{ label: "キャンセル", value: null }, { label: "設定", value: true, primary: true, action: (d) => {
+      const den = parseFloat(d.querySelector("#spDen").value);
+      if (!(den > 0)) {
+        toast("縮尺は0より大きい数字を入力してください", { error: true });
+        return false;
+      }
+      result = { paper: PAPERS.find((p) => p.id === d.querySelector("#spPaper").value) || null, den, all: d.querySelector("#spAll").checked };
+      return true;
+    } }],
+    onOpen: (d) => {
+      const info = () => {
+        const den = parseFloat(d.querySelector("#spDen").value);
+        const paper = PAPERS.find((p) => p.id === d.querySelector("#spPaper").value) || null;
+        const sc = scaleFromPaper(page.w, page.h, paper, den);
+        d.querySelector("#spInfo").textContent = sc
+          ? `このページの実寸: 約 ${Math.round(page.w / sc.ptsPerUnit).toLocaleString()} × ${Math.round(page.h / sc.ptsPerUnit).toLocaleString()} mm(用紙上の1mm = 実寸${den}mm)`
+          : "";
+      };
+      d.addEventListener("input", info);
+      d.addEventListener("change", info);
+      d.querySelectorAll("[data-den]").forEach((b) => b.addEventListener("click", () => { d.querySelector("#spDen").value = b.dataset.den; info(); }));
+      info();
+      setTimeout(() => d.querySelector("#spDen").select(), 30);
+    },
+  });
+  if (ok !== true || !result) return;
+  m.mutate(() => {
+    for (const p of result.all ? m.pages : [page]) p.scale = scaleFromPaper(p.w, p.h, result.paper, result.den);
+  });
+  toast(`縮尺を ${result.paper ? result.paper.label + " " : ""}1/${result.den} に設定しました`);
 }
 
 /* =========================================================

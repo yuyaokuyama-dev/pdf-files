@@ -7,6 +7,7 @@ import {
 import { textMetrics, labelFor, serializeOverlay, arcLines } from "./render.js";
 import { TEXT_LINE } from "./render.js";
 import { renderTextPng, recompressImage, renderPageJpeg } from "./raster.js";
+import { visibleShapes } from "./layers.js";
 
 /** 最適化レベル */
 export const LEVELS = {
@@ -59,13 +60,14 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
   for (const page of doc.pages) {
     onProgress?.(n++ / doc.pages.length, `ページ ${n}/${doc.pages.length}`);
     // ロックした印影があるページは画像化して、他のソフトで印影だけを消したり動かしたりできなくする
-    const flatten = page.shapes.some((sh) => sh.locked);
+    const shapes = visibleShapes(page.shapes, doc.layers); // 非表示レイヤーは書き出さない。色・太さ・線種はレイヤーの設定を反映
+    const flatten = shapes.some((sh) => sh.locked);
     if (cfg.rasterize || flatten) {
       const dpi = cfg.rasterize ? cfg.dpi : 200;
       const quality = cfg.rasterize ? cfg.quality : 0.8;
       const src = page.srcId ? doc.sources.get(page.srcId) : null;
       const pdfPage = src ? await src.pdf.getPage(page.srcIndex + 1) : null;
-      const overlaySvg = page.shapes.length ? serializeOverlay(page, doc.images, page.w, page.h) : null;
+      const overlaySvg = shapes.length ? serializeOverlay(page, doc.images, page.w, page.h, doc.layers) : null;
       const r = await renderPageJpeg({
         pdfPage, rotation: ((page.baseRot || 0) + page.rot) % 360, w: page.w, h: page.h, overlaySvg, dpi, quality,
       });
@@ -86,7 +88,7 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
     } else {
       pg = out.addPage([page.w, page.h]);
     }
-    if (!page.shapes.length) continue;
+    if (!shapes.length) continue;
 
     const box = typeof pg.getCropBox === "function" ? pg.getCropBox() : pg.getMediaBox();
     const map = makeViewMapper(box, R);
@@ -118,7 +120,7 @@ export async function exportPdf(doc, { level = "small", onProgress } = {}) {
       placeImage(emb, tl, spec.w, spec.h, ang);
     };
 
-    for (const sh of page.shapes) {
+    for (const sh of shapes) {
       const st = sh.style || {};
       const color = hexToRgb(st.color || "#e11d48");
       const width = st.width ?? 2;

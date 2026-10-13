@@ -9,8 +9,8 @@ await openPdf(page, "tests/fixtures/sample.pdf");
 await setZoom1(page);
 
 // ページボタンは「選択」ツールの左にある(上部バーにはない)
-const order = await page.evaluate(() => [...document.querySelectorAll("#tools > *")].slice(0, 3).map((n) => n.id || n.dataset.tool || n.className));
-check("ページ一覧ボタンが選択ツールの左にある", order[0] === "btnPages" && order[2] === "select", JSON.stringify(order));
+const order = await page.evaluate(() => [...document.querySelectorAll("#tools > *")].slice(0, 4).map((n) => n.id || n.dataset.tool || n.className));
+check("ページ一覧・レイヤーのボタンが選択ツールの左にある", order[0] === "btnPages" && order[1] === "btnLayers" && order[3] === "select", JSON.stringify(order));
 check("上部バーのページ一覧ボタンは無くなった", (await page.locator(".topbar #btnPages").count()) === 0);
 await page.click("#btnPages");
 check("ボタンでページ一覧が開く", await page.locator("#thumbs").isVisible());
