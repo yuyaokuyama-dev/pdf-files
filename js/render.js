@@ -1,4 +1,5 @@
 // 図形データ → SVG 要素。画面表示・選択・画像化(書き出し)で共通利用する。
+import { angleDimGeometry, defaultAngleRadius, leaderTipShape } from "./dimx.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
   dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
@@ -64,6 +65,11 @@ export function shapeBounds(shape, page) {
     case "dim": {
       const g = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, shape.size || 12, dimOpts(shape));
       return bbox([...shape.pts, g.line[0], g.line[1], g.textPos, ...(g.leader || [])]);
+    }
+    case "dimang": {
+      const size = shape.size || 12;
+      const g = angleDimGeometry(shape.pts, shape.r ?? defaultAngleRadius(...shape.pts), size, {});
+      return bbox(g ? [...shape.pts, g.p0, g.p1, g.textPos] : shape.pts);
     }
     case "leader": {
       const sz = shape.size || LEADER_DEFAULT.size;
@@ -247,8 +253,10 @@ export function renderShape(shape, parent, opts = {}) {
       let geo;
       if (shape.type === "dim") {
         geo = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, size, dimOpts(shape));
-        el("path", { d: linePath(geo.ext0), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
-        el("path", { d: linePath(geo.ext1), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
+        if (!shape.noExt) {
+          el("path", { d: linePath(geo.ext0), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
+          el("path", { d: linePath(geo.ext1), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
+        }
       } else {
         geo = dimensionGeometry(shape.pts[0], shape.pts[1], 0, size, dimOpts(shape));
         // 計測は測点上に線を引き、両端に小さな縦棒(エンドマーク)
@@ -256,7 +264,11 @@ export function renderShape(shape, parent, opts = {}) {
       const [a0, a1] = geo.line;
       el("path", { d: linePath([a0, a1]), fill: "none", ...common }, g);
       for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
-      if (geo.leader) el("path", { d: linePath(geo.leader), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
+      if (geo.leader) {
+        el("path", { d: linePath(geo.leader), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
+        const lt = leaderTipShape(geo.leader, shape.ltip, shape.endSize ?? size / 2);
+        if (lt) el("path", { d: lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
+      }
       const t = el("text", {
         x: geo.textPos[0], y: geo.textPos[1] + size * 0.35, "text-anchor": "middle", "font-size": size,
         "font-family": fontCss(shape.font), fill: shape.color || color,
@@ -264,6 +276,20 @@ export function renderShape(shape, parent, opts = {}) {
       }, g);
       t.textContent = label;
       hit(linePath([a0, a1]));
+      break;
+    }
+    case "dimang": {
+      const size = shape.size || 12;
+      const geo = angleDimGeometry(shape.pts, shape.r ?? defaultAngleRadius(...shape.pts), size, { endStyle: shape.endStyle ?? "arrow", endSize: shape.endSize ?? size / 2 });
+      if (!geo) break;
+      const thin = { ...common, "stroke-width": Math.max(0.6, width * 0.6) };
+      el("path", { d: linePath(geo.ext[0]), fill: "none", ...thin }, g);
+      el("path", { d: linePath(geo.ext[1]), fill: "none", ...thin }, g);
+      el("path", { d: geo.arc, fill: "none", ...common }, g);
+      for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
+      const t = el("text", { x: geo.textPos[0], y: geo.textPos[1] + size * 0.35, "text-anchor": "middle", "font-size": size, "font-family": fontCss(shape.font), fill: shape.color || color, style: "white-space:pre" }, g);
+      t.textContent = shape.text || geo.label;
+      el("path", { d: geo.arc, fill: "none", stroke: "transparent", "stroke-width": 10, class: "hit" }, g);
       break;
     }
     case "image": {

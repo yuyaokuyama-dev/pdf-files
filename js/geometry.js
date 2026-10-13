@@ -166,7 +166,7 @@ export function arrowShaft(p0, p1, size) {
  * 返り値: 補助線2本・寸法線・端部・文字位置と角度・引き出し線
  */
 export function dimensionGeometry(p0, p1, off, size = 12, opts = {}) {
-  const { endStyle = "arrow", endSize = 6, textOff = null } = opts;
+  const { endStyle = "arrow", endSize = 6, textOff = null, oneEnd = false } = opts;
   const L = dist(p0, p1);
   const ux = L ? (p1[0] - p0[0]) / L : 1;
   const uy = L ? (p1[1] - p0[1]) / L : 0;
@@ -207,6 +207,7 @@ export function dimensionGeometry(p0, p1, off, size = 12, opts = {}) {
     const hs = Math.min(es * 2, L / 3);
     ends.push({ type: "arrow", poly: arrowHead(a1, a0, hs) }, { type: "arrow", poly: arrowHead(a0, a1, hs) });
   }
+  if (oneEnd) ends.splice(0, 1); // 半径寸法: 円周側(p1)の端部だけ
   return {
     ext0: [s0, e0],
     ext1: [s1, e1],
@@ -224,7 +225,7 @@ export function dimensionGeometry(p0, p1, off, size = 12, opts = {}) {
 }
 
 /** 図形の寸法線オプション(未設定の既存データは従来どおり矢印) */
-export const dimOpts = (sh) => ({ endStyle: sh.endStyle ?? "arrow", endSize: sh.endSize ?? (sh.size || 12) / 2, textOff: sh.textOff ?? null });
+export const dimOpts = (sh) => ({ endStyle: sh.endStyle ?? "arrow", endSize: sh.endSize ?? (sh.size || 12) / 2, textOff: sh.textOff ?? null, oneEnd: !!sh.one });
 
 /* ---------- 縮尺・計測 ---------- */
 
