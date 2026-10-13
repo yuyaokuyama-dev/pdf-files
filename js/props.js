@@ -7,6 +7,19 @@ import { DASH_TYPES, normDash, arrowSizeOf, dist, clampSweep, rotateAbout } from
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
 const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "dim", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
+const TYPE_LABEL = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・印影・署名" };
+// 複数選択でまとめて変えられる項目と、それが効く図形の種類
+const MULTI_KEYS = {
+  color: (t) => LINE_TYPES.has(t) || t === "text",
+  width: (t) => LINE_TYPES.has(t),
+  dash: (t) => LINE_TYPES.has(t) && t !== "measure",
+  opacity: (t) => LINE_TYPES.has(t) && t !== "measure",
+  fill: (t) => FILL_TYPES.has(t),
+  fillOpacity: (t) => FILL_TYPES.has(t),
+  size: (t) => t === "text",
+  font: (t) => t === "text",
+  bold: (t) => t === "text",
+};
 const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp", eraser: "eraser" };
 
 /** 文字の回転: 箱の中心を動かさずに角度だけ変える */
@@ -69,6 +82,11 @@ export class Props {
 
   context() {
     const ed = this.ed;
+    if (ed.msel) {
+      const all = ed.selShapes();
+      const fs = ed.targets();
+      return { sel: true, multi: true, type: "multi", all, fs, types: new Set(fs.map((f) => f.shape.type)), shape: null, page: null };
+    }
     const sh = ed.selectedShape();
     if (sh) return { sel: true, type: sh.type, shape: sh, page: ed.selectedPage() };
     const type = TOOL_TYPE[ed.tool];
@@ -79,6 +97,11 @@ export class Props {
   /* ---- 値の読み書き ---- */
   get(ctx, key) {
     const ed = this.ed;
+    if (ctx.multi) {
+      // 複数選択: その項目が効く最初の図形の値を表示する
+      const f = ctx.fs.find((x) => MULTI_KEYS[key]?.(x.shape.type));
+      return f ? this.get({ sel: true, type: f.shape.type, shape: f.shape, page: f.page }, key) : undefined;
+    }
     const sh = ctx.shape;
     switch (key) {
       case "color":
@@ -129,6 +152,7 @@ export class Props {
     const ed = this.ed;
     if (ctx.sel) {
       ed.updateSelected((sh) => {
+        if (ctx.multi && !MULTI_KEYS[key]?.(sh.type)) return; // その項目が無い種類の図形は変えない
         sh.style = sh.style || {};
         switch (key) {
           case "color":
@@ -238,6 +262,12 @@ export class Props {
     if (t.type === "checkbox") v = t.checked;
     else if (t.type === "range" || t.type === "number") v = Number(t.value);
     else v = t.value;
+    if (key === "mtype") {
+      if (isInput) return;
+      this.ed.setTypeEnabled(t.dataset.type, v);
+      this.refresh();
+      return;
+    }
     if (key === "eraserSize") {
       this.ed.setEraser({ size: v });
       const out = this.el.querySelector('[data-v="eraserSize"]');
@@ -333,6 +363,7 @@ export class Props {
       case "lock": ed.emit("lock-request", { lock: true }); break;
       case "unlock": ed.setLocked(false); this.refresh(); break;
       case "dup": ed.duplicateSelected(); break;
+      case "copy": ed.copySelection(); break;
       case "front": ed.reorderSelected(true); break;
       case "back": ed.reorderSelected(false); break;
       case "del": ed.deleteSelected(); break;
@@ -368,6 +399,7 @@ export class Props {
       return `<label class="field">${label}<div class="row"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v}"><span class="val" data-v="${k}">${fmt ? fmt(v) : v}</span></div></label>`;
     };
     const parts = [];
+    if (ctx.multi) return void (this.el.innerHTML = this.multiPanel(ctx, num));
     const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ", eraser: "消しゴム" }[t] || "";
     parts.push(`<div style="display:flex;align-items:center"><h3 style="flex:1">${title}${ctx.sel ? "(選択中)" : t === "eraser" ? "" : "(次に描くもの)"}</h3><button class="btn icon" data-act="close" style="min-height:28px;width:28px" aria-label="閉じる">${icon("x", 16)}</button></div>`);
 
@@ -457,6 +489,7 @@ export class Props {
     if (ctx.sel) {
       if (t !== "image" && t !== "stamp") parts.push(`<div class="actions"><button class="btn" data-act="set-default">${icon("check", 16)}この設定を初期設定にする</button></div>`);
       parts.push(`<div class="actions">
+        <button class="btn" data-act="copy" title="コピー (Ctrl+C)">コピー</button>
         <button class="btn" data-act="dup">${icon("copy", 16)}複製</button>
         <button class="btn" data-act="front">前面へ</button>
         <button class="btn" data-act="back">背面へ</button>
@@ -465,5 +498,49 @@ export class Props {
       if (t === "arc") parts.push(`<p class="hint">両端の丸で開き角、弧の中央の四角で大きさ、外側の丸で回転できます。常に正円のままです。</p>`);
     }
     this.el.innerHTML = parts.join("");
+  }
+
+  /** 複数選択のパネル: 種類ごとのチェック(外すと編集対象から外れる)と、共通の項目 */
+  multiPanel(ctx, num) {
+    const g = (k) => this.get(ctx, k);
+    const count = new Map();
+    for (const f of ctx.all) count.set(f.shape.type, (count.get(f.shape.type) || 0) + 1);
+    const off = this.ed.mselOff;
+    const has = (k) => [...ctx.types].some((t) => MULTI_KEYS[k](t));
+    const parts = [];
+    parts.push(`<div style="display:flex;align-items:center"><h3 style="flex:1">複数選択(${ctx.all.length}個)</h3><button class="btn icon" data-act="close" style="min-height:28px;width:28px" aria-label="閉じる">${icon("x", 16)}</button></div>`);
+    parts.push(`<div class="field">編集する種類<div class="mtypes">${[...count].map(([t, n]) => `<label class="check"><input type="checkbox" data-k="mtype" data-type="${t}"${off.has(t) ? "" : " checked"}> ${TYPE_LABEL[t] || t} ×${n}</label>`).join("")}</div></div>`);
+    if (!ctx.fs.length) {
+      parts.push(`<p class="hint">チェックを入れた種類だけが、色の変更・コピー・削除などの対象になります。</p>`);
+      return parts.join("");
+    }
+    if (has("color")) {
+      const cur = (g("color") || "#e11d48").toLowerCase();
+      parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
+    }
+    if (has("width")) parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
+    if (has("fill")) {
+      const fill = g("fill");
+      const on = fill && fill !== "none";
+      parts.push(`<div class="field"><label class="check"><input type="checkbox" data-k="fillOn"${on ? " checked" : ""}> 塗りつぶし</label>${on ? `<div class="row"><input type="color" data-k="fillColor" value="${fill}"></div>` : ""}</div>`);
+      if (on) parts.push(num("fillOpacity", "塗りの濃さ", 0.05, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
+    }
+    if (has("dash")) {
+      parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
+      parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
+    }
+    if (has("size")) {
+      const size = g("size") || 18;
+      parts.push(`<label class="field">文字サイズ<div class="row"><input type="range" data-k="size" min="3" max="120" step="0.5" value="${size}"><input type="number" data-k="size" min="3" max="400" step="0.5" value="${size}" style="width:70px;height:34px"></div></label>`);
+      parts.push(`<label class="field check" style="display:flex"><input type="checkbox" data-k="bold"${g("bold") ? " checked" : ""}> 太字</label>`);
+    }
+    parts.push(`<div class="actions">
+        <button class="btn" data-act="copy" title="コピー (Ctrl+C)">コピー</button>
+        <button class="btn" data-act="dup">${icon("copy", 16)}複製</button>
+        <button class="btn" data-act="front">前面へ</button>
+        <button class="btn" data-act="back">背面へ</button>
+        <button class="btn danger" data-act="del">${icon("trash", 16)}削除</button></div>`);
+    parts.push(`<p class="hint">チェックを外した種類は編集の対象から外れます(灰色の枠)。ドラッグでまとめて移動できます。</p>`);
+    return parts.join("");
   }
 }

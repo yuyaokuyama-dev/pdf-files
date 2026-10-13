@@ -6,6 +6,7 @@ import { DocModel, A4 } from "./model.js";
 import { Editor } from "./editor.js";
 import { Thumbs } from "./thumbs.js";
 import { Props } from "./props.js";
+import { ClipTray } from "./clips.js";
 import { exportPdf, LEVELS } from "./export.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
@@ -234,6 +235,9 @@ async function enterApp(user) {
   if (!S.editor) initUI();
   if (!S.model) setDoc(new DocModel()); // 前回の続きを開くまでの間も操作できるように
   S.editor.setPalm(S.settings.palm);
+  S.editor.clipboard = null; // コピーしたもの・候補はアカウントごと
+  S.clips.latest = null;
+  S.clips.init();
   S.editor.sticky = S.settings.sticky !== false;
   applyUiSize();
   S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
@@ -280,6 +284,7 @@ async function enterApp(user) {
  * ======================================================= */
 const TOOLS = [
   { id: "select", icon: "select", label: "選択" },
+  { id: "marquee", icon: "marquee", label: "範囲選択", hint: "ドラッグで囲んだ図形・文字をまとめて選択します。図形をタップで追加・解除。選んだらコピー・削除・色の変更などができます" },
   { id: "hand", icon: "hand", label: "移動" },
   { sep: true },
   { id: "pen", icon: "pen", label: "ペン", hint: "指・ペン・マウスでなめらかに手書きできます" },
@@ -346,6 +351,12 @@ function initUI() {
     onStampWidth: setStampWidth,
     onToast: toast,
   });
+  S.clips = new ClipTray({
+    el: $("#clips"),
+    editor: S.editor,
+    load: () => S.store.getSetting("clips", []),
+    save: (clips) => S.store.setSetting("clips", clips),
+  });
 
   buildTools();
   wireEditorEvents();
@@ -395,7 +406,8 @@ function wireEditorEvents() {
     const lit = ed.returnTool || t;
     document.querySelectorAll(".tool").forEach((b) => b.classList.toggle("on", b.dataset.tool === lit));
     const def = TOOLS.find((x) => x.id === t);
-    if (ed.returnTool) showHint(`色や太さなどを調整できます。何もない所をタップすると確定して「${TOOLS.find((x) => x.id === ed.returnTool)?.label || ""}」に戻ります`, 3800);
+    if (t === "clip") showHint("貼り付けたい場所をクリック(タップ)すると、選んだものを貼り付けます。続けて何度でも貼れます", 0, [{ label: "終了", primary: true, onClick: () => ed.setTool("select") }]);
+    else if (ed.returnTool) showHint(`色や太さなどを調整できます。何もない所をタップすると確定して「${TOOLS.find((x) => x.id === ed.returnTool)?.label || ""}」に戻ります`, 3800);
     else if (t === "polygon") showHint(def.hint, 0, [{ label: "完了", primary: true, onClick: () => ed.finishPolygon() }, { label: "取消", onClick: () => ed.cancelPolygon() }]);
     else showHint(def?.hint || "", 3800);
   });
@@ -413,6 +425,7 @@ function wireEditorEvents() {
     ed.setTool("calib");
   });
   ed.on("need-stamp", () => manageStamps());
+  ed.on("copied", (clip) => toast(`コピーしました(${clip.shapes.length}個)`));
   ed.on("lock-request", async () => {
     const ok = await confirmDialog(
       "この印影を編集できないようにします。\n\n・アプリ内では動かしたり消したりできなくなります(ロック解除は書き出す前なら可能)\n・PDFに書き出すと、この印影があるページは1枚の画像になり、他のPDFソフトでも印影だけを消したり動かしたりできなくなります\n・画像化したページは文字の選択・検索ができなくなります",
