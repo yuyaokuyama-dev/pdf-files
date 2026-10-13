@@ -3,10 +3,12 @@ import { icon } from "./icons.js";
 import { FONTS, textMetrics, textCorners } from "./render.js";
 import { esc } from "./ui.js";
 import { DASH_TYPES, normDash, arrowSizeOf, dist, clampSweep, rotateAbout } from "./geometry.js";
+import { resolveShape, BL_KEYS, layerIdOf } from "./layers.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
 const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "dim", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
+const TEXT_LIKE = new Set(["text"]);
 const TOOL_TYPE = { pen: "pen", line: "line", arrow: "arrow", rect: "rect", ellipse: "ellipse", arc: "arc", polygon: "polygon", cloud: "cloud", text: "text", dim: "dim", calib: "dim", measure: "measure", stamp: "stamp", eraser: "eraser" };
 
 /** 文字の回転: 箱の中心を動かさずに角度だけ変える */
@@ -49,6 +51,7 @@ export class Props {
     this.dismissed = false;
     editor.on("selection", () => ((this.dismissed = false), this.refresh()));
     editor.on("tool", () => ((this.dismissed = false), this.refresh()));
+    editor.on("layer-current", () => this.refresh());
     editor.model && this.bindModel();
     el.addEventListener("input", (e) => this.onInput(e, true));
     el.addEventListener("change", (e) => this.onInput(e, false));
@@ -69,6 +72,10 @@ export class Props {
 
   context() {
     const ed = this.ed;
+    if (ed.multi) {
+      const first = ed.selectedItems()[0];
+      return { sel: true, multi: true, type: "multi", shape: first?.shape || null, page: ed.model.page(ed.multi.pageId) };
+    }
     const sh = ed.selectedShape();
     if (sh) return { sel: true, type: sh.type, shape: sh, page: ed.selectedPage() };
     const type = TOOL_TYPE[ed.tool];
@@ -79,7 +86,7 @@ export class Props {
   /* ---- 値の読み書き ---- */
   get(ctx, key) {
     const ed = this.ed;
-    const sh = ctx.shape;
+    const sh = ctx.shape ? resolveShape(ctx.shape, ed.model.layers) : ctx.shape; // レイヤーに従う項目はレイヤーの値を表示
     switch (key) {
       case "color":
         if (ctx.type === "text") return sh ? sh.color || sh.style?.color : ed.textStyle.color;
@@ -130,6 +137,11 @@ export class Props {
     if (ctx.sel) {
       ed.updateSelected((sh) => {
         sh.style = sh.style || {};
+        if (sh.bl && BL_KEYS.includes(key)) {
+          // 個別に指定したら、その項目だけレイヤーに従わなくなる
+          sh.bl = sh.bl.filter((k) => k !== key);
+          if (!sh.bl.length) delete sh.bl;
+        }
         switch (key) {
           case "color":
             if (sh.type === "text") sh.color = value;
@@ -238,6 +250,24 @@ export class Props {
     if (t.type === "checkbox") v = t.checked;
     else if (t.type === "range" || t.type === "number") v = Number(t.value);
     else v = t.value;
+    if (key === "layer") {
+      if (!isInput) {
+        this.ed.moveSelectedToLayer(v);
+        this.refresh();
+      }
+      return;
+    }
+    if (key === "curLayer") {
+      if (!isInput) this.ed.setCurrentLayer(v);
+      return;
+    }
+    if (key === "bl") {
+      if (!isInput) {
+        this.ed.setByLayer(BL_KEYS, v);
+        this.refresh();
+      }
+      return;
+    }
     if (key === "eraserSize") {
       this.ed.setEraser({ size: v });
       const out = this.el.querySelector('[data-v="eraserSize"]');
@@ -330,6 +360,9 @@ export class Props {
         if (ctx.sel) ed.updateSelected((sh) => delete sh.textOff, { live: false });
         this.refresh();
         break;
+      case "scale-preset":
+        if (ctx?.page) ed.emit("scale-preset", { pageId: ctx.page.id });
+        break;
       case "lock": ed.emit("lock-request", { lock: true }); break;
       case "unlock": ed.setLocked(false); this.refresh(); break;
       case "dup": ed.duplicateSelected(); break;
@@ -368,8 +401,34 @@ export class Props {
       return `<label class="field">${label}<div class="row"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v}"><span class="val" data-v="${k}">${fmt ? fmt(v) : v}</span></div></label>`;
     };
     const parts = [];
-    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ", eraser: "消しゴム" }[t] || "";
+    const ed = this.ed;
+    const layers = ed.model.layers;
+    const layerSelect = (key, selId, label) =>
+      `<label class="field">${label}<select data-k="${key}">${layers.map((l) => `<option value="${esc(l.id)}"${l.id === selId ? " selected" : ""}>${esc(l.name)}${l.visible ? "" : "(非表示)"}</option>`).join("")}</select></label>`;
+    const blBox = (shape) =>
+      `<label class="check field" style="display:flex"><input type="checkbox" data-k="bl"${BL_KEYS.every((k) => shape?.bl?.includes(k)) ? " checked" : ""}> 色・太さ・線種をレイヤーに従う</label>`;
+    const title = { pen: "ペン", line: "線", arrow: "矢印", rect: "四角", ellipse: "丸(楕円)", arc: "円弧", polygon: "多角形", cloud: "雲マーク", text: "テキスト", dim: "寸法線", measure: "計測", image: "画像・スタンプ・署名", stamp: "スタンプ", eraser: "消しゴム", multi: `複数選択(${ed.multi?.ids.length ?? 0}個)` }[t] || "";
     parts.push(`<div style="display:flex;align-items:center"><h3 style="flex:1">${title}${ctx.sel ? "(選択中)" : t === "eraser" ? "" : "(次に描くもの)"}</h3><button class="btn icon" data-act="close" style="min-height:28px;width:28px" aria-label="閉じる">${icon("x", 16)}</button></div>`);
+
+    if (t === "multi") {
+      const cur = (g("color") || "#e11d48").toLowerCase();
+      parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
+      parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
+      parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
+      parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
+      if (ctx.shape) {
+        parts.push(layerSelect("layer", layerIdOf(ctx.shape), "レイヤー(まとめて移す)"));
+        parts.push(blBox(ctx.shape));
+      }
+      parts.push(`<div class="actions">
+        <button class="btn" data-act="dup">${icon("copy", 16)}複製</button>
+        <button class="btn" data-act="front">前面へ</button>
+        <button class="btn" data-act="back">背面へ</button>
+        <button class="btn danger" data-act="del">${icon("trash", 16)}削除</button></div>`);
+      parts.push(`<p class="hint">どれかをドラッグするとまとめて動きます。Shift(または範囲選択ツールのタップ)で追加・解除、矢印キーで微調整、色や太さの変更は全部に反映されます。</p>`);
+      this.el.innerHTML = parts.join("");
+      return;
+    }
 
     if (t === "eraser") {
       const er = this.ed.eraser;
@@ -440,7 +499,8 @@ export class Props {
     if (t === "dim" || t === "measure") {
       const pg = ctx.page;
       const sc = pg?.scale;
-      parts.push(`<div class="field"><b style="color:var(--ink)">このページの縮尺</b><span>${sc ? `設定済み: 1 ${sc.unit} = ${sc.ptsPerUnit.toFixed(3)} pt` : "未設定(「縮尺設定」ツールで基準の2点をなぞります)"}</span></div>
+      parts.push(`<div class="field"><b style="color:var(--ink)">このページの縮尺</b><span>${sc ? `設定済み: ${sc.denom ? `${sc.paper || "このページ"} 1/${sc.denom}(` : "("}1 ${sc.unit} = ${sc.ptsPerUnit.toFixed(3)} pt)` : "未設定(「縮尺設定」ツールで基準の2点をなぞるか、用紙と縮尺を数値で設定します)"}</span></div>
+        <div class="actions"><button class="btn" data-act="scale-preset">用紙と縮尺(1/〇〇)で設定</button></div>
         ${sc ? `<div class="actions"><button class="btn" data-act="scale-all">全ページに適用</button><button class="btn danger" data-act="scale-clear">解除</button></div>` : ""}`);
     }
     const locked = !!(ctx.sel && ctx.shape.locked);
@@ -454,6 +514,10 @@ export class Props {
       this.el.innerHTML = parts.join("");
       return;
     }
+    if (ctx.sel && ctx.shape) {
+      parts.push(layerSelect("layer", layerIdOf(ctx.shape), "レイヤー"));
+      if (t !== "image") parts.push(blBox(ctx.shape));
+    }
     if (ctx.sel) {
       if (t !== "image" && t !== "stamp") parts.push(`<div class="actions"><button class="btn" data-act="set-default">${icon("check", 16)}この設定を初期設定にする</button></div>`);
       parts.push(`<div class="actions">
@@ -463,6 +527,10 @@ export class Props {
         <button class="btn danger" data-act="del">${icon("trash", 16)}削除</button></div>`);
       if (t === "polygon" || t === "cloud") parts.push(`<p class="hint">頂点をドラッグで移動、辺をダブルタップで頂点を追加、頂点をダブルタップで削除できます。</p>`);
       if (t === "arc") parts.push(`<p class="hint">両端の丸で開き角、弧の中央の四角で大きさ、外側の丸で回転できます。常に正円のままです。</p>`);
+    }
+    if (!ctx.sel && (LINE_TYPES.has(t) || TEXT_LIKE.has(t))) {
+      parts.push(layerSelect("curLayer", ed.model.curLayer, "描く先のレイヤー"));
+      if (ed.model.curLayer !== "0") parts.push(`<p class="hint">0以外のレイヤーに描いた図形は、色・太さ・線種がレイヤーの設定に従います(あとから個別に変えることもできます)。</p>`);
     }
     this.el.innerHTML = parts.join("");
   }

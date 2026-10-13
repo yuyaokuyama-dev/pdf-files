@@ -130,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.8.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.9.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -263,6 +263,8 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
         <thead><tr><th>ツール</th><th>使い方</th></tr></thead>
         <tbody>
           <tr><td>選択</td><td>描いたものを選んで動かす・変える・消す。</td></tr>
+          <tr><td>範囲選択</td><td>ドラッグで四角く囲んで複数選びます。左から右へ囲むと「完全に入ったもの」、右から左へ囲むと「触れたもの」が選ばれます。<kbd>Shift</kbd>を押しながらタップで追加・解除。選んだ図形はまとめて移動・色変更・複製・削除できます。</td></tr>
+          <tr><td>投げ縄</td><td>自由な形に囲んで、完全に入った図形をまとめて選びます。</td></tr>
           <tr><td>移動</td><td>ページを掴んでスクロールします(書き込みはしません)。</td></tr>
           <tr><td>ペン</td><td>指・ペン・マウスでなめらかに手書きします。</td></tr>
           <tr><td>消しゴム</td><td>ペンで書いた線をなぞって消します。線ごと消すか、なぞった部分だけ消すかを右のパネルで選べます。</td></tr>
@@ -290,6 +292,10 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
         <li>その実際の長さと単位を入力して<span class="ui">設定</span>を押します。全ページに同じ縮尺を使うこともできます。</li>
         <li>自動で<span class="ui">計測</span>ツールに切り替わります。測りたい2点をドラッグすると、設定した縮尺で長さが表示されます。</li>
       </ol>
+          <h3>用紙と縮尺(1/〇〇)で設定する</h3>
+      <p>縮尺設定ツールまたは右のパネルの<span class="ui">用紙と縮尺(1/〇〇)で設定</span>から、用紙サイズ(A3 など)と 1/100 のような縮尺を数字で指定できます。A4 のPDFに縮小した A3 図面が入っている場合も、元の用紙サイズを選べば実寸で計測できます。</p>
+      <h3>レイヤー</h3>
+      <p>ツールバー左の<span class="ui">レイヤー</span>ボタンでパネルを開きます。レイヤーごとに表示/非表示・ロック・色・太さ・線種を設定でき、<span class="ui">図形を選択</span>でそのレイヤーの図形をまとめて選べます。レイヤー「0」以外に描いた図形は、色・太さ・線種がレイヤーに従います(図形ごとに個別指定も可)。非表示のレイヤーはPDFにも書き出されません。レイヤーを削除すると中の図形も消えます(取り消しで戻せます)。</p>
     </section>
 
     <section id="sign">
@@ -443,6 +449,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
         <tbody>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>元に戻す</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>やり直し</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>このページの図形をすべて選ぶ</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>選んだ図形を複製</td></tr>
           <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>選んだ図形を削除</td></tr>
           <tr><td>矢印キー</td><td>選んだ図形を少しずつ動かす(<kbd>Shift</kbd>を押しながらで大きく)</td></tr>
@@ -473,7 +480,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.8.0 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.9.0 対応</footer>
 </div>
 </body>
 </html>

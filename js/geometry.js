@@ -235,6 +235,38 @@ export function makeScale(p0, p1, real, unit = "mm") {
   return { ptsPerUnit: d / real, unit };
 }
 
+/** 用紙サイズ(mm・長辺×短辺)。縮尺を「用紙 + 1/n」で決めるときに使う */
+export const PAPERS = [
+  { id: "A0", label: "A0", long: 1189, short: 841 },
+  { id: "A1", label: "A1", long: 841, short: 594 },
+  { id: "A2", label: "A2", long: 594, short: 420 },
+  { id: "A3", label: "A3", long: 420, short: 297 },
+  { id: "A4", label: "A4", long: 297, short: 210 },
+  { id: "A5", label: "A5", long: 210, short: 148 },
+  { id: "B3", label: "B3", long: 515, short: 364 },
+  { id: "B4", label: "B4", long: 364, short: 257 },
+];
+const PT_PER_MM = 72 / 25.4;
+
+/** ページの大きさに最も近い用紙(長辺・短辺が各5%以内)。なければ null */
+export function guessPaper(pageW, pageH) {
+  const long = Math.max(pageW, pageH) / PT_PER_MM;
+  const short = Math.min(pageW, pageH) / PT_PER_MM;
+  return PAPERS.find((p) => Math.abs(p.long - long) / p.long < 0.05 && Math.abs(p.short - short) / p.short < 0.05) || null;
+}
+
+/**
+ * 「このページは paper 用紙で、縮尺は 1/denom」から縮尺を作る。
+ * paper が null ならページの大きさそのものを用紙とみなす。実寸の単位は mm。
+ * 用紙の長辺がページの長辺にあたる(A4のPDFにA3図面を縮小して入れた場合も合う)。
+ */
+export function scaleFromPaper(pageW, pageH, paper, denom) {
+  if (!(denom > 0)) return null;
+  const longPt = Math.max(pageW, pageH);
+  const paperLongMm = paper ? paper.long : longPt / PT_PER_MM;
+  return { ptsPerUnit: longPt / paperLongMm / denom, unit: "mm", paper: paper ? paper.id : null, denom };
+}
+
 export function measure(p0, p1, scale) {
   if (!scale) return null;
   return dist(p0, p1) / scale.ptsPerUnit;

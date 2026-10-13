@@ -1,5 +1,6 @@
 // ドキュメントモデル: 取り込んだPDF(sources)・ページ構成(pages)・画像(images)・取り消し履歴。
 import { uid } from "./store.js";
+import { baseLayer, newLayerId, uniqueName, normalizeLayers, deleteLayerFrom, stampNewShape, BASE_LAYER_ID } from "./layers.js";
 
 export const A4 = { w: 595.28, h: 841.89 };
 const HISTORY_MAX = 100;
@@ -9,6 +10,8 @@ export class DocModel {
     this.sources = new Map(); // srcId → { id, name, bytes, pdf(pdf.js doc) }
     this.pages = [];          // { id, srcId|null, srcIndex, rot, w, h, shapes[], scale }
     this.images = new Map();  // imgId → dataURL
+    this.layers = [baseLayer()]; // レイヤー(全ページ共通)。図形は shape.layer で所属を持つ
+    this.curLayer = BASE_LAYER_ID; // 次に描く図形が入るレイヤー(取り消しの対象外)
     this.meta = { name: "無題.pdf", driveId: null, driveFolder: null, projectId: uid(), createdAt: Date.now() };
     this.undoStack = [];
     this.redoStack = [];
@@ -26,7 +29,13 @@ export class DocModel {
 
   /* ---------- スナップショット(取り消し/やり直し) ---------- */
   snapshot() {
-    return JSON.stringify(this.pages);
+    return JSON.stringify({ pages: this.pages, layers: this.layers });
+  }
+  applySnapshot(s) {
+    const d = JSON.parse(s);
+    this.pages = d.pages;
+    this.layers = d.layers;
+    if (!this.layers.some((l) => l.id === this.curLayer)) this.curLayer = BASE_LAYER_ID;
   }
   /** 変更を確定する(直前の状態を履歴に積む)。before は変更前のスナップショット */
   commit(before) {
@@ -49,7 +58,7 @@ export class DocModel {
   undo() {
     if (!this.undoStack.length) return false;
     this.redoStack.push(this.snapshot());
-    this.pages = JSON.parse(this.undoStack.pop());
+    this.applySnapshot(this.undoStack.pop());
     this.dirty = true;
     this.emit("restore");
     return true;
@@ -57,7 +66,7 @@ export class DocModel {
   redo() {
     if (!this.redoStack.length) return false;
     this.undoStack.push(this.snapshot());
-    this.pages = JSON.parse(this.redoStack.pop());
+    this.applySnapshot(this.redoStack.pop());
     this.dirty = true;
     this.emit("restore");
     return true;
@@ -160,6 +169,7 @@ export class DocModel {
     const p = this.page(pageId);
     if (!p) return null;
     shape.id = shape.id || "h" + uid();
+    if (!shape.layer) stampNewShape(shape, this.curLayer);
     this.mutate(() => p.shapes.push(shape));
     return shape;
   }
@@ -170,12 +180,50 @@ export class DocModel {
       p.shapes = p.shapes.filter((s) => s.id !== shapeId);
     });
   }
+  removeShapes(pageId, ids) {
+    const p = this.page(pageId);
+    if (!p) return;
+    const set = new Set(ids);
+    this.mutate(() => {
+      p.shapes = p.shapes.filter((s) => !set.has(s.id));
+    });
+  }
   findShape(shapeId) {
     for (const p of this.pages) {
       const s = p.shapes.find((x) => x.id === shapeId);
       if (s) return { page: p, shape: s };
     }
     return null;
+  }
+
+  /* ---------- レイヤー ---------- */
+  layer(id) {
+    return this.layers.find((l) => l.id === id);
+  }
+  addLayer(name) {
+    const l = { ...baseLayer(), id: newLayerId(this.layers), name: (name || "").trim() || uniqueName(this.layers) };
+    this.mutate(() => this.layers.push(l));
+    return l;
+  }
+  /** レイヤーとその図形を削除する(取り消しで戻せる)。消した図形の数を返す */
+  deleteLayer(id) {
+    let n = -1;
+    this.mutate(() => {
+      n = deleteLayerFrom(this.pages, this.layers, id);
+    });
+    if (this.curLayer === id) this.curLayer = BASE_LAYER_ID;
+    return n;
+  }
+  /** レイヤーの設定を変更する(取り消しで戻せる) */
+  updateLayer(id, patch) {
+    const l = this.layer(id);
+    if (!l) return;
+    this.mutate(() => Object.assign(l, patch));
+  }
+  layerCount(id) {
+    let n = 0;
+    for (const p of this.pages) for (const s of p.shapes) if ((s.layer || BASE_LAYER_ID) === id) n++;
+    return n;
   }
 
   /* ---------- 永続化 ---------- */
@@ -186,6 +234,7 @@ export class DocModel {
       sources: [...this.sources.values()].map((s) => ({ id: s.id, name: s.name, bytes: s.bytes })),
       pages: this.pages,
       images: [...this.images.entries()],
+      layers: this.layers,
       updatedAt: Date.now(),
     };
   }
@@ -196,6 +245,7 @@ export class DocModel {
     for (const s of data.sources) m.sources.set(s.id, { id: s.id, name: s.name, bytes: s.bytes, pdf: await loadPdf(s.bytes) });
     m.pages = data.pages;
     m.images = new Map(data.images);
+    m.layers = normalizeLayers(data.layers);
     return m;
   }
   /** 未使用の画像・ソースを掃除(保存サイズ削減) */

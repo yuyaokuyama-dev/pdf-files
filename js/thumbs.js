@@ -303,10 +303,10 @@ export class Thumbs {
   updateOverlay(p) {
     const t = this.el.querySelector(`.thumb[data-id="${p.id}"]`);
     if (!t) return;
-    const sig = JSON.stringify(p.shapes) + JSON.stringify(p.scale);
+    const sig = JSON.stringify(p.shapes) + JSON.stringify(p.scale) + JSON.stringify(this.model.layers);
     if (this.sigs.get(p.id) === sig) return;
     this.sigs.set(p.id, sig);
-    renderShapes(p.shapes, t.querySelector("svg"), { page: p, images: this.model.images });
+    renderShapes(p.shapes, t.querySelector("svg"), { page: p, images: this.model.images, layers: this.model.layers });
     t.querySelectorAll("svg .hit").forEach((n) => n.remove());
   }
 

@@ -4,6 +4,7 @@ import {
   dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
   arcPath, arcBounds, arcGeometry,
 } from "./geometry.js";
+import { visibleShapes } from "./layers.js";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -250,23 +251,23 @@ export function renderShape(shape, parent, opts = {}) {
   return g;
 }
 
-/** ページ全体の図形レイヤを作る(opts.exclude: 編集中の図形idを除外) */
+/** ページ全体の図形レイヤを作る(opts.exclude: 編集中の図形idを除外、opts.layers: 非表示レイヤーを除き色・太さ・線種を反映) */
 export function renderShapes(shapes, parent, opts = {}) {
   while (parent.firstChild) parent.removeChild(parent.firstChild);
-  for (const sh of shapes) {
+  for (const sh of visibleShapes(shapes, opts.layers)) {
     if (opts.exclude && opts.exclude === sh.id) continue;
     renderShape(sh, parent, opts);
   }
 }
 
 /** 書き出し/画像化用: 図形だけの独立した SVG 文字列 */
-export function serializeOverlay(page, images, w, h) {
+export function serializeOverlay(page, images, w, h, layers) {
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("xmlns", NS);
   svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
   svg.setAttribute("width", w);
   svg.setAttribute("height", h);
-  renderShapes(page.shapes, svg, { page, images });
+  renderShapes(page.shapes, svg, { page, images, layers });
   // 当たり判定用の要素は不要
   svg.querySelectorAll(".hit").forEach((n) => n.remove());
   return new XMLSerializer().serializeToString(svg);

@@ -223,3 +223,34 @@ html[data-ui="xlarge"] .btn.icon { width: 54px; }
 .tab-ghost.out { outline: 2px solid var(--accent); }
 .tab-ghost.out .tab-ghost-hint { color: var(--accent); }
 @media (max-width: 800px) { .tab { max-width: 160px; } }
+
+/* ---- 範囲選択・レイヤー ---- */
+.page svg.overlay.t-marq { cursor: crosshair; }
+.page svg.overlay.t-marq .shape { cursor: pointer; }
+.sel-one { stroke-opacity: .65; }
+.layers { left: 12px; right: auto; top: 12px; width: 300px; z-index: 22; }
+.lp-head { display: flex; align-items: center; gap: 6px; }
+.lp-head h3 { flex: 1; }
+.lp-head .btn { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.lp-list { display: flex; flex-direction: column; gap: 6px; }
+.lp-row { border: 1px solid var(--line); border-radius: 10px; padding: 6px; background: var(--panel); }
+.lp-row.cur { border-color: var(--accent); background: #eff6ff; }
+.lp-row.off .lp-name { color: var(--muted); text-decoration: line-through; }
+.lp-main { display: flex; align-items: center; gap: 4px; }
+.lp-btn { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font-size: 15px; cursor: pointer; }
+.lp-btn:hover { background: #eef0f3; }
+.lp-btn[aria-pressed="false"][data-act="vis"] { color: var(--muted); }
+.lp-btn[aria-pressed="true"][data-act="lock"] { color: #b45309; }
+.lp-btn.on { color: var(--accent); }
+.lp-color { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; }
+.lp-name { flex: 1; min-width: 0; height: 32px; border: 1px solid transparent; border-radius: 8px; padding: 0 6px; font-size: 14px; background: transparent; }
+.lp-name:focus { border-color: var(--accent); background: #fff; outline: none; }
+.lp-n { flex: none; min-width: 24px; text-align: right; font-size: 12px; color: var(--muted); }
+.lp-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; padding-left: 4px; font-size: 12px; color: var(--muted); }
+.lp-sub label { display: flex; align-items: center; gap: 4px; }
+.lp-sub input[type=number] { width: 56px; height: 30px; }
+.lp-sub select { height: 30px; font-size: 12px; }
+.lp-sub .btn { min-height: 30px; padding: 0 8px; font-size: 12px; }
+@media (max-width: 720px) {
+  .layers { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 50%; z-index: 26; }
+}
