@@ -424,6 +424,7 @@ function wireEditorEvents() {
   });
   ed.on("zoom", (z) => ($("#btnZoomFit").textContent = `${Math.round(z * 100)}%`));
   ed.on("toast", (o) => toast(o.text, o));
+  ed.on("cmd", (c) => (c ? showHint(c.text, 0, [{ label: "中止", onClick: () => ed.cancelCommand() }]) : showHint("")));
   ed.on("sign-request", signRequest);
   ed.on("dim-request", dimRequest);
   ed.on("dim-edit", dimEdit);

@@ -50,6 +50,9 @@ export class Props {
     this.onStampWidth = onStampWidth;
     this.toast = onToast;
     this.dismissed = false;
+    this.mv = { angle: 90, rcopy: false, k: 2, scopy: false, keep: false, rows: 2, cols: 3, rowd: 20, cold: 20, count: 6, pang: 360, protate: true, dist: 10 };
+    this.modOpen = false;
+    el.addEventListener("toggle", (e) => e.target.classList?.contains("modbox") && (this.modOpen = e.target.open), true);
     editor.on("selection", () => ((this.dismissed = false), this.refresh()));
     editor.on("tool", () => ((this.dismissed = false), this.refresh()));
     editor.on("layer-current", () => this.refresh());
@@ -265,6 +268,12 @@ export class Props {
       }
       return;
     }
+    if (key.startsWith("mv:")) {
+      const k = key.slice(3);
+      if (t.type === "checkbox") this.mv[k] = t.checked;
+      else if (Number.isFinite(v)) this.mv[k] = v;
+      return;
+    }
     if (key === "regN") {
       if (!isInput && Number.isFinite(v)) this.ed.setMode("n", v);
       return;
@@ -386,6 +395,19 @@ export class Props {
       return;
     }
     switch (b.dataset.act) {
+      case "cmd": {
+        const m = this.mv;
+        const k = ctx?.page?.scale?.ptsPerUnit || 1;
+        const o = { move: {}, copy: {}, rotate: { angle: m.angle, copy: m.rcopy }, scale: { k: m.k, copy: m.scopy }, mirror: { keep: m.keep }, polar: { count: m.count, angle: m.pang, rotateItems: m.protate }, offset: { dist: m.dist * k } }[b.dataset.c];
+        ed.startCommand(b.dataset.c, o || {});
+        break;
+      }
+      case "cmd-array": {
+        const m = this.mv;
+        const k = ctx?.page?.scale?.ptsPerUnit || 1;
+        ed.arrayRect(m.rows, m.cols, m.cold * k, m.rowd * k);
+        break;
+      }
       case "mode":
         ed.setMode(b.dataset.key, b.dataset.v);
         this.refresh();
@@ -462,6 +484,23 @@ export class Props {
       return `<label class="field">${label}<div class="row"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v}"><span class="val" data-v="${k}">${fmt ? fmt(v) : v}</span></div></label>`;
     };
     const parts = [];
+    const modifyBox = () => {
+      const sc = ctx.page?.scale;
+      const unit = sc?.unit || "pt";
+      const m = this.mv;
+      const nf = (k, w = 70, step = "any", min = "") => `<input type="number" data-k="mv:${k}" value="${m[k]}" step="${step}"${min !== "" ? ` min="${min}"` : ""} style="width:${w}px;height:34px">`;
+      const ck = (k, label) => `<label class="check"><input type="checkbox" data-k="mv:${k}"${m[k] ? " checked" : ""}> ${label}</label>`;
+      const single = !ctx.multi;
+      return `<details class="modbox field"${this.modOpen ? " open" : ""}><summary style="cursor:pointer;font-weight:600">修正コマンド(基点を指定して動かす・増やす)</summary>
+        <div class="field">移動・コピー<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="move">移動</button><button class="btn" data-act="cmd" data-c="copy">コピー</button></div></div>
+        <div class="field">回転<div class="row">${nf("angle", 64)}<span>度(右回り)</span></div>${ck("rcopy", "元を残してコピー")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="rotate">基点をタップして回転</button></div></div>
+        <div class="field">尺度(拡大・縮小)<div class="row">${nf("k", 64, "any", 0.01)}<span>倍</span></div>${ck("scopy", "元を残してコピー")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="scale">基点をタップして拡大縮小</button></div></div>
+        <div class="field">鏡像(線対称)${ck("keep", "元を残す")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="mirror">軸の2点をタップ</button></div></div>
+        <div class="field">配列複写(矩形)<div class="row"><span>行</span>${nf("rows", 56, 1, 1)}<span>列</span>${nf("cols", 56, 1, 1)}</div><div class="row"><span>行の間隔</span>${nf("rowd", 64)}<span>${unit}</span></div><div class="row"><span>列の間隔</span>${nf("cold", 64)}<span>${unit}</span></div><div class="actions" style="margin:0"><button class="btn" data-act="cmd-array">配列する</button></div></div>
+        <div class="field">配列複写(円形)<div class="row"><span>個数</span>${nf("count", 56, 1, 2)}<span>全体で</span>${nf("pang", 64)}<span>度</span></div>${ck("protate", "図形も回す")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="polar">中心をタップして配列</button></div></div>
+        ${single ? `<div class="field">オフセット(平行複写)<div class="row"><span>距離</span>${nf("dist", 70, "any", 0)}<span>${unit}</span></div><div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="offset">ずらす側をタップ</button></div></div>` : ""}
+      </details>`;
+    };
     const ed = this.ed;
     const layers = ed.model.layers;
     const layerSelect = (key, selId, label) =>
@@ -481,6 +520,7 @@ export class Props {
         parts.push(layerSelect("layer", layerIdOf(ctx.shape), "レイヤー(まとめて移す)"));
         parts.push(blBox(ctx.shape));
       }
+      parts.push(modifyBox());
       parts.push(`<div class="actions">
         <button class="btn" data-act="dup">${icon("copy", 16)}複製</button>
         <button class="btn" data-act="front">前面へ</button>
@@ -608,6 +648,7 @@ export class Props {
     }
     if (ctx.sel) {
       if (t !== "image" && t !== "stamp") parts.push(`<div class="actions"><button class="btn" data-act="set-default">${icon("check", 16)}この設定を初期設定にする</button></div>`);
+      parts.push(modifyBox());
       parts.push(`<div class="actions">
         <button class="btn" data-act="dup">${icon("copy", 16)}複製</button>
         <button class="btn" data-act="front">前面へ</button>
