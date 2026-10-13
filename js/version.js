@@ -1,3 +1,3 @@
 // アプリのバージョン。更新のたびに sw.js の VERSION と同じ値に上げる(tests/version.test.mjs が一致を確認)
-export const APP_VERSION = "v1.7.2";
-export const APP_DATE = "2026-10-11";
+export const APP_VERSION = "v1.8.0";
+export const APP_DATE = "2026-10-13";

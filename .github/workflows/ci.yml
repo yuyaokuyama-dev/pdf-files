@@ -48,3 +48,4 @@ jobs:
           node tests/e2e-tabs.mjs
           node tests/e2e-samefile.mjs
           node tests/e2e-manual.mjs
+          node tests/e2e-multi.mjs

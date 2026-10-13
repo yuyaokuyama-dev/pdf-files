@@ -130,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.7.2(2026-10-11)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.8.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -262,7 +262,8 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
       <div class="tbl"><table>
         <thead><tr><th>ツール</th><th>使い方</th></tr></thead>
         <tbody>
-          <tr><td>選択</td><td>描いたものを選んで動かす・変える・消す。</td></tr>
+          <tr><td>選択</td><td>描いたものを選んで動かす・変える・消す。パソコンでは <kbd>Ctrl</kbd>+クリックで複数選べます。</td></tr>
+          <tr><td>範囲選択</td><td>ドラッグで囲んだ図形・文字をまとめて選びます。図形をタップすると選択に追加・解除できます(iPhoneなどで複数選ぶとき)。</td></tr>
           <tr><td>移動</td><td>ページを掴んでスクロールします(書き込みはしません)。</td></tr>
           <tr><td>ペン</td><td>指・ペン・マウスでなめらかに手書きします。</td></tr>
           <tr><td>消しゴム</td><td>ペンで書いた線をなぞって消します。線ごと消すか、なぞった部分だけ消すかを右のパネルで選べます。</td></tr>
@@ -276,6 +277,13 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
       </table></div>
       <h3>続けて描くとき</h3>
       <p>線・図形・寸法などは、描いた直後に選択された状態になり、そのまま色や太さを調整できます。何もない所をタップすると確定し、同じツールに戻って続けて描けます。この動きは<a href="#settings">設定</a>で切り替えられます。</p>
+      <h3 id="multi">複数を選んでまとめて変える・コピーする</h3>
+      <ul>
+        <li><b>選び方</b>:パソコンは <kbd>Ctrl</kbd>(Macは <kbd>⌘</kbd>)を押しながらクリックで1つずつ追加・解除します。線・四角・文字など種類が違っても一緒に選べます。何もない所からドラッグで囲むと、囲みの中に入ったものをまとめて選びます。iPhone・iPadでは<span class="ui">範囲選択</span>ツールで囲むか、図形をタップして追加します。</li>
+        <li><b>まとめて変える</b>:右のパネルに、選んでいる種類(線・四角・テキストなど)がチェックボックス付きで出ます。チェックを外した種類は編集の対象から外れます(灰色の枠)。色・太さ・線の種類・文字サイズなどを変えると、対象の全部に反映されます。ドラッグでまとめて動かせます。</li>
+        <li><b>コピー・貼り付け・削除</b>:<kbd>Ctrl</kbd>+<kbd>C</kbd> でコピー、<kbd>Ctrl</kbd>+<kbd>V</kbd> で貼り付け、<kbd>Delete</kbd> で削除します。貼り付けはマウスを乗せているページのその位置に入るので、別のページや別のファイル(タブ)にも貼れます。</li>
+        <li><b>スタンプとして使う</b>:コピーすると左下に<span class="ui">コピーしたもの</span>が小さく出ます。<span class="ui">候補</span>にチェックを入れると残しておけ、チェックを外すと一覧から消えます。一覧のものを押して選んでから、貼りたい場所をクリック(タップ)すると、何度でも押せます。終わるときは <kbd>Esc</kbd> か<span class="ui">終了</span>を押します。</li>
+      </ul>
       <div class="note"><b>iPadとApple Pencil</b><a href="#settings">設定</a>の<span class="ui">ペン入力モード</span>をオンにすると、描くのはペン(とマウス)だけになり、指はスクロール専用になります。手のひらが画面に触れても線が入りません。</div>
     </section>
 
@@ -441,11 +449,15 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
         <tbody>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>元に戻す</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Y</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>やり直し</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+クリック</td><td>図形・文字を選択に追加・解除(複数選択)</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>表示中のページの図形を全部選ぶ</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>選んだ図形をコピー / 切り取り</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>貼り付け(マウスを乗せているページのその位置へ)</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>選んだ図形を複製</td></tr>
-          <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>選んだ図形を削除</td></tr>
+          <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>選んだ図形を削除(複数選択中はまとめて)</td></tr>
           <tr><td>矢印キー</td><td>選んだ図形を少しずつ動かす(<kbd>Shift</kbd>を押しながらで大きく)</td></tr>
           <tr><td><kbd>Enter</kbd></td><td>多角形を閉じる / 選んだ文字・寸法を編集</td></tr>
-          <tr><td><kbd>Esc</kbd></td><td>描きかけを取り消す・選択を外す・選択ツールに戻る</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>描きかけを取り消す・スタンプを終える・選択を外す・選択ツールに戻る</td></tr>
           <tr><td><kbd>Ctrl</kbd>+ホイール</td><td>拡大・縮小</td></tr>
         </tbody>
       </table></div>
@@ -471,7 +483,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.7.2 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.8.0 対応</footer>
 </div>
 </body>
 </html>

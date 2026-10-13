@@ -50,6 +50,11 @@ export class Editor {
     this.loadDefaults();
     this.pendingStamp = null;
     this.sel = null;
+    this.msel = null; // 複数選択中の [{ pageId, shapeId }](2個以上のときだけ。1個なら sel)
+    this.mselOff = new Set(); // 複数選択のうち、編集対象から外した種別(図形の type)
+    this.clipboard = null; // 最後にコピーしたもの(ファイルをまたいで貼れるよう画像も持つ)
+    this.pendingClip = null; // 「コピーしたもの」からスタンプのように押すクリップ
+    this.hover = null; // マウスが乗っているページと位置(貼り付け位置に使う)
     this.zoom = 1;
     this.palm = false;
     this.curPageId = null;
@@ -99,6 +104,8 @@ export class Editor {
     this.model = model;
     this.unsub = model.onChange((k) => this.sync(k));
     this.sel = null;
+    this.msel = null;
+    this.mselOff.clear();
     this.curPageId = null;
     this.liveBefore = null;
     this.rebuildPages();
@@ -127,11 +134,12 @@ export class Editor {
     if (this.structureKey() !== this.structKey) {
       if (this.sel && !this.model.findShape(this.sel.shapeId)) this.sel = null;
       this.rebuildPages();
+      this.pruneMulti();
       return;
     }
     for (const p of this.model.pages) this.refreshLayer(p);
     if (this.sel && !this.model.findShape(this.sel.shapeId)) this.setSelection(null);
-    else this.renderSelection();
+    else if (!this.pruneMulti()) this.renderSelection();
     if (kind === "restore") this.emit("selection", this.sel);
   }
 
@@ -167,8 +175,14 @@ export class Editor {
     const el = { wrap, canvas, svg, layer, draft, ui, no, renderedScale: 0, task: null, token: 0 };
     this.els.set(page.id, el);
     svg.addEventListener("pointerdown", (e) => this.onPointerDown(e, page.id));
-    svg.addEventListener("pointermove", (e) => this.eraserHover(e, page.id));
-    svg.addEventListener("pointerleave", () => this.g?.kind !== "erase" && el.draft.replaceChildren());
+    svg.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse") this.hover = { pageId: page.id, p: this.pt(e, page.id) };
+      this.eraserHover(e, page.id);
+    });
+    svg.addEventListener("pointerleave", () => {
+      if (this.hover?.pageId === page.id) this.hover = null;
+      if (this.g?.kind !== "erase") el.draft.replaceChildren();
+    });
     this.refreshLayer(page, true);
     this.io.observe(wrap);
     this.applyToolClass(el);
@@ -322,14 +336,16 @@ export class Editor {
     this.cancelGesture();
     this.returnTool = null;
     this.tool = t;
+    if (t !== "clip") this.pendingClip = null;
     this.clearDraft();
     for (const el of this.els.values()) this.applyToolClass(el);
-    if (t !== "select") this.setSelection(null);
+    if (t !== "select" && t !== "marquee") this.setSelection(null);
+    else this.renderSelection();
     this.emit("tool", t);
   }
   applyToolClass(el) {
     const t = this.tool;
-    const cls = t === "select" ? "t-select" : t === "hand" ? "t-hand" : this.palm ? "t-palm" : t === "eraser" ? "t-erase" : "t-draw";
+    const cls = t === "select" ? "t-select" : t === "marquee" ? "t-select t-marq" : t === "hand" ? "t-hand" : this.palm ? "t-palm" : t === "eraser" ? "t-erase" : "t-draw";
     el.svg.setAttribute("class", `overlay ${cls}`);
   }
   setPalm(on) {
@@ -432,16 +448,17 @@ export class Editor {
       e.preventDefault();
       return this.eraseDown(e, pageId);
     }
-    if (this.palm && e.pointerType === "touch" && tool !== "select") return;
+    if (this.palm && e.pointerType === "touch" && tool !== "select" && tool !== "marquee") return;
     const el = this.els.get(pageId);
     const p = this.pt(e, pageId);
 
-    if (tool === "select") return this.selectDown(e, pageId, p);
+    if (tool === "select" || tool === "marquee") return this.selectDown(e, pageId, p);
     e.preventDefault();
 
     if (tool === "polygon") return this.polygonDown(e, pageId, p);
     if (tool === "text") return this.beginText(pageId, p);
     if (tool === "stamp") return this.placeStamp(pageId, p);
+    if (tool === "clip") return this.placeClip(pageId, p);
 
     // ドラッグ系の作成ツール
     const start = this.clampToPage(p, pageId);
@@ -966,13 +983,20 @@ export class Editor {
   /* =========================================================
    * 選択・移動・頂点編集
    * ======================================================= */
+  /**
+   * 選択ツール・範囲選択ツールで押したとき
+   *  Ctrl(⌘)+クリック: 図形を選択に追加・解除(種類は問わない)
+   *  何もない所をドラッグ: 囲んだ図形をまとめて選択(マウス・ペン。指は範囲選択ツールで)
+   *  範囲選択ツールでは、タップで追加・解除、ドラッグで囲んだものを追加する
+   */
   selectDown(e, pageId, p) {
-    const el = this.els.get(pageId);
     const t = e.target;
     const handle = t.closest?.(".handle");
     const shEl = t.closest?.(".shape");
+    const ctrl = e.ctrlKey || e.metaKey;
+    const marq = this.tool === "marquee";
     const dbl = this.isDoubleTap(e, handle ? `h:${this.sel?.shapeId}:${handle.dataset.kind}:${handle.dataset.idx}` : shEl ? `s:${shEl.dataset.id}` : "empty");
-    if (handle && this.sel) {
+    if (handle && this.sel && !ctrl) {
       e.preventDefault();
       if (dbl && handle.dataset.kind === "v") return this.removeVertex(+handle.dataset.idx);
       if (dbl && handle.dataset.kind === "off") {
@@ -982,45 +1006,120 @@ export class Editor {
       return this.beginHandleDrag(e, pageId, handle);
     }
     if (!shEl) {
-      // 作成直後の調整中なら、何もない所のタップで確定して元のツールに戻る
-      if (this.confirmCreated()) return;
-      if (this.sel) this.setSelection(null);
-      return;
+      if (marq || e.pointerType !== "touch") {
+        e.preventDefault();
+        return this.beginMarquee(e, pageId, p, { add: ctrl || marq, ctrl });
+      }
+      return this.emptyTap();
     }
     e.preventDefault();
     const id = shEl.dataset.id;
     const page = this.model.page(pageId);
     const shape = page.shapes.find((s) => s.id === id);
     if (!shape) return;
+    const item = { pageId, shapeId: id };
+    if (ctrl || marq) {
+      // まだ選んでいなければすぐ追加(そのままドラッグでまとめて動かせる)。選択済みならタップで外す
+      if (this.isSelected(id)) return this.beginMove(e, pageId, shape, p, { onTap: () => this.setMulti(this.selItems().filter((x) => x.shapeId !== id)) });
+      this.setMulti([...this.selItems(), item]);
+      return this.beginMove(e, pageId, shape, p);
+    }
+    if (this.msel && this.isSelected(id)) {
+      // 複数選択中に選択済みの図形を押した: まとめて移動(動かさずに離したらその1つだけを選ぶ)
+      return this.beginMove(e, pageId, shape, p, { onTap: () => this.setSelection(item) });
+    }
     if (dbl) {
       if (shape.type === "text") return this.editText(pageId, shape, false);
       if (shape.type === "dim") return this.emit("dim-edit", { pageId, shape });
       if (shape.type === "polygon" || shape.type === "cloud") return this.insertVertex(pageId, shape, p);
     }
-    if (!this.sel || this.sel.shapeId !== id) this.setSelection({ pageId, shapeId: id });
+    if (!this.sel || this.sel.shapeId !== id) this.setSelection(item);
     if (shape.locked) return; // ロック中は動かせない(選択だけできる)
     this.beginMove(e, pageId, shape, p);
   }
 
-  beginMove(e, pageId, shape, p0) {
+  /** 何もない所をタップ: 作成直後の調整中なら確定して元のツールへ、そうでなければ選択を外す */
+  emptyTap() {
+    if (this.confirmCreated()) return;
+    if (this.sel || this.msel) this.setSelection(null);
+  }
+
+  /** 範囲選択: ドラッグで囲んだ四角に完全に入る図形を選ぶ。add=true なら今の選択に加える */
+  beginMarquee(e, pageId, p0, { add = false, ctrl = false } = {}) {
     const el = this.els.get(pageId);
-    const origin = clone(shape.pts);
+    const page = this.model.page(pageId);
+    const base = add ? this.selItems() : [];
+    this.g = { kind: "marquee", pageId, id: e.pointerId, moved: false };
+    el.svg.setPointerCapture?.(e.pointerId);
+    let q = p0;
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      q = this.pt(ev, pageId);
+      if (!this.g.moved && dist(p0, q) * this.zoom < 4) return;
+      this.g.moved = true;
+      const b = bbox([p0, q]);
+      el.draft.replaceChildren(sv("rect", { class: "marquee", x: b.x, y: b.y, width: b.w, height: b.h, "stroke-width": 1 / this.zoom, "stroke-dasharray": `${4 / this.zoom} ${3 / this.zoom}` }));
+    };
+    const stop = () => {
+      el.svg.removeEventListener("pointermove", move);
+      el.svg.removeEventListener("pointerup", up);
+      el.svg.removeEventListener("pointercancel", cancel);
+      el.draft.replaceChildren();
+    };
+    const up = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      const moved = this.g?.moved;
+      stop();
+      this.g = null;
+      if (!moved) {
+        if (!ctrl) this.emptyTap(); // Ctrl+クリックで何もない所を押しても選択は外さない
+        return;
+      }
+      const b = bbox([p0, q]);
+      const inside = (r) => r.x >= b.x && r.y >= b.y && r.x + r.w <= b.x + b.w && r.y + r.h <= b.y + b.h;
+      const hits = page.shapes.filter((s) => inside(shapeBounds(s, page))).map((s) => ({ pageId, shapeId: s.id }));
+      this.returnTool = null;
+      this.setMulti([...base, ...hits]);
+    };
+    const cancel = () => {
+      stop();
+      this.g = null;
+    };
+    this.g.cleanup = stop;
+    el.svg.addEventListener("pointermove", move);
+    el.svg.addEventListener("pointerup", up);
+    el.svg.addEventListener("pointercancel", cancel);
+  }
+
+  /**
+   * 選択中の図形を動かす。複数選択中は編集対象をまとめて(ページが違っても同じだけ)動かす。
+   * onTap: 動かさずに離したときの処理
+   */
+  beginMove(e, pageId, shape, p0, { onTap } = {}) {
+    const el = this.els.get(pageId);
+    const page = this.model.page(pageId);
+    const group = (this.msel ? this.targets() : [{ page, shape }]).filter((f) => !f.shape.locked);
+    const origins = group.map((f) => clone(f.shape.pts));
+    // ページ外へ出過ぎないように、押したページにある図形全体の範囲で動きを制限する
+    const here = group.map((f, i) => (f.page === page ? shapeBoundsOf(origins[i], f.shape) : null)).filter(Boolean);
+    const b = here.length ? bbox(here.flatMap((r) => [[r.x, r.y], [r.x + r.w, r.y + r.h]])) : null;
+    const pages = [...new Set(group.map((f) => f.page))];
     this.g = { kind: "move", pageId, id: e.pointerId, before: this.model.snapshot(), moved: false };
     el.svg.setPointerCapture?.(e.pointerId);
-    const page = this.model.page(pageId);
     const move = (ev) => {
       if (ev.pointerId !== e.pointerId) return;
       const q = this.pt(ev, pageId);
       let dx = q[0] - p0[0];
       let dy = q[1] - p0[1];
       if (!this.g.moved && Math.hypot(dx, dy) * this.zoom < 3) return;
+      if (!group.length) return;
       this.g.moved = true;
-      // ページ外へ出過ぎないようにする
-      const b = shapeBoundsOf(origin, shape);
-      dx = Math.max(-b.x - b.w + 8, Math.min(page.w - b.x - 8, dx));
-      dy = Math.max(-b.y - b.h + 8, Math.min(page.h - b.y - 8, dy));
-      shape.pts = origin.map(([x, y]) => [x + dx, y + dy]);
-      this.refreshLayer(page);
+      if (b) {
+        dx = Math.max(-b.x - b.w + 8, Math.min(page.w - b.x - 8, dx));
+        dy = Math.max(-b.y - b.h + 8, Math.min(page.h - b.y - 8, dy));
+      }
+      group.forEach((f, i) => (f.shape.pts = origins[i].map(([x, y]) => [x + dx, y + dy])));
+      for (const pg of pages) this.refreshLayer(pg);
       this.renderSelection();
     };
     const up = (ev) => {
@@ -1031,6 +1130,7 @@ export class Editor {
       const g = this.g;
       this.g = null;
       if (g?.moved) this.model.commit(g.before);
+      else if (ev.type === "pointerup") onTap?.();
     };
     this.g.cleanup = () => {
       el.svg.removeEventListener("pointermove", move);
@@ -1195,10 +1295,68 @@ export class Editor {
   }
 
   setSelection(sel) {
-    const same = (!sel && !this.sel) || (sel && this.sel && sel.shapeId === this.sel.shapeId);
+    const wasMulti = !!this.msel;
+    const same = !wasMulti && ((!sel && !this.sel) || (sel && this.sel && sel.shapeId === this.sel.shapeId));
     this.sel = sel;
+    this.msel = null;
+    this.mselOff.clear();
     this.renderSelection();
     if (!same) this.emit("selection", sel);
+  }
+
+  /* ---------- 複数選択 ---------- */
+  /** 選択を items にする(重複は除く)。1個なら通常の選択、2個以上なら複数選択 */
+  setMulti(items) {
+    const seen = new Set();
+    items = items.filter((it) => it && this.model.findShape(it.shapeId) && !seen.has(it.shapeId) && seen.add(it.shapeId));
+    if (items.length < 2) return this.setSelection(items[0] || null);
+    this.sel = null;
+    this.msel = items;
+    const types = new Set(this.selShapes().map((f) => f.shape.type));
+    for (const t of [...this.mselOff]) if (!types.has(t)) this.mselOff.delete(t);
+    this.renderSelection();
+    this.emit("selection", { multi: items.length });
+  }
+  /** 取り消しなどで消えた図形を複数選択から外す。選択が変わったら true */
+  pruneMulti() {
+    if (!this.msel) return false;
+    const keep = this.msel.filter((it) => this.model.findShape(it.shapeId));
+    if (keep.length === this.msel.length) return false;
+    this.setMulti(keep);
+    return true;
+  }
+  /** 選択中のもの全部(複数選択なら全員、1個なら [sel]) */
+  selItems() {
+    return this.msel ? this.msel.slice() : this.sel ? [this.sel] : [];
+  }
+  isSelected(shapeId) {
+    return this.selItems().some((x) => x.shapeId === shapeId);
+  }
+  /** 選択中の { page, shape }(外した種別も含む) */
+  selShapes() {
+    const out = [];
+    for (const it of this.selItems()) {
+      const f = this.model.findShape(it.shapeId);
+      if (f) out.push(f);
+    }
+    return out;
+  }
+  /** 編集の対象になる { page, shape }(複数選択でチェックを外した種別は除く) */
+  targets() {
+    return this.selShapes().filter((f) => !(this.msel && this.mselOff.has(f.shape.type)));
+  }
+  /** 複数選択で、その種別を編集対象に入れる/外す */
+  setTypeEnabled(type, on) {
+    if (on) this.mselOff.delete(type);
+    else this.mselOff.add(type);
+    this.renderSelection();
+  }
+  /** 今のページの図形を全部選ぶ */
+  selectAll(pageId = this.curPageId) {
+    const page = this.model.page(pageId);
+    if (!page) return;
+    if (this.tool !== "select" && this.tool !== "marquee") this.setTool("select");
+    this.setMulti(page.shapes.map((s) => ({ pageId, shapeId: s.id })));
   }
   /* ---- 初期設定(新しく作る図形の既定値。端末に保存) ---- */
   loadDefaults() {
@@ -1241,7 +1399,7 @@ export class Editor {
   }
 
   selectedShape() {
-    if (!this.sel) return null;
+    if (!this.sel) return null; // 複数選択中は null(targets() を使う)
     const f = this.model.findShape(this.sel.shapeId);
     return f ? f.shape : null;
   }
@@ -1253,7 +1411,9 @@ export class Editor {
 
   renderSelection() {
     for (const el of this.els.values()) el.ui.replaceChildren();
-    if (!this.sel || this.tool !== "select") return;
+    if (this.tool !== "select" && this.tool !== "marquee") return;
+    if (this.msel) return this.renderMulti();
+    if (!this.sel) return;
     const f = this.model.findShape(this.sel.shapeId);
     if (!f) return;
     const el = this.els.get(f.page.id);
@@ -1315,6 +1475,19 @@ export class Editor {
     }
   }
 
+  /** 複数選択の枠: 1つずつ点線で囲む(編集対象から外した種別は灰色) */
+  renderMulti() {
+    const z = this.zoom;
+    const pad = 4 / z;
+    for (const f of this.selShapes()) {
+      const el = this.els.get(f.page.id);
+      if (!el) continue;
+      const b = shapeBounds(f.shape, f.page);
+      const off = this.mselOff.has(f.shape.type);
+      el.ui.appendChild(sv("rect", { class: `sel-box${off ? " off" : ""}`, x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad, "stroke-width": 1.2 / z, "stroke-dasharray": `${5 / z} ${4 / z}` }));
+    }
+  }
+
   /* =========================================================
    * 編集操作(プロパティ・削除など)
    * ======================================================= */
@@ -1330,6 +1503,7 @@ export class Editor {
     this.renderSelection();
   }
   updateSelected(fn, { live = false } = {}) {
+    if (this.msel) return this.updateTargets(fn, { live });
     const f = this.sel && this.model.findShape(this.sel.shapeId);
     if (!f || f.shape.locked) return;
     if (live) {
@@ -1341,6 +1515,20 @@ export class Editor {
       this.model.mutate(() => fn(f.shape, f.page));
     }
   }
+  /** 複数選択の編集対象(ロック中を除く)をまとめて変更する */
+  updateTargets(fn, { live = false } = {}) {
+    const fs = this.targets().filter((f) => !f.shape.locked);
+    if (!fs.length) return;
+    const run = () => fs.forEach((f) => fn(f.shape, f.page));
+    if (live) {
+      if (!this.liveBefore) this.liveBefore = this.model.snapshot();
+      run();
+      for (const pg of new Set(fs.map((f) => f.page))) this.refreshLayer(pg);
+      this.renderSelection();
+    } else {
+      this.model.mutate(run);
+    }
+  }
   commitLive() {
     if (!this.liveBefore) return;
     const b = this.liveBefore;
@@ -1348,33 +1536,126 @@ export class Editor {
     this.model.commit(b);
   }
   deleteSelected() {
-    if (!this.sel || this.model.findShape(this.sel.shapeId)?.shape.locked) return;
-    const { pageId, shapeId } = this.sel;
+    const fs = this.targets().filter((f) => !f.shape.locked);
+    if (!fs.length) return;
+    const ids = new Set(fs.map((f) => f.shape.id));
     this.sel = null;
-    this.model.removeShape(pageId, shapeId);
+    this.msel = null;
+    this.mselOff.clear();
+    this.model.mutate(() => {
+      for (const p of this.model.pages) if (p.shapes.some((s) => ids.has(s.id))) p.shapes = p.shapes.filter((s) => !ids.has(s.id));
+    });
     this.renderSelection();
     this.emit("selection", null);
   }
   duplicateSelected() {
-    const f = this.sel && this.model.findShape(this.sel.shapeId);
-    if (!f || f.shape.locked) return;
-    const c = clone(f.shape);
-    c.id = "h" + uid();
-    c.pts = c.pts.map(([x, y]) => [x + 14, y + 14]);
-    this.model.addShape(f.page.id, c);
-    this.setSelection({ pageId: f.page.id, shapeId: c.id });
+    const fs = this.targets().filter((f) => !f.shape.locked);
+    if (!fs.length) return;
+    const items = [];
+    this.model.mutate(() => {
+      for (const f of fs) {
+        const c = clone(f.shape);
+        c.id = "h" + uid();
+        c.pts = c.pts.map(([x, y]) => [x + 14, y + 14]);
+        f.page.shapes.push(c);
+        items.push({ pageId: f.page.id, shapeId: c.id });
+      }
+    });
+    this.setMulti(items);
   }
   reorderSelected(toFront) {
-    const f = this.sel && this.model.findShape(this.sel.shapeId);
-    if (!f || f.shape.locked) return;
+    const fs = this.targets().filter((f) => !f.shape.locked);
+    if (!fs.length) return;
     this.model.mutate(() => {
-      const arr = f.page.shapes;
-      const i = arr.indexOf(f.shape);
-      arr.splice(i, 1);
-      if (toFront) arr.push(f.shape);
-      else arr.unshift(f.shape);
+      for (const pg of new Set(fs.map((f) => f.page))) {
+        const mine = pg.shapes.filter((s) => fs.some((f) => f.shape === s));
+        const rest = pg.shapes.filter((s) => !mine.includes(s));
+        pg.shapes = toFront ? [...rest, ...mine] : [...mine, ...rest];
+      }
     });
   }
+
+  /* ---------- コピー・貼り付け ---------- */
+  /** 図形をクリップ(コピーしたもの)にする。画像は中身ごと持つので、別のファイルにも貼れる */
+  makeClip(fs) {
+    const shapes = fs.map((f) => {
+      const c = clone(f.shape);
+      delete c.locked; // 貼ったものは動かせるようにする
+      return c;
+    });
+    const images = {};
+    for (const s of shapes) if (s.imgId && this.model.images.has(s.imgId)) images[s.imgId] = this.model.images.get(s.imgId);
+    const rs = fs.map((f) => shapeBounds(f.shape, f.page));
+    const box = bbox(rs.flatMap((r) => [[r.x, r.y], [r.x + r.w, r.y + r.h]]));
+    return { id: "c" + uid(), shapes, images, box, scale: fs[0].page.scale || null, createdAt: Date.now() };
+  }
+  /** 選択中のもの(編集対象)をコピー。cut=true なら切り取り */
+  copySelection({ cut = false } = {}) {
+    const fs = this.targets();
+    if (!fs.length) return null;
+    const clip = this.makeClip(fs);
+    this.clipboard = clip;
+    this.emit("copied", clip);
+    if (cut) this.deleteSelected();
+    return clip;
+  }
+  /**
+   * クリップをページに貼る。at=[x,y] ならそこを中心に、無ければ元と同じ位置(同じ所に重なるときは少しずらす)。
+   * 貼った図形の [{ pageId, shapeId }] を返す
+   */
+  pasteClip(clip, pageId, at = null) {
+    const page = this.model.page(pageId);
+    if (!page || !clip?.shapes?.length) return [];
+    const { box } = clip;
+    let dx = 0;
+    let dy = 0;
+    if (at) {
+      dx = at[0] - (box.x + box.w / 2);
+      dy = at[1] - (box.y + box.h / 2);
+    } else {
+      const first = clip.shapes[0];
+      const key = (pts) => JSON.stringify(pts.map(([x, y]) => [Math.round(x), Math.round(y)]));
+      for (let n = 0; n < 40 && page.shapes.some((s) => s.type === first.type && key(s.pts) === key(first.pts.map(([x, y]) => [x + dx, y + dy]))); n++) {
+        dx += 14;
+        dy += 14;
+      }
+    }
+    // ページからはみ出さないように寄せる(ページより大きいときは左上に合わせる)
+    const fit = (d, x, w, W) => (w >= W ? -x : Math.max(-x, Math.min(W - x - w, d)));
+    dx = fit(dx, box.x, box.w, page.w);
+    dy = fit(dy, box.y, box.h, page.h);
+    const ids = {};
+    for (const [id, data] of Object.entries(clip.images || {})) ids[id] = this.model.images.get(id) === data ? id : this.model.addImage(data);
+    const items = [];
+    this.model.mutate(() => {
+      for (const s of clip.shapes) {
+        const c = clone(s);
+        c.id = "h" + uid();
+        if (c.imgId && ids[c.imgId]) c.imgId = ids[c.imgId];
+        c.pts = c.pts.map(([x, y]) => [x + dx, y + dy]);
+        page.shapes.push(c);
+        items.push({ pageId, shapeId: c.id });
+      }
+    });
+    return items;
+  }
+  /** Ctrl+V: マウスが乗っているページのその位置へ、無ければ表示中のページの元と同じ位置へ貼る */
+  paste(clip = this.clipboard) {
+    if (!clip) return false;
+    const h = this.hover && this.model.page(this.hover.pageId) ? this.hover : null;
+    const pageId = h?.pageId || this.curPageId;
+    const items = this.pasteClip(clip, pageId, h ? h.p : null);
+    if (!items.length) return false;
+    if (this.tool !== "select" && this.tool !== "marquee") this.setTool("select");
+    this.setMulti(items);
+    return true;
+  }
+  /** 「コピーしたもの」で選んだクリップを、押した位置にスタンプのように貼る(続けて何度でも押せる) */
+  placeClip(pageId, p) {
+    if (!this.pendingClip) return this.setTool("select");
+    this.pasteClip(this.pendingClip, pageId, this.clampToPage(p, pageId));
+  }
+
   editSelectedText() {
     const f = this.sel && this.model.findShape(this.sel.shapeId);
     if (f?.shape.type === "text") this.editText(f.page.id, f.shape, false);
@@ -1395,8 +1676,23 @@ export class Editor {
     } else if (mod && e.key.toLowerCase() === "d") {
       e.preventDefault();
       this.duplicateSelected();
+    } else if (mod && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "x")) {
+      if (this.targets().length) {
+        e.preventDefault();
+        this.copySelection({ cut: e.key.toLowerCase() === "x" });
+      }
+    } else if (mod && e.key.toLowerCase() === "v") {
+      if (this.clipboard && this.model.pages.length) {
+        e.preventDefault();
+        this.paste();
+      }
+    } else if (mod && e.key.toLowerCase() === "a") {
+      if (this.model.pages.length) {
+        e.preventDefault();
+        this.selectAll();
+      }
     } else if (e.key === "Delete" || e.key === "Backspace") {
-      if (this.sel) {
+      if (this.sel || this.msel) {
         e.preventDefault();
         this.deleteSelected();
       }
@@ -1404,14 +1700,15 @@ export class Editor {
       if (this.poly) this.cancelPolygon();
       else if (this.g) this.cancelGesture();
       else if (this.confirmCreated()) return;
-      else if (this.sel) this.setSelection(null);
+      else if (this.tool === "clip") this.setTool("select");
+      else if (this.sel || this.msel) this.setSelection(null);
       else if (this.tool !== "select") this.setTool("select");
     } else if (e.key === "Enter") {
       if (this.poly) {
         e.preventDefault();
         this.finishPolygon();
       } else if (this.sel) this.editSelectedText();
-    } else if (this.sel && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+    } else if ((this.sel || this.msel) && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
       e.preventDefault();
       const step = e.shiftKey ? 10 : 1;
       const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
