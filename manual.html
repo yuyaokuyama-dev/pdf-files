@@ -130,7 +130,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     <div class="mark" aria-hidden="true"><svg viewBox="0 0 26 32"><path d="M2 2h14l8 8v20H2z" fill="#fff"/><path d="M16 2v8h8" fill="none" stroke="#d42a2a" stroke-width="1.5"/></svg></div>
     <div>
       <h1><b>PDF Files</b> 使い方マニュアル</h1>
-      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.9.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
+      <p><span class="applink"><a href="./">アプリを開く</a> ・ </span>対象バージョン v1.10.0(2026-10-13)・iPhone / iPad / Windows / Android / Mac</p>
     </div>
   </header>
 
@@ -294,6 +294,10 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
       </ol>
           <h3>用紙と縮尺(1/〇〇)で設定する</h3>
       <p>縮尺設定ツールまたは右のパネルの<span class="ui">用紙と縮尺(1/〇〇)で設定</span>から、用紙サイズ(A3 など)と 1/100 のような縮尺を数字で指定できます。A4 のPDFに縮小した A3 図面が入っている場合も、元の用紙サイズを選べば実寸で計測できます。</p>
+      <h3>スナップ・極トラッキング・数値入力</h3>
+      <p>線・矢印・四角・丸・円弧・多角形などを描くと、すでにある図形の端点・中点・中心・四半円点・交点に自動で吸い付き、緑の印が出ます(<kbd>F3</kbd>でオン/オフ)。角度は、設定した刻み(初期値45°、右のパネルで変更)に近づくと自動で合います(<kbd>F10</kbd>)。<kbd>Shift</kbd>を押しながら描くと、90°刻みに固定されます。</p>
+      <p>線・矢印・四角・丸は、ドラッグせず<b>1回クリック</b>すると数値入力の欄が出ます。長さ(四角は幅と高さ、丸は半径)を打って<kbd>Enter</kbd>で確定します。角度を空にすると画面で動かした向きになり、そのままクリックすると画面の位置で確定、<kbd>Esc</kbd>で中止します。縮尺を設定したページではmmで入力できます。作図中は長さと角度がカーソルの横に表示されます。選んだ線・四角は、右のパネルで長さ・角度・幅・高さを数字で変えられます(最初の点は動きません)。</p>
+      <p>色や太さを変えると、次に描く図形にその設定が引き継がれます。</p>
       <h3>レイヤー</h3>
       <p>ツールバー左の<span class="ui">レイヤー</span>ボタンでパネルを開きます。レイヤーごとに表示/非表示・ロック・色・太さ・線種を設定でき、<span class="ui">図形を選択</span>でそのレイヤーの図形をまとめて選べます。レイヤー「0」以外に描いた図形は、色・太さ・線種がレイヤーに従います(図形ごとに個別指定も可)。非表示のレイヤーはPDFにも書き出されません。レイヤーを削除すると中の図形も消えます(取り消しで戻せます)。</p>
     </section>
@@ -480,7 +484,7 @@ footer { grid-column: 1 / -1; color: var(--muted); font-size: 13px; text-align: 
     </section>
   </main>
 
-  <footer>PDF Files 使い方マニュアル ・ v1.9.0 対応</footer>
+  <footer>PDF Files 使い方マニュアル ・ v1.10.0 対応</footer>
 </div>
 </body>
 </html>
