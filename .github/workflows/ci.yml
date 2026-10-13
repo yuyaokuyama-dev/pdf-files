@@ -32,6 +32,7 @@ jobs:
           node tests/e2e-draw.mjs
           node tests/e2e-draw3.mjs
           node tests/e2e-modify.mjs
+          node tests/e2e-modify2.mjs
           node tests/e2e-doc.mjs
           node tests/e2e-net.mjs
           node tests/e2e-auth.mjs

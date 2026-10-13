@@ -113,3 +113,107 @@ test("オフセット: 多角形の角はマイターで結ぶ", () => {
   assert.ok(close(w2, 8)); // 内側
   assert.ok(close(Math.max(...offsetShape({ id: "p", type: "polygon", pts: sq }, 1, [50, 5]).pts.map((p) => p[0])) - Math.min(...offsetShape({ id: "p", type: "polygon", pts: sq }, 1, [50, 5]).pts.map((p) => p[0])), 12));
 });
+
+import { trimPolyline, extendPolyline, filletLines, chamferLines, stretchShape, splitPolyline, joinChains, explodeShape } from "../js/modify.js";
+
+test("トリム: 2本の線に挟まれた中央の区間を消すと2つに分かれる", () => {
+  const cutters = [[[30, -10], [30, 10]], [[70, -10], [70, 10]]];
+  const r = trimPolyline([[0, 0], [100, 0]], cutters, [50, 0]);
+  assert.equal(r.length, 2);
+  assert.ok(closeP(r[0][1], [30, 0]) && closeP(r[1][0], [70, 0]));
+});
+test("トリム: 端の区間を消すと1つ残る。交点がなければ null", () => {
+  const cutters = [[[30, -10], [30, 10]]];
+  const r = trimPolyline([[0, 0], [100, 0]], cutters, [10, 0]);
+  assert.equal(r.length, 1);
+  assert.ok(closeP(r[0][0], [30, 0]) && closeP(r[0][1], [100, 0]));
+  assert.equal(trimPolyline([[0, 0], [100, 0]], [[[500, 0], [500, 10]]], [10, 0]), null);
+});
+test("トリム: 折れ線も交点で区切れる", () => {
+  const r = trimPolyline([[0, 0], [50, 0], [50, 50]], [[[25, -5], [25, 5]]], [10, 0]);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].length, 3);
+  assert.ok(closeP(r[0][0], [25, 0]));
+});
+test("延長: 端を向きのまま最初の線分まで伸ばす", () => {
+  const r = extendPolyline([[0, 0], [50, 0]], [[[100, -10], [100, 10]], [[200, -10], [200, 10]]], [48, 0]);
+  assert.ok(closeP(r[1], [100, 0]));
+  const r2 = extendPolyline([[0, 0], [50, 0]], [[[-30, -10], [-30, 10]]], [2, 0]);
+  assert.ok(closeP(r2[0], [-30, 0]));
+  assert.equal(extendPolyline([[0, 0], [50, 0]], [[[100, 10], [100, 20]]], [48, 0]), null);
+});
+test("フィレット: 半径0で角がそろう。半径ありで接点と円弧ができる", () => {
+  const l1 = [[0, 0], [40, 0]]; // 手前で止まった横線
+  const l2 = [[100, 100], [100, 20]]; // 縦線(上端 y=20)
+  const p1 = [10, 0];
+  const p2 = [100, 80];
+  const sharp = filletLines(l1, l2, 0, p1, p2);
+  assert.ok(closeP(sharp.l1[0], [100, 0]) && closeP(sharp.l2[0], [100, 0]));
+  assert.equal(sharp.arc, null);
+  // 角 (100,0)、左と下へ伸びる → 内角90°。半径10 → 接点は (90,0) と (100,10)
+  const l1b = [[0, 0], [100, 0]];
+  const l2b = [[100, 0], [100, 100]];
+  const f = filletLines(l1b, l2b, 10, [20, 0], [100, 60]);
+  assert.ok(closeP(f.l1[0], [90, 0]) && closeP(f.l2[0], [100, 10]));
+  assert.ok(closeP(f.arc.pts[0], [90, 10]));
+  assert.ok(close(f.arc.sweep, 90));
+  // 半径が大きすぎる
+  assert.equal(filletLines(l1b, l2b, 500, [20, 0], [100, 60]), null);
+  // 平行
+  assert.equal(filletLines([[0, 0], [10, 0]], [[0, 5], [10, 5]], 1, [1, 0], [1, 5]), null);
+});
+test("フィレット: 円弧の向きは時計回りで接点同士をつなぐ", () => {
+  const f = filletLines([[0, 0], [100, 0]], [[100, 0], [100, 100]], 10, [20, 0], [100, 60]);
+  const a = f.arc;
+  const [c, st] = a.pts;
+  const end = [c[0] + (st[0] - c[0]) * Math.cos((a.sweep * Math.PI) / 180) - (st[1] - c[1]) * Math.sin((a.sweep * Math.PI) / 180), c[1] + (st[0] - c[0]) * Math.sin((a.sweep * Math.PI) / 180) + (st[1] - c[1]) * Math.cos((a.sweep * Math.PI) / 180)];
+  const ends = [f.l1[0], f.l2[0]];
+  const other = closeP(st, ends[0]) ? ends[1] : ends[0];
+  assert.ok(closeP(end, other), JSON.stringify({ st, end, ends }));
+});
+test("面取り: 交点から指定距離で切って斜めの線でつなぐ", () => {
+  const r = chamferLines([[0, 0], [100, 0]], [[100, 0], [100, 100]], 10, 20, [20, 0], [100, 60]);
+  assert.ok(closeP(r.l1[0], [90, 0]) && closeP(r.l2[0], [100, 20]));
+  assert.ok(closeP(r.line[0], [90, 0]) && closeP(r.line[1], [100, 20]));
+  assert.equal(chamferLines([[0, 0], [100, 0]], [[100, 0], [100, 100]], 500, 5, [20, 0], [100, 60]), null);
+});
+test("ストレッチ: 窓に入る頂点だけ動く。全部入っていれば図形ごと動く", () => {
+  const w = { x: 90, y: -10, w: 40, h: 20 };
+  const l = { id: "l", type: "line", pts: [[0, 0], [100, 0]] };
+  const s = stretchShape(l, w, 0, 30, { x: 0, y: 0, w: 100, h: 0 });
+  assert.ok(closeP(s.pts[0], [0, 0]) && closeP(s.pts[1], [100, 30]));
+  const all = stretchShape(l, { x: -10, y: -10, w: 200, h: 20 }, 5, 5, { x: 0, y: 0, w: 100, h: 0 });
+  assert.ok(closeP(all.pts[0], [5, 5]) && closeP(all.pts[1], [105, 5]));
+  assert.equal(stretchShape(l, { x: 500, y: 500, w: 10, h: 10 }, 5, 5, { x: 0, y: 0, w: 100, h: 0 }), null);
+});
+test("ストレッチ: 四角は右の辺を窓で囲むと幅が変わる", () => {
+  const r = { id: "r", type: "rect", pts: [[0, 0], [100, 50]] };
+  const s = stretchShape(r, { x: 90, y: -10, w: 30, h: 70 }, 25, 0, { x: 0, y: 0, w: 100, h: 50 });
+  assert.deepEqual(s.pts, [[0, 0], [125, 50]]);
+  assert.equal(stretchShape(r, { x: 90, y: -10, w: 30, h: 20 }, 25, 0, { x: 0, y: 0, w: 100, h: 50 }), null); // 頂点1つだけは対象外
+});
+test("切断: 点で2つに分かれ、端に近すぎれば null", () => {
+  const [a, b] = splitPolyline([[0, 0], [100, 0]], [40, 3]);
+  assert.ok(closeP(a[1], [40, 0]) && closeP(b[0], [40, 0]) && closeP(b[1], [100, 0]));
+  assert.equal(splitPolyline([[0, 0], [100, 0]], [0.1, 0]), null);
+  const [c, d] = splitPolyline([[0, 0], [50, 0], [50, 50]], [50, 20]);
+  assert.equal(c.length, 3);
+  assert.equal(d.length, 2);
+});
+test("結合: つながる線をひと続きにし、輪になれば閉じる", () => {
+  const r = joinChains([{ id: "a", pts: [[0, 0], [10, 0]] }, { id: "b", pts: [[10, 10], [10, 0]] }, { id: "c", pts: [[50, 50], [60, 60]] }]);
+  assert.equal(r.length, 2);
+  assert.deepEqual(r[0].ids, ["a", "b"]);
+  assert.equal(r[0].pts.length, 3);
+  const loop = joinChains([{ id: "a", pts: [[0, 0], [10, 0]] }, { id: "b", pts: [[10, 0], [10, 10]] }, { id: "c", pts: [[10, 10], [0, 0]] }]);
+  assert.equal(loop.length, 1);
+  assert.ok(loop[0].closed);
+  assert.equal(loop[0].pts.length, 3);
+});
+test("分解: 四角は4本の線、ポリラインは区間ごとの線になる", () => {
+  const e = explodeShape({ id: "r", type: "rect", pts: [[0, 0], [10, 10]], style: { color: "#f00", fill: "#0f0" } });
+  assert.equal(e.length, 4);
+  assert.ok(e.every((l) => l.type === "line" && l.style.color === "#f00" && l.style.fill === "none"));
+  assert.equal(explodeShape({ id: "p", type: "polyline", pts: [[0, 0], [1, 1], [2, 0]] }).length, 2);
+  assert.equal(explodeShape({ id: "l", type: "line", pts: [[0, 0], [1, 1]] }), null);
+});
