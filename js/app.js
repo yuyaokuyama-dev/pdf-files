@@ -8,6 +8,7 @@ import { Thumbs } from "./thumbs.js";
 import { Props } from "./props.js";
 import { LayerPanel } from "./layerpanel.js";
 import { exportPdf, LEVELS } from "./export.js";
+import { pageOf } from "./editdata.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
 import { browseDrive } from "./drivebrowse.js";
@@ -50,7 +51,7 @@ async function loadPdf(bytes) {
 const getPdfPage = async (page) => {
   if (!page.srcId) return null;
   const src = S.model.sources.get(page.srcId);
-  return src ? src.pdf.getPage(page.srcIndex + 1) : null;
+  return src ? pageOf(src.pdf, page.srcIndex + 1) : null;
 };
 
 /* =========================================================
@@ -649,7 +650,7 @@ async function saveOriginal(id) {
     m = isCur ? S.model : await loadProjectModel(id);
     if (!m) throw new Error("この端末に編集データがありません");
     if (m === S.model) S.editor.finishTextEdit?.();
-    const res = await exportPdf(m, { level: "standard", onProgress: (p, msg) => b.update(p, msg) });
+    const res = await exportPdf(m, { level: "standard", embedEdit: true, editImages: !!S.settings.editImages, onProgress: (p, msg) => b.update(p, msg) });
     const patch = { unsaved: false };
     if (how === "handle" || how === "saveas") {
       await writeToHandle(handle, res.bytes);
@@ -1713,11 +1714,11 @@ async function askExport({ title, ok = "作成", nameField = true, extraHtml = "
   return out;
 }
 
-async function runExport(level) {
+async function runExport(level, opts = {}) {
   const b = busy("PDFを作成中…");
   try {
     S.editor.finishTextEdit?.();
-    return await exportPdf(S.model, { level, onProgress: (p, m) => b.update(p, m) });
+    return await exportPdf(S.model, { level, ...opts, onProgress: (p, m) => b.update(p, m) });
   } catch (e) {
     console.error(e);
     toast(`PDFの作成に失敗しました: ${e.message}`, { error: true });
@@ -1799,7 +1800,7 @@ async function buildPagesPdf(ids, onProgress) {
   const m = S.model;
   const pages = ids.map((id) => m.page(id)).filter(Boolean);
   const name = pagesPdfName(pages.map((p) => p.id));
-  const res = await exportPdf({ meta: { name }, pages, sources: m.sources, images: m.images }, { level: S.settings.level, onProgress });
+  const res = await exportPdf({ meta: { name }, pages, sources: m.sources, images: m.images, layers: m.layers }, { level: S.settings.level, onProgress });
   return { bytes: res.bytes, name, count: pages.length };
 }
 
@@ -1985,7 +1986,7 @@ async function saveToDrive() {
       return googleErr(e);
     }
   }
-  const res = await runExport(o.level);
+  const res = await runExport(o.level, { embedEdit: true, editImages: !!S.settings.editImages });
   if (!res) return;
   const fileId = o.extra.mode === "overwrite" ? m.meta.driveId : null;
   m.meta.name = o.name;
@@ -2307,6 +2308,9 @@ async function openSettings() {
       <hr style="border:0;border-top:1px solid var(--line);width:100%">
       <div class="field"><b style="color:var(--ink)">メールの送り方</b>
         <select id="stMail"><option value="api">アプリから直接送信(Gmail連携・自動で添付)</option><option value="app">Gmailを開いて添付する(スマホは共有メニューで添付済み)</option></select></div>
+      <div class="field"><b style="color:var(--ink)">上書き保存・ドライブ保存に入れる編集データ</b>
+        <select id="stEdit"><option value="shapes">図形・文字・レイヤーだけ(軽い)</option><option value="all">写真・スタンプ・署名も含める(容量が増える)</option></select>
+        <span class="note">このアプリで開き直すと、図形とレイヤーを編集できる状態で戻ります。端末に保存・メール送信・ページの書き出しは、編集データを入れません(焼き込み)。</span></div>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stSticky"${S.settings.sticky !== false ? " checked" : ""}> 線・図形・寸法などは、描いたあと選択して調整 → 何もない所をタップで同じツールに戻って続けて描く</label>
       <div class="field"><b style="color:var(--ink)">ボタンの大きさ(ツールバーなど)</b>
         <select id="stUi"><option value="auto">自動(iPadなどは大きめ)</option><option value="normal">標準</option><option value="large">大</option><option value="xlarge">特大</option></select></div>
@@ -2326,6 +2330,7 @@ async function openSettings() {
       G.setPickerMode(d.querySelector("#stPick").value);
       S.settings.palm = d.querySelector("#stPalm").checked;
       S.settings.sticky = d.querySelector("#stSticky").checked;
+      S.settings.editImages = d.querySelector("#stEdit").value === "all";
       S.settings.uiSize = d.querySelector("#stUi").value;
       S.editor.sticky = S.settings.sticky;
       applyUiSize();
@@ -2358,6 +2363,7 @@ async function openSettings() {
       };
       d.querySelector("#stMail").value = S.settings.mailMode === "app" ? "app" : "api";
     d.querySelector("#stUi").value = S.settings.uiSize || "auto";
+    d.querySelector("#stEdit").value = S.settings.editImages ? "all" : "shapes";
     d.querySelector("#stPick").value = G.getPickerMode();
       let st = G.getStart();
       const selEl = d.querySelector("#stStart");

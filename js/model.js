@@ -1,5 +1,6 @@
 // ドキュメントモデル: 取り込んだPDF(sources)・ページ構成(pages)・画像(images)・取り消し履歴。
 import { uid } from "./store.js";
+import { readEdit, hideEditLayers, mergeLayers, remapShapes } from "./editdata.js";
 import { baseLayer, newLayerId, uniqueName, normalizeLayers, deleteLayerFrom, stampNewShape, BASE_LAYER_ID } from "./layers.js";
 
 export const A4 = { w: 595.28, h: 841.89 };
@@ -83,11 +84,27 @@ export class DocModel {
   async addSource({ name, bytes, pdf }, atIndex) {
     const id = "s" + uid();
     this.sources.set(id, { id, name, bytes, pdf });
+    // 「編集用データ」入りで保存したPDFなら、図形とレイヤーを編集できる状態で戻す
+    const edit = await readEdit(pdf);
+    const restored = !!edit && edit.pages.length === pdf.numPages;
+    let idMap = new Map();
+    if (restored) {
+      const m = mergeLayers(this.layers, edit.layers);
+      this.layers = m.layers;
+      idMap = m.idMap;
+      this.sources.get(id).edit = true;
+      pdf.pfOc = hideEditLayers(pdf);
+      for (const [iid, url] of Object.entries(edit.images || {})) if (typeof url === "string" && !this.images.has(iid)) this.images.set(iid, url);
+    }
     const pages = [];
     for (let i = 0; i < pdf.numPages; i++) {
       const pg = await pdf.getPage(i + 1);
       const vp = pg.getViewport({ scale: 1 });
-      pages.push({ id: "p" + uid() + i, srcId: id, srcIndex: i, rot: 0, w: vp.width, h: vp.height, baseRot: pg.rotate || 0, shapes: [], scale: null });
+      const ed = restored ? edit.pages[i] : null;
+      pages.push({
+        id: "p" + uid() + i, srcId: id, srcIndex: i, rot: 0, w: vp.width, h: vp.height, baseRot: pg.rotate || 0,
+        shapes: ed ? remapShapes(ed.shapes, idMap) : [], scale: ed?.scale ?? null,
+      });
     }
     if (atIndex == null) this.pages.push(...pages);
     else this.pages.splice(atIndex, 0, ...pages);
@@ -231,7 +248,7 @@ export class DocModel {
     return {
       id: this.meta.projectId,
       meta: { ...this.meta },
-      sources: [...this.sources.values()].map((s) => ({ id: s.id, name: s.name, bytes: s.bytes })),
+      sources: [...this.sources.values()].map((s) => ({ id: s.id, name: s.name, bytes: s.bytes, ...(s.edit ? { edit: true } : {}) })),
       pages: this.pages,
       images: [...this.images.entries()],
       layers: this.layers,
@@ -242,7 +259,11 @@ export class DocModel {
   static async restore(data, loadPdf) {
     const m = new DocModel();
     m.meta = { ...m.meta, ...data.meta, projectId: data.id };
-    for (const s of data.sources) m.sources.set(s.id, { id: s.id, name: s.name, bytes: s.bytes, pdf: await loadPdf(s.bytes) });
+    for (const s of data.sources) {
+      const pdf = await loadPdf(s.bytes);
+      if (s.edit) pdf.pfOc = hideEditLayers(pdf);
+      m.sources.set(s.id, { id: s.id, name: s.name, bytes: s.bytes, pdf, ...(s.edit ? { edit: true } : {}) });
+    }
     m.pages = data.pages;
     m.images = new Map(data.images);
     m.layers = normalizeLayers(data.layers);

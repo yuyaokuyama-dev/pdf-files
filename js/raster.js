@@ -188,7 +188,7 @@ export async function renderPageJpeg({ pdfPage, rotation, w, h, overlaySvg, dpi 
   g.fillRect(0, 0, c.width, c.height);
   if (pdfPage) {
     const vp = pdfPage.getViewport({ scale, rotation });
-    await pdfPage.render({ canvasContext: g, canvas: c, viewport: vp }).promise;
+    await pdfPage.render({ canvasContext: g, canvas: c, viewport: vp, optionalContentConfigPromise: pdfPage.pfOc }).promise;
   }
   if (overlaySvg) {
     const url = URL.createObjectURL(new Blob([overlaySvg], { type: "image/svg+xml" }));

@@ -231,7 +231,7 @@ export class Editor {
     g.fillRect(0, 0, w, h);
     if (pdfPage) {
       const vp = pdfPage.getViewport({ scale: w / page.w, rotation: ((page.baseRot || 0) + page.rot) % 360 });
-      const task = pdfPage.render({ canvasContext: g, canvas: tmp, viewport: vp });
+      const task = pdfPage.render({ canvasContext: g, canvas: tmp, viewport: vp, optionalContentConfigPromise: pdfPage.pfOc });
       el.task = task;
       try {
         await task.promise;
