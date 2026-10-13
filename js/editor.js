@@ -1,5 +1,5 @@
 // エディタ本体: ページ表示・ズーム・描画ツール・選択/移動/頂点編集・テキスト編集
-import { defaultAngleRadius, angleBetween, chainDims, circleDimPts } from "./dimx.js";
+import { defaultAngleRadius, angleBetween, chainDims, circleDimPts, dimValueText, refreshedDimText } from "./dimx.js";
 import {
   dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, dimOpts, simplify,
   arcGeometry, arcAngleOf, arcBounds, clampSweep, ARC_MIN, ARC_MAX, eraseStroke,
@@ -10,7 +10,7 @@ import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
 import { isLayerLocked, isLayerVisible, BL_KEYS, stampNewShape } from "./layers.js";
 import { DrawAid, DYN_TOOLS } from "./drawaid.js";
 import { LEADER_DEFAULT } from "./leader.js";
-import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, extendPolyline, filletLines, chamferLines, stretchShape, splitPolyline, joinChains, explodeShape } from "./modify.js";
+import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, extendPolyline, filletLines, chamferLines, stretchShape, roundCorners, splitPolyline, joinChains, explodeShape } from "./modify.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "leader", "dim", "calib", "measure", "sign", "stamp"]);
@@ -1490,6 +1490,7 @@ export class Editor {
         q = this.clampToPage(r.p, pageId);
         hMark = r.mark;
         shape.pts[idx] = q;
+        if (shape.type === "dim") shape.text = refreshedDimText(shape.text, dist(shape.pts[0], shape.pts[1]), page.scale); // 端点を動かしたら数値も測り直す
       }
       el.draft.replaceChildren();
       this.aid.drawMark(el.draft, hMark);
@@ -1905,8 +1906,8 @@ export class Editor {
       dimangle: ["角の頂点をタップ", "1本目の線上の点をタップ", "2本目の線上の点をタップ"],
       dimseries: ["最初の測点をタップ", "次の測点をタップ(続けて何度でも。終わるには「完了」か同じ点を2回タップ)"],
       dimpara: ["基準の測点をタップ", "次の測点をタップ(続けて何度でも。終わるには「完了」か同じ点を2回タップ)"],
-      move: ["基点をタップ", "移動先をタップ"],
-      copy: ["基点をタップ", "コピー先をタップ(続けて何度でも。終わるには中止)"],
+      move: ["基点をタップ(または基点から移動先までドラッグ)", "移動先をタップ"],
+      copy: ["基点をタップ(または基点からコピー先までドラッグ)", "コピー先をタップ(続けて何度でも。終わるには中止)"],
       rotate: ["回転の中心(基点)をタップ"],
       scale: ["尺度の基点をタップ"],
       mirror: ["鏡像の軸の1点目をタップ", "軸の2点目をタップ"],
@@ -1915,6 +1916,7 @@ export class Editor {
     }[name];
     if (!prompts) return;
     this.cmd = { name, opts, pageId: null, prompts, pts: [], hover: null, mark: null, picks: [] };
+    this.pagesEl.classList.toggle("cmd-drag", name === "move" || name === "copy"); // 指でドラッグしても画面が動かないようにする
     this.cmdMoveFn = (ev) => {
       if (!this.cmd) return;
       const r = this.aid.resolve(this.clampToPage(this.pt(ev, this.cmd.pageId), this.cmd.pageId), { pts: this.cmd.snapPts, p0: this.cmd.pts[this.cmd.pts.length - 1] || null, ev });
@@ -1936,6 +1938,7 @@ export class Editor {
     if (!this.cmd) return;
     const el = this.cmd.pageId && this.els.get(this.cmd.pageId);
     el?.svg.removeEventListener("pointermove", this.cmdMoveFn);
+    this.pagesEl.classList.remove("cmd-drag");
     el?.draft.replaceChildren();
     this.cmd = null;
     this.emit("cmd", null);
@@ -2004,11 +2007,8 @@ export class Editor {
       }
     } else if (c.name === "move" || c.name === "copy") {
       if (c.pts.length === 2) {
-        const [a, b] = c.pts;
-        this.applyMatrices([moveM(b[0] - a[0], b[1] - a[1])], { copy: c.name === "copy" });
-        if (c.name === "copy") c.pts = [a]; // 同じ基点から続けてコピー
-        else return this.cancelCommand();
-      }
+        if (this.applyMoveCopy(c)) return;
+      } else this.armDragDrop(e, c, pageId);
     } else if (c.name === "rotate") {
       this.applyMatrices([rotateM(q, o.angle)], { copy: !!o.copy });
       return this.cancelCommand();
@@ -2030,6 +2030,73 @@ export class Editor {
     this.drawCmdDraft();
   }
 
+  /** 移動・コピーの2点(基点・移動先)が揃ったとき実行する。続きがあれば false、移動で終われば true */
+  applyMoveCopy(c) {
+    const [a, b] = c.pts;
+    this.applyMatrices([moveM(b[0] - a[0], b[1] - a[1])], { copy: c.name === "copy" });
+    if (c.name === "copy") {
+      c.pts = [a]; // 同じ基点から続けてコピー
+      return false;
+    }
+    this.cancelCommand();
+    return true;
+  }
+  /** 基点を押したまま移動先までドラッグして離すと、離した点(吸着あり)を移動先にする。ちょん押し(タップ)なら従来どおり次のタップを待つ */
+  armDragDrop(e, c, pageId) {
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const done = () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", done);
+    };
+    const up = (ev) => {
+      done();
+      if (this.cmd !== c || c.pts.length !== 1) return;
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) return; // タップ
+      const r = this.aid.resolve(this.clampToPage(this.pt(ev, pageId), pageId), { pts: c.snapPts, p0: c.pts[0], ev });
+      c.pts.push(this.clampToPage(r.p, pageId));
+      if (this.applyMoveCopy(c)) return;
+      this.emit("cmd", { text: c.prompts[1] });
+      this.drawCmdDraft();
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", done);
+  }
+
+  /** 四角・多角形・ポリラインの、タップした位置に一番近い角を丸める(四角は多角形に変わる) */
+  roundOneCorner(f, p, r) {
+    const sh = f.shape;
+    if (!(r > 0)) return this.emit("toast", { text: "半径を0より大きくしてください(0では丸められません)" });
+    const pts = sh.type === "rect" ? rectPoints(sh.pts[0], sh.pts[1]) : sh.pts;
+    let idx = 0;
+    pts.forEach((v, i) => {
+      if (dist(v, p) < dist(pts[idx], p)) idx = i;
+    });
+    const out = roundCorners(pts, sh.type !== "polyline", r, [idx]);
+    if (!out) return this.emit("toast", { text: "この角は丸められません(端の点、またはほぼ一直線です)" });
+    this.model.mutate(() => {
+      if (sh.type === "rect") sh.type = "polygon";
+      sh.pts = out;
+    });
+  }
+  /** 選んだ四角・多角形・ポリラインの角を全部丸める */
+  roundSelectedCorners(r) {
+    const items = this.selectedItems().filter((x) => !x.shape.locked && ["rect", "polygon", "polyline"].includes(x.shape.type));
+    if (!items.length) return this.emit("toast", { text: "四角・多角形・ポリラインを選んでください" });
+    if (!(r > 0)) return this.emit("toast", { text: "半径を0より大きくしてください" });
+    let n = 0;
+    this.model.mutate(() => {
+      for (const { shape: sh } of items) {
+        const out = roundCorners(sh.type === "rect" ? rectPoints(sh.pts[0], sh.pts[1]) : sh.pts, sh.type !== "polyline", r);
+        if (!out) continue;
+        if (sh.type === "rect") sh.type = "polygon";
+        sh.pts = out;
+        n++;
+      }
+    });
+    if (!n) this.emit("toast", { text: "丸められる角がありませんでした" });
+  }
+
   /** 直列・並列寸法: 集めた測点から寸法をまとめて作る */
   finishCommand() {
     const c = this.cmd;
@@ -2045,7 +2112,7 @@ export class Editor {
     this.model.mutate(() => {
       for (const it of items) {
         const L = dist(it.pts[0], it.pts[1]);
-        const text = sc ? formatLength(L / sc.ptsPerUnit, sc.unit).replace(/\s?(mm|cm|m)$/, "") : String(Math.round(L));
+        const text = dimValueText(L, sc);
         const sh = { ...base, id: "h" + uid(), pts: it.pts, off: it.off, text, style: { ...base.style } };
         stampNewShape(sh, this.model.curLayer);
         page.shapes.push(sh);
@@ -2157,6 +2224,7 @@ export class Editor {
       this.model.mutate(() => (sh.pts = ext));
       return;
     }
+    if (name === "fillet" && !c.picks.length && (sh.type === "rect" || sh.type === "polygon" || sh.type === "polyline")) return this.roundOneCorner(f, p, c.opts.radius);
     // フィレット・面取り: 線を2本
     if (sh.type !== "line") return warn("線(直線)をタップしてください");
     c.picks.push({ shape: sh, page: f.page, p });
@@ -2202,6 +2270,7 @@ export class Editor {
         if (sh.locked || !isLayerVisible(sh.layer || "0", this.model.layers)) return;
         const t = stretchShape(sh, win, dx, dy, shapeBounds(sh, page));
         if (t) {
+          if (t.type === "dim") t.text = refreshedDimText(t.text, dist(t.pts[0], t.pts[1]), page.scale);
           page.shapes[i] = t;
           n++;
         }

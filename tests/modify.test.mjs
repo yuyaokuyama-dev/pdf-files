@@ -217,3 +217,27 @@ test("分解: 四角は4本の線、ポリラインは区間ごとの線にな�
   assert.equal(explodeShape({ id: "p", type: "polyline", pts: [[0, 0], [1, 1], [2, 0]] }).length, 2);
   assert.equal(explodeShape({ id: "l", type: "line", pts: [[0, 0], [1, 1]] }), null);
 });
+
+test("角丸め: 四角の1つの角を丸める(角が減って円弧の点が増える)", async () => {
+  const { roundCorners } = await import("../js/modify.js");
+  const sq = [[0, 0], [100, 0], [100, 100], [0, 100]];
+  const out = roundCorners(sq, true, 20, [1]);
+  assert.ok(out.length > 4);
+  assert.ok(!out.some((p) => p[0] === 100 && p[1] === 0)); // 元の角は無くなる
+  assert.ok(out.some((p) => Math.abs(p[0] - 80) < 0.01 && Math.abs(p[1]) < 0.01)); // 接点
+  assert.ok(out.some((p) => Math.abs(p[0] - 100) < 0.01 && Math.abs(p[1] - 20) < 0.01));
+  // 弧の中央は角から r(√2-1) だけ内側
+  const dmin = Math.min(...out.map((p) => Math.hypot(p[0] - 100, p[1])));
+  assert.ok(Math.abs(dmin - 20 * (Math.SQRT2 - 1)) < 0.3, String(dmin));
+});
+test("角丸め: 全部丸める・半径は辺の半分まで・端や一直線は対象外", async () => {
+  const { roundCorners } = await import("../js/modify.js");
+  const sq = [[0, 0], [100, 0], [100, 100], [0, 100]];
+  const all = roundCorners(sq, true, 1000, null);
+  assert.ok(all.every((p) => p[0] >= -0.01 && p[0] <= 100.01 && p[1] >= -0.01 && p[1] <= 100.01));
+  const open = roundCorners([[0, 0], [50, 0], [50, 50]], false, 10, null);
+  assert.deepEqual(open[0], [0, 0]);
+  assert.deepEqual(open[open.length - 1], [50, 50]);
+  assert.equal(roundCorners([[0, 0], [50, 0], [100, 0]], false, 10, null), null);
+  assert.equal(roundCorners(sq, true, 0), null);
+});

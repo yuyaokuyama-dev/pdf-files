@@ -1,5 +1,5 @@
 // 寸法の拡張(角度寸法・直列/並列寸法・半径/直径寸法)の幾何(DOM非依存・node でテスト可能)
-import { arrowHead } from "./geometry.js";
+import { arrowHead, formatLength } from "./geometry.js";
 
 const dist = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 const f = (n) => +n.toFixed(2);
@@ -114,4 +114,16 @@ export function leaderTipShape(leader, kind, endSize = 6) {
   const es = Math.max(0.5, endSize);
   if (kind === "dot") return { type: "dot", c: c0, r: es / 2 };
   return { type: "arrow", poly: arrowHead(c1, c0, Math.min(es * 2, dist(c0, c1) / 2 || es * 2)) };
+}
+
+/** 2点間の長さ L(pt)から寸法の数値文字列。縮尺があれば実寸(単位なし)、なければ pt を丸めた値 */
+export function dimValueText(L, scale) {
+  return scale ? formatLength(L / scale.ptsPerUnit, scale.unit).replace(/\s?(mm|cm|m)$/, "") : String(Math.round(L));
+}
+
+/** 端点を動かしたあとの寸法の文字。数字の前の記号(R・⌀ など)は残す。空欄にしてある寸法は触らない */
+export function refreshedDimText(oldText, L, scale) {
+  if (!oldText) return oldText;
+  const prefix = /^[^0-9]*/.exec(oldText)[0];
+  return prefix + dimValueText(L, scale);
 }

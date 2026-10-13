@@ -77,3 +77,14 @@ test("寸法値の引出線の先端: 黒丸・矢印・なし", () => {
   assert.equal(leaderTipShape(l, "none", 6), null);
   assert.equal(leaderTipShape(null, "dot"), null);
 });
+
+test("寸法の数値の測り直し: 縮尺あり・なし、R/⌀ の頭は残す", async () => {
+  const { dimValueText, refreshedDimText } = await import("../js/dimx.js");
+  const sc = { ptsPerUnit: 0.1, unit: "mm" };
+  assert.equal(dimValueText(100, null), "100");
+  assert.equal(dimValueText(100, sc), "1000");
+  assert.equal(refreshedDimText("3600", 36, sc), "360");
+  assert.equal(refreshedDimText("R50", 10, sc), "R100");
+  assert.equal(refreshedDimText("⌀80", 20, null), "⌀20");
+  assert.equal(refreshedDimText("", 20, null), "");
+});

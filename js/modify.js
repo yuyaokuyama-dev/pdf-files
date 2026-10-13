@@ -413,6 +413,59 @@ export function filletLines(l1, l2, r, p1, p2) {
   return { l1: [T1, c.F1], l2: [T2, c.F2], arc: { pts: [C, cross > 0 ? T1 : T2], sweep } };
 }
 
+/**
+ * 四角・多角形・ポリラインの角を半径 r の円弧(折れ線で近似)で丸める。
+ * only: 丸める頂点の番号(省略なら全部)。端(開いたポリラインの両端)は丸めない。
+ * 半径は両隣の辺の長さに収まるよう自動で小さくなる(全部丸めるときは辺の半分まで)。変わらなければ null
+ */
+export function roundCorners(pts, closed, r, only = null) {
+  if (!(r > 0) || pts.length < 3) return null;
+  const n = pts.length;
+  const all = only == null;
+  const out = [];
+  let changed = false;
+  for (let i = 0; i < n; i++) {
+    const V = pts[i];
+    const edge = !closed && (i === 0 || i === n - 1);
+    if (edge || (!all && !only.includes(i))) {
+      out.push(V);
+      continue;
+    }
+    const P = pts[(i + n - 1) % n];
+    const Q = pts[(i + 1) % n];
+    const l1 = dist(V, P);
+    const l2 = dist(V, Q);
+    const cosT = l1 && l2 ? dot(unit(sub(P, V)), unit(sub(Q, V))) : 1;
+    const th = Math.acos(Math.max(-1, Math.min(1, cosT)));
+    if (th < 1e-3 || th > Math.PI - 1e-3) {
+      out.push(V);
+      continue;
+    }
+    const share = all ? 0.5 : 1;
+    let t = r / Math.tan(th / 2);
+    t = Math.min(t, l1 * share, l2 * share);
+    const rr = t * Math.tan(th / 2);
+    const u1 = unit(sub(P, V));
+    const u2 = unit(sub(Q, V));
+    const T1 = [V[0] + u1[0] * t, V[1] + u1[1] * t];
+    const T2 = [V[0] + u2[0] * t, V[1] + u2[1] * t];
+    const bis = unit([u1[0] + u2[0], u1[1] + u2[1]]);
+    const k = rr / Math.sin(th / 2);
+    const C = [V[0] + bis[0] * k, V[1] + bis[1] * k];
+    const a1 = Math.atan2(T1[1] - C[1], T1[0] - C[0]);
+    let d = Math.atan2(T2[1] - C[1], T2[0] - C[0]) - a1;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    const seg = Math.max(3, Math.ceil((Math.abs(d) * 180) / Math.PI / 12));
+    for (let j = 0; j <= seg; j++) {
+      const a = a1 + (d * j) / seg;
+      out.push([+(C[0] + rr * Math.cos(a)).toFixed(3), +(C[1] + rr * Math.sin(a)).toFixed(3)]);
+    }
+    changed = true;
+  }
+  return changed ? out : null;
+}
+
 /** 面取り: 交点から d1, d2 の距離で2本の線を切り、斜めの線でつなぐ。{ l1, l2, line:[a,b] }。作れなければ null */
 export function chamferLines(l1, l2, d1, d2, p1, p2) {
   const c = corner(l1, l2, p1, p2);

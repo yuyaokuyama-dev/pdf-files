@@ -35,6 +35,7 @@ jobs:
           node tests/e2e-modify2.mjs
           node tests/e2e-leader.mjs
           node tests/e2e-dimx.mjs
+          node tests/e2e-polish.mjs
           node tests/e2e-doc.mjs
           node tests/e2e-net.mjs
           node tests/e2e-auth.mjs

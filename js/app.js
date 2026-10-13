@@ -422,13 +422,24 @@ async function modifyMenu(anchor) {
     { label: "トリム(交点までを消す)", icon: "eraser", onClick: () => ed.startCommand("trim") },
     { label: "延長(次の図形まで伸ばす)", icon: "line", onClick: () => ed.startCommand("extend") },
     {
-      label: "フィレット(角を丸める)",
+      label: "フィレット(線の角・四角や多角形の角を丸める)",
       icon: "arc",
       onClick: async () => {
         const r = await ask("フィレット", "半径(0なら角をそろえるだけ)", mv.radius);
         if (r == null) return;
         mv.radius = r;
         ed.startCommand("fillet", { radius: r * k });
+      },
+    },
+    {
+      label: "角を全部丸める(選んだ四角・多角形)",
+      icon: "rect",
+      disabled: !sel,
+      onClick: async () => {
+        const r = await ask("角を全部丸める", "半径", mv.radius);
+        if (r == null) return;
+        mv.radius = r;
+        ed.roundSelectedCorners(r * k);
       },
     },
     {
@@ -450,6 +461,8 @@ async function modifyMenu(anchor) {
     { label: "直列寸法(測点を順に並べる)", icon: "dim", onClick: () => ed.startCommand("dimseries") },
     { label: "並列寸法(基準点から各点まで)", icon: "dim", onClick: () => ed.startCommand("dimpara") },
     { header: "選んだ図形に対して" },
+    { label: "移動(基点→移動先をタップ)", icon: "hand", disabled: !sel, onClick: () => ed.startCommand("move") },
+    { label: "コピー(基点→コピー先をタップ)", icon: "copy", disabled: !sel, onClick: () => ed.startCommand("copy") },
     { label: "結合(つながる線をひとつに)", icon: "polygon", disabled: sel < 2, onClick: () => ed.joinSelected() },
     { label: "分解(四角・多角形を線にばらす)", icon: "rect", disabled: !sel, onClick: () => ed.explodeSelected() },
   ]);
@@ -2282,7 +2295,7 @@ async function openHistory() {
     ? `<button type="button" class="btn sm primary" data-save="${r.id}" title="${esc(saveOriginalLabel(r))}">保存</button>`
     : "");
   const localHtml = recents.length
-    ? recents.map((r) => `<div class="item"><img src="${r.thumb || "icons/icon-192.png"}" alt=""><div class="meta"><div class="name-row"><div class="name">${esc(r.name)}${state(r)}</div>${saveBtn(r)}</div><div class="sub">${fmtDate(r.updatedAt)} ・ ${r.pages}ページ${r.unsaved ? ' ・ <b class="unsaved">未保存(端末内に一時保存中)</b>' : r.driveId ? " ・ Drive保存済み" : " ・ 保存済み"}</div></div><button class="btn" data-open="${r.id}">開く</button><button class="btn danger icon" data-del="${r.id}" aria-label="削除">${icon("trash", 18)}</button></div>`).join("")
+    ? recents.map((r) => `<div class="item"><img src="${r.thumb || "icons/icon-192.png"}" alt=""><div class="meta"><div class="name-row"><div class="name">${esc(r.name)}${state(r)}</div>${saveBtn(r)}</div><div class="sub">${fmtDate(r.updatedAt)} ・ ${r.pages}ページ${r.unsaved ? ' ・ <b class="unsaved">未保存(端末内に一時保存中)</b>' : r.driveId ? " ・ Drive保存済み" : " ・ 保存済み"}</div><div class="item-btns"><button class="btn" data-open="${r.id}">開く</button><button class="btn danger icon" data-del="${r.id}" aria-label="削除">${icon("trash", 18)}</button></div></div></div>`).join("")
     : '<p class="note">履歴はまだありません。</p>';
   await dialog({
     title: "履歴",
@@ -2334,7 +2347,7 @@ async function openHistory() {
         try {
           const files = await G.listDriveFiles();
           box.innerHTML = files.length
-            ? files.map((f) => `<div class="item"><div class="meta"><div class="name">${esc(f.name)}</div><div class="sub">${fmtDate(f.modifiedTime)}${f.size ? " ・ " + fmtBytes(+f.size) : ""}</div></div><button class="btn" data-drive="${f.id}">開く</button></div>`).join("")
+            ? files.map((f) => `<div class="item"><div class="meta"><div class="name">${esc(f.name)}</div><div class="sub">${fmtDate(f.modifiedTime)}${f.size ? " ・ " + fmtBytes(+f.size) : ""}</div><div class="item-btns"><button class="btn" data-drive="${f.id}">開く</button></div></div></div>`).join("")
             : '<p class="note">まだファイルがありません。「保存・出力 → Googleドライブに保存」で保存すると、ここに表示されます。</p>';
           box.onclick = (e) => {
             const b = e.target.closest("[data-drive]");
