@@ -110,6 +110,11 @@ export function transformShape(shape, m, opts = {}) {
     case "measure":
       s.pts = shape.pts.map(map);
       return s;
+    case "dimang": {
+      s.pts = shape.pts.map(map);
+      if (shape.r != null) s.r = shape.r * m.k;
+      return s;
+    }
     case "dim": {
       s.pts = shape.pts.map(map);
       s.off = (shape.off ?? 24) * m.k * (m.flip ? -1 : 1);

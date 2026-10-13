@@ -1,12 +1,13 @@
 // エディタ本体: ページ表示・ズーム・描画ツール・選択/移動/頂点編集・テキスト編集
+import { defaultAngleRadius, angleBetween, chainDims, circleDimPts } from "./dimx.js";
 import {
   dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, dimOpts, simplify,
   arcGeometry, arcAngleOf, arcBounds, clampSweep, ARC_MIN, ARC_MAX, eraseStroke,
-  arcThrough, regularPolygonPts, ellipsePolygonPts,
+  arcThrough, regularPolygonPts, ellipsePolygonPts, formatLength,
 } from "./geometry.js";
 import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, textCorners, fontCss, labelFor, arcLines } from "./render.js";
 import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
-import { isLayerLocked, isLayerVisible, BL_KEYS } from "./layers.js";
+import { isLayerLocked, isLayerVisible, BL_KEYS, stampNewShape } from "./layers.js";
 import { DrawAid, DYN_TOOLS } from "./drawaid.js";
 import { LEADER_DEFAULT } from "./leader.js";
 import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, extendPolyline, filletLines, chamferLines, stretchShape, splitPolyline, joinChains, explodeShape } from "./modify.js";
@@ -45,7 +46,7 @@ function edgesOf(sh) {
   return null;
 }
 
-const PICK_CMDS = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch"]);
+const PICK_CMDS = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch", "dimradius", "dimdiameter"]);
 /** 1キーで切り替えるツール・コマンド(パソコン) */
 const TOOL_KEYS = { v: "select", w: "marquee", n: "pen", l: "line", r: "rect", c: "ellipse", a: "arc", p: "polygon", o: "cloud", t: "text", q: "leader", d: "dim", e: "eraser", h: "hand", m: "cmd:move", k: "cmd:copy", x: "cmd:explode", j: "cmd:join" };
 
@@ -1646,7 +1647,7 @@ export class Editor {
     const st = sh.style || {};
     if (sh.type !== "text") for (const k of ["color", "width", "fill", "fillOpacity", "dash", "opacity"]) if (st[k] !== undefined) this.style[k] = st[k];
     if (sh.type === "text") Object.assign(this.textStyle, { size: sh.size, font: sh.font || "gothic", bold: !!sh.bold, color: sh.color || st.color });
-    if (sh.type === "dim" || sh.type === "measure") {
+    if (sh.type === "dim" || sh.type === "dimang" || sh.type === "measure") {
       this.dimSize = sh.size;
       this.dimEnd = { style: sh.endStyle ?? "arrow", size: sh.endSize ?? (sh.size || 12) / 2 };
     }
@@ -1887,7 +1888,7 @@ export class Editor {
    */
   startCommand(name, opts = {}) {
     this.cancelCommand();
-    const PICK = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch"]); // 図形を選ばずに始めるコマンド
+    const PICK = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch", "dimradius", "dimdiameter", "dimangle", "dimseries", "dimpara"]); // 図形を選ばずに始めるコマンド
     if (!isSelectTool(this.tool)) this.setTool("select");
     const items = this.selectedItems().filter((f) => !f.shape.locked);
     if (!PICK.has(name) && !items.length) return this.emit("toast", { text: "先に図形を選んでください" });
@@ -1899,6 +1900,11 @@ export class Editor {
       chamfer: ["1本目の線の、残す側をタップ", "2本目の線の、残す側をタップ"],
       break: ["線を切りたい位置をタップ(続けて何度でも)"],
       stretch: ["動かしたい部分を囲む窓の1つめの角をタップ", "窓の2つめの角をタップ", "基点をタップ", "移動先をタップ"],
+      dimradius: ["半径を測る円・円弧をタップ", "寸法を入れる向きの点をタップ"],
+      dimdiameter: ["直径を測る円・円弧をタップ", "寸法を入れる向きの点をタップ"],
+      dimangle: ["角の頂点をタップ", "1本目の線上の点をタップ", "2本目の線上の点をタップ"],
+      dimseries: ["最初の測点をタップ", "次の測点をタップ(続けて何度でも。終わるには「完了」か同じ点を2回タップ)"],
+      dimpara: ["基準の測点をタップ", "次の測点をタップ(続けて何度でも。終わるには「完了」か同じ点を2回タップ)"],
       move: ["基点をタップ", "移動先をタップ"],
       copy: ["基点をタップ", "コピー先をタップ(続けて何度でも。終わるには中止)"],
       rotate: ["回転の中心(基点)をタップ"],
@@ -1917,7 +1923,7 @@ export class Editor {
       this.drawCmdDraft();
     };
     if (items.length) this.bindCmdPage(items[0].page.id);
-    this.emit("cmd", { text: prompts[0] });
+    this.emit("cmd", { text: prompts[0], done: name === "dimseries" || name === "dimpara" ? true : undefined });
   }
   /** コマンドの対象ページを決めて、点の吸い付き候補と動きの追従を用意する */
   bindCmdPage(pageId) {
@@ -1969,8 +1975,28 @@ export class Editor {
       this.model.mutate(() => f.page.shapes.push(t));
       return;
     }
+    if (c.name === "dimseries" || c.name === "dimpara") {
+      const last = c.pts[c.pts.length - 1];
+      if (last && dist(last, q) < 3) return this.finishCommand();
+      c.pts.push(q);
+      this.emit("cmd", { text: c.prompts[Math.min(c.pts.length, c.prompts.length - 1)], done: true });
+      return this.drawCmdDraft();
+    }
     c.pts.push(q);
-    if (c.name === "stretch") {
+    if (c.name === "dimangle") {
+      if (c.pts.length === 3) {
+        const [v, a, b] = c.pts;
+        const r = defaultAngleRadius(v, a, b);
+        if (angleBetween(v, a, b) == null) {
+          c.pts = [];
+          this.emit("cmd", { text: c.prompts[0] });
+          return this.emit("toast", { text: "角度が作れません。頂点と別の2点をタップしてください" });
+        }
+        const sh = this.addAndSelect(pageId, { type: "dimang", pts: [v, a, b], r, size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, style: { ...this.style, width: Math.min(this.style.width, 2) } });
+        this.cancelCommand();
+        return sh;
+      }
+    } else if (c.name === "stretch") {
       if (c.pts.length === 4) {
         const [a, b, base, to] = c.pts;
         this.stretchWindow({ x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) }, to[0] - base[0], to[1] - base[1]);
@@ -2004,6 +2030,72 @@ export class Editor {
     this.drawCmdDraft();
   }
 
+  /** 直列・並列寸法: 集めた測点から寸法をまとめて作る */
+  finishCommand() {
+    const c = this.cmd;
+    if (!c) return;
+    const { name, pageId, pts } = c;
+    if (pts.length < 2) return this.emit("toast", { text: "測点を2つ以上タップしてください" });
+    const page = this.model.page(pageId);
+    const sc = page?.scale;
+    const size = this.dimSize;
+    const items = chainDims(pts, name === "dimpara" ? "parallel" : "series", 24, size);
+    const base = { type: "dim", size, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, style: { ...this.style, width: Math.min(this.style.width, 2) } };
+    const ids = [];
+    this.model.mutate(() => {
+      for (const it of items) {
+        const L = dist(it.pts[0], it.pts[1]);
+        const text = sc ? formatLength(L / sc.ptsPerUnit, sc.unit).replace(/\s?(mm|cm|m)$/, "") : String(Math.round(L));
+        const sh = { ...base, id: "h" + uid(), pts: it.pts, off: it.off, text, style: { ...base.style } };
+        stampNewShape(sh, this.model.curLayer);
+        page.shapes.push(sh);
+        ids.push(sh.id);
+      }
+    });
+    this.cancelCommand();
+    if (ids.length) this.selectCreated(pageId, ids[ids.length - 1]);
+  }
+  /** 半径・直径寸法: 円か円弧をタップ → 向きの点をタップ */
+  circleDimDown(e, pageId, p) {
+    const c = this.cmd;
+    const kind = c.name === "dimdiameter" ? "diameter" : "radius";
+    if (!c.picks.length) {
+      // 重なった寸法などは飛ばして、下にある円・円弧を探す
+      let sh = null;
+      for (const n of document.elementsFromPoint(e.clientX, e.clientY)) {
+        const id = n.closest?.(".shape")?.dataset.id;
+        const f = id && this.model.findShape(id);
+        if (f && !f.shape.locked && (f.shape.type === "arc" || f.shape.type === "ellipse")) {
+          sh = f.shape;
+          break;
+        }
+      }
+      let circ = null;
+      if (sh?.type === "arc") circ = { center: sh.pts[0], r: dist(sh.pts[0], sh.pts[1]) };
+      else if (sh?.type === "ellipse") {
+        const rx = Math.abs(sh.pts[1][0] - sh.pts[0][0]) / 2;
+        const ry = Math.abs(sh.pts[1][1] - sh.pts[0][1]) / 2;
+        if (Math.abs(rx - ry) < 0.5 && !sh.angle) circ = { center: [(sh.pts[0][0] + sh.pts[1][0]) / 2, (sh.pts[0][1] + sh.pts[1][1]) / 2], r: rx };
+      }
+      if (!circ || !(circ.r > 0)) return this.emit("toast", { text: "円・円弧をタップしてください(楕円は対象外です)" });
+      c.picks.push(circ);
+      c.snapPts = c.snapPts || [];
+      return this.emit("cmd", { text: c.prompts[1] });
+    }
+    const { center, r } = c.picks[0];
+    const q = this.aid.resolve(this.clampToPage(p, pageId), { pts: c.snapPts, ev: e }).p;
+    if (dist(center, q) < 1) return this.emit("toast", { text: "中心から離れた点をタップしてください" });
+    const pts = circleDimPts(center, r, q, kind);
+    const page = this.model.page(pageId);
+    this.cancelCommand();
+    this.emit("dim-request", {
+      pageId,
+      create: (text) => this.addAndSelect(pageId, { type: "dim", pts, off: 0, size: this.dimSize, endStyle: this.dimEnd.style, endSize: this.dimEnd.size, one: kind === "radius", noExt: true, text: text ? (kind === "radius" ? "R" : "⌀") + text : text, style: { ...this.style, width: Math.min(this.style.width, 2) } }),
+      length: dist(pts[0], pts[1]),
+      scale: page.scale,
+    });
+  }
+
   /** ページ内で、他の図形の線分(トリム・延長の境界)。pen・文字・画像は除く */
   cutterSegments(page, excludeId) {
     const segs = [];
@@ -2026,6 +2118,7 @@ export class Editor {
   /** トリム・延長・フィレット・面取り・切断: 図形をタップして実行する */
   pickCommandDown(e, pageId, p) {
     const c = this.cmd;
+    if (c.name === "dimradius" || c.name === "dimdiameter") return this.circleDimDown(e, pageId, p);
     const f = this.shapeUnder(e);
     const name = c.name;
     const LINEISH = new Set(["line", "arrow", "polyline"]);
@@ -2270,7 +2363,10 @@ export class Editor {
       else if (this.sel || this.multi) this.setSelection(null);
       else if (this.tool !== "select") this.setTool("select");
     } else if (e.key === "Enter") {
-      if (this.poly) {
+      if (this.cmd && (this.cmd.name === "dimseries" || this.cmd.name === "dimpara")) {
+        e.preventDefault();
+        this.finishCommand();
+      } else if (this.poly) {
         e.preventDefault();
         this.finishPolygon();
       } else if (this.sel) this.editSelectedText();

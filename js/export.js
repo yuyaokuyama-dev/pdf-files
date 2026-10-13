@@ -1,4 +1,5 @@
 // 編集内容をPDFに書き出す。図形はベクターのまま、文字は画像化(日本語・任意フォント対応)して焼き込む。
+import { angleDimGeometry, defaultAngleRadius, leaderTipShape } from "./dimx.js";
 import { PDFDocument, PDFName, PDFDict, PDFArray, PDFHexString, PDFOperator, PDFOperatorNames, PDFBool, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
@@ -252,13 +253,17 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           const size = sh.size || 12;
           const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size, dimOpts(sh));
           const thin = { ...strokeOpts, borderWidth: Math.max(0.6, width * 0.6) };
-          if (sh.type === "dim") {
+          if (sh.type === "dim" && !sh.noExt) {
             path(linePath(geo.ext0), thin);
             path(linePath(geo.ext1), thin);
           }
           path(linePath(geo.line), strokeOpts);
           for (const e of geo.ends) path(e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
-          if (geo.leader) path(linePath(geo.leader), thin);
+          if (geo.leader) {
+            path(linePath(geo.leader), thin);
+            const lt = leaderTipShape(geo.leader, sh.ltip, sh.endSize ?? size / 2);
+            if (lt) path(lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          }
           const label = labelFor(sh, page);
           if (label) {
             const m = textMetrics({ text: label, size, font: sh.font });
@@ -270,6 +275,22 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
             const tl = [c[0] + (-w / 2) * Math.cos(a) + (h / 2) * Math.sin(a), c[1] + (-w / 2) * Math.sin(a) - (h / 2) * Math.cos(a)];
             await placeText({ lines: [label], size, font: sh.font, bold: false, color: sh.color || st.color || "#e11d48", bg: null, w, h }, tl, geo.textAngle);
           }
+          break;
+        }
+        case "dimang": {
+          const size = sh.size || 12;
+          const geo = angleDimGeometry(sh.pts, sh.r ?? defaultAngleRadius(...sh.pts), size, { endStyle: sh.endStyle ?? "arrow", endSize: sh.endSize ?? size / 2 });
+          if (!geo) break;
+          const thin = { ...strokeOpts, borderWidth: Math.max(0.6, width * 0.6) };
+          path(linePath(geo.ext[0]), thin);
+          path(linePath(geo.ext[1]), thin);
+          path(geo.arc, strokeOpts);
+          for (const e of geo.ends) path(e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          const label = sh.text || geo.label;
+          const m = textMetrics({ text: label, size, font: sh.font });
+          const h = size * TEXT_LINE;
+          const c = [geo.textPos[0], geo.textPos[1] + size * 0.095];
+          await placeText({ lines: [label], size, font: sh.font, bold: false, color: sh.color || st.color || "#e11d48", bg: null, w: m.w, h }, [c[0] - m.w / 2, c[1] - h / 2], 0);
           break;
         }
         case "image": {

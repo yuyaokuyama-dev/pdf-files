@@ -443,6 +443,12 @@ async function modifyMenu(anchor) {
     },
     { label: "切断(線を2つに分ける)", icon: "line", onClick: () => ed.startCommand("break") },
     { label: "ストレッチ(窓で囲んだ部分を引き伸ばす)", icon: "rect", onClick: () => ed.startCommand("stretch") },
+    { header: "寸法を入れる(図形を選ばずに始められます)" },
+    { label: "半径寸法(円・円弧)", icon: "ellipse", onClick: () => ed.startCommand("dimradius") },
+    { label: "直径寸法(円・円弧)", icon: "ellipse", onClick: () => ed.startCommand("dimdiameter") },
+    { label: "角度寸法(頂点と2本の線上の点)", icon: "arc", onClick: () => ed.startCommand("dimangle") },
+    { label: "直列寸法(測点を順に並べる)", icon: "dim", onClick: () => ed.startCommand("dimseries") },
+    { label: "並列寸法(基準点から各点まで)", icon: "dim", onClick: () => ed.startCommand("dimpara") },
     { header: "選んだ図形に対して" },
     { label: "結合(つながる線をひとつに)", icon: "polygon", disabled: sel < 2, onClick: () => ed.joinSelected() },
     { label: "分解(四角・多角形を線にばらす)", icon: "rect", disabled: !sel, onClick: () => ed.explodeSelected() },
@@ -484,7 +490,7 @@ function wireEditorEvents() {
   ed.on("zoom", (z) => ($("#btnZoomFit").textContent = `${Math.round(z * 100)}%`));
   ed.on("toast", (o) => toast(o.text, o));
   ed.on("leader-edit", leaderEdit);
-  ed.on("cmd", (c) => (c ? showHint(c.text, 0, [{ label: "中止", onClick: () => ed.cancelCommand() }]) : showHint("")));
+  ed.on("cmd", (c) => (c ? showHint(c.text, 0, [...(c.done ? [{ label: "完了", primary: true, onClick: () => ed.finishCommand() }] : []), { label: "中止", onClick: () => ed.cancelCommand() }]) : showHint("")));
   ed.on("sign-request", signRequest);
   ed.on("dim-request", dimRequest);
   ed.on("dim-edit", dimEdit);
