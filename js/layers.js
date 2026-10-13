@@ -64,7 +64,8 @@ export function isLayerVisible(shape, layers) {
 
 /** 新しく描く図形に付ける設定。基本レイヤー以外では色・太さ・線種をレイヤーに従わせる */
 export function stampNewShape(shape, layerId) {
-  shape.layer = layerId;
+  if (layerId && layerId !== BASE_LAYER_ID) shape.layer = layerId; // 基本レイヤーは省略(保存を小さく)
+  else delete shape.layer;
   if (layerId !== BASE_LAYER_ID && shape.type !== "image") shape.bl = [...BL_KEYS];
   else delete shape.bl;
   return shape;

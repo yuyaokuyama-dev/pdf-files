@@ -236,6 +236,11 @@ async function enterApp(user) {
   if (!S.model) setDoc(new DocModel()); // 前回の続きを開くまでの間も操作できるように
   S.editor.setPalm(S.settings.palm);
   S.editor.sticky = S.settings.sticky !== false;
+  if (S.settings.snap) S.editor.aid.setConfig(S.settings.snap);
+  S.editor.on("snap-config", (cfg) => {
+    S.settings.snap = cfg;
+    S.store.setSetting("settings", S.settings);
+  });
   applyUiSize();
   S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
   for (const r of await S.store.getAll("recents")) S.tabNames.set(r.id, r.name);

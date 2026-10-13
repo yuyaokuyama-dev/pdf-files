@@ -6,6 +6,7 @@ import {
 import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, textCorners, fontCss, labelFor, arcLines } from "./render.js";
 import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
 import { isLayerLocked, isLayerVisible, BL_KEYS } from "./layers.js";
+import { DrawAid, DYN_TOOLS } from "./drawaid.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "dim", "calib", "measure", "sign", "stamp"]);
@@ -53,6 +54,7 @@ export class Editor {
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
     this.eraser = { mode: "stroke", size: 24 }; // 消しゴム: stroke=線ごと / partial=なぞった部分だけ(size=円の直径・画面px)
     this.loadDefaults();
+    this.aid = new DrawAid(this); // オブジェクトスナップ・極トラッキング・数値入力
     this.pendingStamp = null;
     this.sel = null;
     this.multi = null; // 複数選択: { pageId, ids[] }。このとき sel は null
@@ -100,6 +102,7 @@ export class Editor {
   setModel(model) {
     this.cancelGesture();
     this.cancelPolygon();
+    this.aid.cancelPending();
     if (this.editing) this.finishTextEdit(true);
     this.unsub?.();
     this.model = model;
@@ -325,6 +328,7 @@ export class Editor {
    * ======================================================= */
   setTool(t) {
     if (this.poly && t !== "polygon") this.cancelPolygon();
+    this.aid.cancelPending();
     this.cancelGesture();
     this.returnTool = null;
     this.tool = t;
@@ -445,13 +449,30 @@ export class Editor {
     if (isSelectTool(tool)) return this.selectDown(e, pageId, p);
     e.preventDefault();
 
+    if (this.aid.pending) {
+      const pd = this.aid.pend;
+      if (pd.pageId === pageId && tool === pd.tool) {
+        const r = this.aid.resolve(this.clampToPage(p, pageId), { pts: pd.pts, p0: pd.p0, ev: e, polar: tool === "line" || tool === "arrow" });
+        pd.hover = r.p;
+        this.aid.commit();
+        return;
+      }
+      this.aid.cancelPending();
+    }
     if (tool === "polygon") return this.polygonDown(e, pageId, p);
     if (tool === "text") return this.beginText(pageId, p);
     if (tool === "stamp") return this.placeStamp(pageId, p);
 
     // ドラッグ系の作成ツール
-    const start = this.clampToPage(p, pageId);
-    this.g = { kind: "create", tool, pageId, p0: start, pts: [start], id: e.pointerId, filter: createPenFilter() };
+    let start = this.clampToPage(p, pageId);
+    const snapPts = tool === "pen" || tool === "sign" ? null : this.aid.pointsFor(pageId);
+    let mark = null;
+    if (snapPts) {
+      const r = this.aid.resolve(start, { pts: snapPts, ev: e });
+      start = this.clampToPage(r.p, pageId);
+      mark = r.mark;
+    }
+    this.g = { kind: "create", tool, pageId, p0: start, pts: [start], id: e.pointerId, filter: createPenFilter(), snapPts, mark };
     if (tool === "pen") this.g.filter.add(start);
     el.svg.setPointerCapture?.(e.pointerId);
     const move = (ev) => this.createMove(ev);
@@ -599,23 +620,6 @@ export class Editor {
   }
 
   /* ---------- 作成ドラッグ ---------- */
-  snapPoint(p0, p, ev) {
-    let [x, y] = p;
-    const dx = x - p0[0];
-    const dy = y - p0[1];
-    const L = Math.hypot(dx, dy);
-    if (L < 4) return p;
-    const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-    const step = ev?.shiftKey ? 45 : 45;
-    const nearest = Math.round(ang / step) * step;
-    const tol = ev?.shiftKey ? 180 : 3; // Shift: 強制スナップ / 通常: 3度以内で吸着
-    if (Math.abs(ang - nearest) <= tol) {
-      const r = (nearest * Math.PI) / 180;
-      return [p0[0] + Math.cos(r) * L, p0[1] + Math.sin(r) * L];
-    }
-    return p;
-  }
-
   createMove(ev) {
     const g = this.g;
     if (!g || ev.pointerId !== g.id) return;
@@ -627,7 +631,11 @@ export class Editor {
         if (q) g.pts.push(q);
       }
     } else {
-      if (LINE_TOOLS.has(g.tool)) p = this.snapPoint(g.p0, p, ev);
+      if (g.snapPts) {
+        const r = this.aid.resolve(p, { pts: g.snapPts, p0: g.p0, ev, polar: LINE_TOOLS.has(g.tool) });
+        p = this.clampToPage(r.p, g.pageId);
+        g.mark = r.mark;
+      }
       if (ev.shiftKey && (g.tool === "rect" || g.tool === "ellipse" || g.tool === "cloud")) {
         const s = Math.max(Math.abs(p[0] - g.p0[0]), Math.abs(p[1] - g.p0[1]));
         p = [g.p0[0] + Math.sign(p[0] - g.p0[0] || 1) * s, g.p0[1] + Math.sign(p[1] - g.p0[1] || 1) * s];
@@ -681,6 +689,21 @@ export class Editor {
     if (!sh) return;
     renderShape(sh, el.draft, { page: this.model.page(g.pageId), images: this.model.images });
     el.draft.querySelectorAll(".hit").forEach((n) => n.remove());
+    this.aid.drawMark(el.draft, g.mark);
+    if (g.p1) this.aid.readout(el.draft, g.tool, g.p0, g.p1, this.model.page(g.pageId), g.mark);
+  }
+
+  /** 下書き用に図形を描く(当たり判定は外す) */
+  renderDraft(shape, layer) {
+    renderShape(shape, layer, { page: null, images: this.model.images });
+    layer.querySelectorAll(".hit").forEach((n) => n.remove());
+  }
+
+  /** 線・矢印・四角・円を点から作る(ドラッグでも数値入力でも共通) */
+  createLinear(tool, pageId, pts) {
+    const base = { type: tool, pts, style: { ...this.style } };
+    if (tool === "arrow") base.headSize = this.arrowSize;
+    return this.addAndSelect(pageId, base);
   }
 
   createEnd(ev) {
@@ -711,6 +734,10 @@ export class Editor {
         b = [g.p0[0] + 90, g.p0[1] + 30];
       }
       this.emit("sign-request", { pageId, rect: [a, b] });
+      return;
+    }
+    if (small && this.aid.cfg.dyn && DYN_TOOLS.has(tool) && g.pts.length) {
+      this.aid.startPending(tool, pageId, g.p0, g.snapPts || []);
       return;
     }
     if (small && tool !== "calib") return;
@@ -791,10 +818,13 @@ export class Editor {
     const dbl = this.isDoubleTap(e, "polygon");
     if (!this.poly || this.poly.pageId !== pageId) {
       this.cancelPolygon();
-      this.poly = { pageId, pts: [], hover: null };
+      this.poly = { pageId, pts: [], hover: null, snapPts: this.aid.pointsFor(pageId), mark: null };
       this.polyMoveFn = (ev) => {
         if (!this.poly) return;
-        this.poly.hover = this.clampToPage(this.pt(ev, this.poly.pageId), this.poly.pageId);
+        const raw = this.clampToPage(this.pt(ev, this.poly.pageId), this.poly.pageId);
+        const r = this.aid.resolve(raw, { pts: this.poly.snapPts, p0: this.poly.pts[this.poly.pts.length - 1] || null, ev });
+        this.poly.hover = r.p;
+        this.poly.mark = r.mark;
         this.drawPolygonDraft();
       };
       this.els.get(pageId).svg.addEventListener("pointermove", this.polyMoveFn);
@@ -803,6 +833,7 @@ export class Editor {
     const first = pts[0];
     const closeR = 12 / this.zoom;
     if (pts.length >= 3 && (dbl || dist(p, first) < closeR)) return this.finishPolygon();
+    p = this.clampToPage(this.aid.resolve(p, { pts: this.poly.snapPts, p0: pts[pts.length - 1] || null, ev: e }).p, pageId);
     if (pts.length && dist(p, pts[pts.length - 1]) < 2) return;
     pts.push(p);
     this.poly.hover = p;
@@ -822,6 +853,7 @@ export class Editor {
       const open = renderShape({ id: "draft2", type: "line", pts, style: { ...this.style } }, el.draft, {});
       open.querySelectorAll(".hit").forEach((n) => n.remove());
     }
+    this.aid.drawMark(el.draft, poly.mark);
     const r = 5 / this.zoom;
     poly.pts.forEach((q, i) => el.draft.appendChild(sv("circle", { cx: q[0], cy: q[1], r: i === 0 ? r * 1.5 : r, fill: i === 0 ? "#2563eb" : "#fff", stroke: "#2563eb", "stroke-width": 1.5 / this.zoom })));
   }
@@ -1248,6 +1280,8 @@ export class Editor {
     let rotCenter = null;
     const arc = shape.type === "arc" ? { c: shape.pts[0], ...arcGeometry(shape.pts[0], shape.pts[1], shape.sweep) } : null;
     let arcPrev = arc?.sweep;
+    const hPts = this.aid.pointsFor(pageId, new Set([shape.id]));
+    let hMark = null;
     if (kind === "rot" && !arc) {
       rotM = textMetrics(shape);
       const cs = textCorners(shape, rotM);
@@ -1292,16 +1326,26 @@ export class Editor {
           const sx = Math.sign(q[0] - opp[0]) || 1;
           const sy = Math.sign(q[1] - opp[1]) || 1;
           q = [opp[0] + sx * w, opp[1] + (sy * w) / shape.aspect];
-        } else if (ev.shiftKey && shape.type !== "image") {
-          const s = Math.max(Math.abs(q[0] - opp[0]), Math.abs(q[1] - opp[1]));
-          q = [opp[0] + Math.sign(q[0] - opp[0] || 1) * s, opp[1] + Math.sign(q[1] - opp[1] || 1) * s];
+        } else {
+          const r = this.aid.resolve(q, { pts: hPts, ev });
+          q = this.clampToPage(r.p, pageId);
+          hMark = r.mark;
+          if (ev.shiftKey) {
+            const s = Math.max(Math.abs(q[0] - opp[0]), Math.abs(q[1] - opp[1]));
+            q = [opp[0] + Math.sign(q[0] - opp[0] || 1) * s, opp[1] + Math.sign(q[1] - opp[1] || 1) * s];
+          }
         }
         shape.pts = [opp, q];
       } else {
         const others = shape.pts.filter((_, i) => i !== idx);
-        if ((shape.type === "line" || shape.type === "arrow" || shape.type === "dim" || shape.type === "measure") && others.length === 1) q = this.snapPoint(others[0], q, ev);
+        const lineLike = (shape.type === "line" || shape.type === "arrow" || shape.type === "dim" || shape.type === "measure") && others.length === 1;
+        const r = this.aid.resolve(q, { pts: hPts, p0: lineLike ? others[0] : null, ev });
+        q = this.clampToPage(r.p, pageId);
+        hMark = r.mark;
         shape.pts[idx] = q;
       }
+      el.draft.replaceChildren();
+      this.aid.drawMark(el.draft, hMark);
       this.refreshLayer(page);
       this.renderSelection();
     };
@@ -1312,12 +1356,14 @@ export class Editor {
       el.svg.removeEventListener("pointercancel", up);
       const g = this.g;
       this.g = null;
+      el.draft.replaceChildren();
       if (g?.moved) this.model.commit(g.before);
     };
     this.g.cleanup = () => {
       el.svg.removeEventListener("pointermove", move);
       el.svg.removeEventListener("pointerup", up);
       el.svg.removeEventListener("pointercancel", up);
+      el.draft.replaceChildren();
     };
     el.svg.addEventListener("pointermove", move);
     el.svg.addEventListener("pointerup", up);
@@ -1655,8 +1701,15 @@ export class Editor {
         e.preventDefault();
         this.deleteSelected();
       }
+    } else if (e.key === "F3") {
+      e.preventDefault();
+      this.aid.setConfig({ osnap: !this.aid.cfg.osnap });
+    } else if (e.key === "F10") {
+      e.preventDefault();
+      this.aid.setConfig({ polar: !this.aid.cfg.polar });
     } else if (e.key === "Escape") {
-      if (this.poly) this.cancelPolygon();
+      if (this.aid.pending) this.aid.cancelPending();
+      else if (this.poly) this.cancelPolygon();
       else if (this.g) this.cancelGesture();
       else if (this.confirmCreated()) return;
       else if (this.sel || this.multi) this.setSelection(null);

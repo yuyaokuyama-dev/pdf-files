@@ -37,9 +37,10 @@ let ar = (await shapes(page)).at(-1);
 check("矢印の既定サイズは10(新規は個別サイズを持つ)", ar.type === "arrow" && ar.headSize === 10, JSON.stringify(ar));
 await tool(page, "select");
 await click(page, 0, [110, 160]);
+const w0 = ar.style.width; // 直前に変えた線の太さを引き継ぐ
 await setK("headSize", 30);
 ar = (await shapes(page)).at(-1);
-check("矢印のサイズだけ変えられる(太さは変わらない)", ar.headSize === 30 && ar.style.width === 1, JSON.stringify(ar));
+check("矢印のサイズだけ変えられる(太さは変わらない)", ar.headSize === 30 && ar.style.width === w0, JSON.stringify(ar));
 await setK("width", 6);
 ar = (await shapes(page)).at(-1);
 check("線の太さを変えても矢印のサイズは変わらない", ar.headSize === 30 && ar.style.width === 6, JSON.stringify(ar));

@@ -4,6 +4,7 @@ import { FONTS, textMetrics, textCorners } from "./render.js";
 import { esc } from "./ui.js";
 import { DASH_TYPES, normDash, arrowSizeOf, dist, clampSweep, rotateAbout } from "./geometry.js";
 import { resolveShape, BL_KEYS, layerIdOf } from "./layers.js";
+import { SNAP_KINDS, polarOf, pointAt } from "./snap.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
 const LINE_TYPES = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "dim", "measure"]);
@@ -52,6 +53,7 @@ export class Props {
     editor.on("selection", () => ((this.dismissed = false), this.refresh()));
     editor.on("tool", () => ((this.dismissed = false), this.refresh()));
     editor.on("layer-current", () => this.refresh());
+    editor.on("snap-config", () => this.refresh());
     editor.model && this.bindModel();
     el.addEventListener("input", (e) => this.onInput(e, true));
     el.addEventListener("change", (e) => this.onInput(e, false));
@@ -240,6 +242,12 @@ export class Props {
     }
   }
 
+  /** 選んだ図形の色・太さなどを変えたら、次に作る図形にも引き継ぐ(直前の設定を覚える) */
+  carryOver(ctx) {
+    if (!ctx?.sel || ctx.multi || !ctx.shape || ctx.type === "image" || ctx.type === "stamp") return;
+    this.ed.setDefaultsFrom(ctx.shape);
+  }
+
   onInput(e, isInput) {
     const t = e.target;
     const key = t.dataset.k;
@@ -255,6 +263,43 @@ export class Props {
         this.ed.moveSelectedToLayer(v);
         this.refresh();
       }
+      return;
+    }
+    if (key.startsWith("snap")) {
+      if (isInput && t.type !== "number") return;
+      const aid = this.ed.aid;
+      if (key === "snapOsnap") {
+        aid.setConfig({ osnap: v });
+        this.refresh();
+      } else if (key === "snapPolar") aid.setConfig({ polar: v });
+      else if (key === "snapDyn") aid.setConfig({ dyn: v });
+      else if (key === "snapStep") {
+        if (!isInput && v > 0 && v <= 90) aid.setConfig({ step: v });
+      } else if (key.startsWith("snapKind:")) {
+        const id = key.slice(9);
+        const kinds = aid.cfg.kinds.filter((k) => k !== id);
+        if (v) kinds.push(id);
+        aid.setConfig({ kinds });
+      }
+      return;
+    }
+    if (key.startsWith("num")) {
+      if (isInput || !ctx.sel || !Number.isFinite(v) || v < 0) return;
+      const k = ctx.page?.scale?.ptsPerUnit || 1;
+      this.ed.updateSelected((sh) => {
+        const [a, b] = sh.pts;
+        if (sh.type === "line" || sh.type === "arrow") {
+          const cur = polarOf(a, b);
+          if (key === "numLen" && v > 0) sh.pts[1] = pointAt(a, cur.ang, v * k);
+          else if (key === "numAng") sh.pts[1] = pointAt(a, v, cur.len);
+        } else if (sh.type === "rect" || sh.type === "ellipse") {
+          const sx = Math.sign(b[0] - a[0]) || 1;
+          const sy = Math.sign(b[1] - a[1]) || 1;
+          if (key === "numW" && v > 0) sh.pts[1] = [a[0] + sx * v * k, b[1]];
+          else if (key === "numH" && v > 0) sh.pts[1] = [b[0], a[1] + sy * v * k];
+        }
+      });
+      this.refresh();
       return;
     }
     if (key === "curLayer") {
@@ -298,7 +343,10 @@ export class Props {
     if (t.type === "number" && (!Number.isFinite(v) || (key !== "angle" && key !== "arcRot" && v <= 0))) return;
     // 入力中は履歴に積まずに反映(ライブ)、確定(change)で1操作として記録する
     this.apply(ctx, key, v, true);
-    if (!isInput) this.ed.commitLive();
+    if (!isInput) {
+      this.ed.commitLive();
+      this.carryOver(ctx);
+    }
     // 数値表示の同期
     const pct = key === "opacity" || key === "fillOpacity";
     const out = this.el.querySelector(`[data-v="${key}"]`);
@@ -321,6 +369,7 @@ export class Props {
     if (b.classList.contains("sw")) {
       if (ctx) {
         this.apply(ctx, "color", b.dataset.c, false);
+        this.carryOver(ctx);
         this.refresh();
       }
       return;
@@ -514,6 +563,21 @@ export class Props {
       this.el.innerHTML = parts.join("");
       return;
     }
+    if (ctx.sel && ctx.shape && ["line", "arrow", "rect", "ellipse"].includes(t) && ctx.shape.pts.length === 2) {
+      // 数値で大きさを決める(最初の点を固定したまま変える)
+      const sc = ctx.page?.scale;
+      const k = sc?.ptsPerUnit || 1;
+      const unit = sc?.unit || "pt";
+      const fmt = (x) => +(x / k).toFixed(sc ? 1 : 2);
+      const [a, b] = ctx.shape.pts;
+      const f = (key, label, val, extra = "") => `<label class="field">${label}<div class="row"><input type="number" data-k="${key}" min="0" step="any" value="${val}" style="width:96px;height:34px"> <span class="val">${extra || unit}</span></div></label>`;
+      if (t === "line" || t === "arrow") {
+        const pl = polarOf(a, b);
+        parts.push(f("numLen", "長さ(最初の点から)", fmt(pl.len)) + f("numAng", "角度(右が0°・上向きが+)", +(((pl.ang % 360) + 360) % 360).toFixed(1), "°"));
+      } else {
+        parts.push(f("numW", "幅", fmt(Math.abs(b[0] - a[0]))) + f("numH", "高さ", fmt(Math.abs(b[1] - a[1]))));
+      }
+    }
     if (ctx.sel && ctx.shape) {
       parts.push(layerSelect("layer", layerIdOf(ctx.shape), "レイヤー"));
       if (t !== "image") parts.push(blBox(ctx.shape));
@@ -531,6 +595,16 @@ export class Props {
     if (!ctx.sel && (LINE_TYPES.has(t) || TEXT_LIKE.has(t))) {
       parts.push(layerSelect("curLayer", ed.model.curLayer, "描く先のレイヤー"));
       if (ed.model.curLayer !== "0") parts.push(`<p class="hint">0以外のレイヤーに描いた図形は、色・太さ・線種がレイヤーの設定に従います(あとから個別に変えることもできます)。</p>`);
+    }
+    if (!ctx.sel && t !== "eraser" && t !== "stamp" && (LINE_TYPES.has(t) || TEXT_LIKE.has(t))) {
+      const c = ed.aid.cfg;
+      parts.push(`<details class="snapbox"><summary>スナップ・数値入力</summary>
+        <label class="check"><input type="checkbox" data-k="snapOsnap"${c.osnap ? " checked" : ""}> オブジェクトスナップ(F3)</label>
+        <div class="snapkinds">${SNAP_KINDS.map((x) => `<label class="check"><input type="checkbox" data-k="snapKind:${x.id}"${c.kinds.includes(x.id) ? " checked" : ""}${c.osnap ? "" : " disabled"}> ${x.label}</label>`).join("")}</div>
+        <label class="check"><input type="checkbox" data-k="snapPolar"${c.polar ? " checked" : ""}> 極トラッキング(F10)</label>
+        <label class="field">角度の刻み(度)<input type="number" data-k="snapStep" min="1" max="90" step="0.5" value="${c.step}" style="width:90px;height:34px"></label>
+        <label class="check"><input type="checkbox" data-k="snapDyn"${c.dyn ? " checked" : ""}> 数値入力(線・矢印・四角・丸は、クリックしてから長さなどを入力)</label>
+        <p class="hint">Shift を押しながら描くと 90° 刻みに固定します。ドラッグで描くとそのまま描け、クリックだけにすると数値入力になります。</p></details>`);
     }
     this.el.innerHTML = parts.join("");
   }
