@@ -68,6 +68,19 @@ for (const mobile of [false, true]) {
   const after = (await shapes(page)).at(-1).pts[0];
   check("基点→移動先で、その差だけ動く", Math.abs(after[0] - before[0] - 50) < 3 && Math.abs(after[1] - before[1] - 50) < 3, `${before} -> ${after}`);
 
+  /* ---- 移動: 基点から移動先までドラッグして離す ---- */
+  await ed(() => { const m = window.__apdf.model; const e = window.__apdf.editor; const sh = m.addShape(m.pages[0].id, { type: "line", pts: [[100, 330], [160, 330]], style: { color: "#e11d48", width: 2 } }); e.setSelection({ pageId: m.pages[0].id, shapeId: sh.id }); e.startCommand("move"); });
+  {
+    const [ax, ay] = await toScreen(page, 0, 100, 330);
+    const [bx, by] = await toScreen(page, 0, 220, 380);
+    await page.mouse.move(ax, ay);
+    await page.mouse.down();
+    await page.mouse.move(bx, by, { steps: 8 });
+    await page.mouse.up();
+    const ln = (await shapes(page)).at(-1);
+    check("基点からドラッグして離すと、その差だけ動く", Math.abs(ln.pts[0][0] - 220) < 4 && Math.abs(ln.pts[0][1] - 380) < 4 && !(await ed(() => !!window.__apdf.editor.cmd)), JSON.stringify(ln.pts));
+  }
+
   /* ---- 寸法の端点を動かすと数値が測り直される ---- */
   await ed(() => { const m = window.__apdf.model; const e = window.__apdf.editor; e.setTool("select"); const sh = m.addShape(m.pages[0].id, { type: "dim", pts: [[100, 450], [200, 450]], off: 24, size: 12, text: "100", style: { color: "#e11d48", width: 1 } }); e.setSelection({ pageId: m.pages[0].id, shapeId: sh.id }); });
   const [hx, hy] = await toScreen(page, 0, 200, 450);

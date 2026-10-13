@@ -1906,8 +1906,8 @@ export class Editor {
       dimangle: ["角の頂点をタップ", "1本目の線上の点をタップ", "2本目の線上の点をタップ"],
       dimseries: ["最初の測点をタップ", "次の測点をタップ(続けて何度でも。終わるには「完了」か同じ点を2回タップ)"],
       dimpara: ["基準の測点をタップ", "次の測点をタップ(続けて何度でも。終わるには「完了」か同じ点を2回タップ)"],
-      move: ["基点をタップ", "移動先をタップ"],
-      copy: ["基点をタップ", "コピー先をタップ(続けて何度でも。終わるには中止)"],
+      move: ["基点をタップ(または基点から移動先までドラッグ)", "移動先をタップ"],
+      copy: ["基点をタップ(または基点からコピー先までドラッグ)", "コピー先をタップ(続けて何度でも。終わるには中止)"],
       rotate: ["回転の中心(基点)をタップ"],
       scale: ["尺度の基点をタップ"],
       mirror: ["鏡像の軸の1点目をタップ", "軸の2点目をタップ"],
@@ -1916,6 +1916,7 @@ export class Editor {
     }[name];
     if (!prompts) return;
     this.cmd = { name, opts, pageId: null, prompts, pts: [], hover: null, mark: null, picks: [] };
+    this.pagesEl.classList.toggle("cmd-drag", name === "move" || name === "copy"); // 指でドラッグしても画面が動かないようにする
     this.cmdMoveFn = (ev) => {
       if (!this.cmd) return;
       const r = this.aid.resolve(this.clampToPage(this.pt(ev, this.cmd.pageId), this.cmd.pageId), { pts: this.cmd.snapPts, p0: this.cmd.pts[this.cmd.pts.length - 1] || null, ev });
@@ -1937,6 +1938,7 @@ export class Editor {
     if (!this.cmd) return;
     const el = this.cmd.pageId && this.els.get(this.cmd.pageId);
     el?.svg.removeEventListener("pointermove", this.cmdMoveFn);
+    this.pagesEl.classList.remove("cmd-drag");
     el?.draft.replaceChildren();
     this.cmd = null;
     this.emit("cmd", null);
@@ -2005,11 +2007,8 @@ export class Editor {
       }
     } else if (c.name === "move" || c.name === "copy") {
       if (c.pts.length === 2) {
-        const [a, b] = c.pts;
-        this.applyMatrices([moveM(b[0] - a[0], b[1] - a[1])], { copy: c.name === "copy" });
-        if (c.name === "copy") c.pts = [a]; // 同じ基点から続けてコピー
-        else return this.cancelCommand();
-      }
+        if (this.applyMoveCopy(c)) return;
+      } else this.armDragDrop(e, c, pageId);
     } else if (c.name === "rotate") {
       this.applyMatrices([rotateM(q, o.angle)], { copy: !!o.copy });
       return this.cancelCommand();
@@ -2029,6 +2028,39 @@ export class Editor {
     }
     this.emit("cmd", { text: c.prompts[Math.min(c.pts.length, c.prompts.length - 1)] });
     this.drawCmdDraft();
+  }
+
+  /** 移動・コピーの2点(基点・移動先)が揃ったとき実行する。続きがあれば false、移動で終われば true */
+  applyMoveCopy(c) {
+    const [a, b] = c.pts;
+    this.applyMatrices([moveM(b[0] - a[0], b[1] - a[1])], { copy: c.name === "copy" });
+    if (c.name === "copy") {
+      c.pts = [a]; // 同じ基点から続けてコピー
+      return false;
+    }
+    this.cancelCommand();
+    return true;
+  }
+  /** 基点を押したまま移動先までドラッグして離すと、離した点(吸着あり)を移動先にする。ちょん押し(タップ)なら従来どおり次のタップを待つ */
+  armDragDrop(e, c, pageId) {
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const done = () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", done);
+    };
+    const up = (ev) => {
+      done();
+      if (this.cmd !== c || c.pts.length !== 1) return;
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) return; // タップ
+      const r = this.aid.resolve(this.clampToPage(this.pt(ev, pageId), pageId), { pts: c.snapPts, p0: c.pts[0], ev });
+      c.pts.push(this.clampToPage(r.p, pageId));
+      if (this.applyMoveCopy(c)) return;
+      this.emit("cmd", { text: c.prompts[1] });
+      this.drawCmdDraft();
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", done);
   }
 
   /** 四角・多角形・ポリラインの、タップした位置に一番近い角を丸める(四角は多角形に変わる) */
