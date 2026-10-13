@@ -248,3 +248,42 @@ test("用紙を選ばなければページの大きさのまま。縮尺が0以�
   assert.equal(scaleFromPaper(595, 842, null, 0), null);
   assert.equal(scaleFromPaper(595, 842, null, -5), null);
 });
+
+import { circleThrough, arcThrough, regularPolygonPts, ellipsePolygonPts, arcGeometry as _arcGeometry } from "../js/geometry.js";
+test("3点を通る円", () => {
+  const k = circleThrough([10, 0], [0, 10], [-10, 0]);
+  assert.ok(Math.abs(k.c[0]) < 1e-9 && Math.abs(k.c[1]) < 1e-9 && Math.abs(k.r - 10) < 1e-9);
+  assert.equal(circleThrough([0, 0], [1, 1], [2, 2]), null);
+});
+test("3点円弧: 始点→終点→途中の点(時計回り/反時計回りどちらでも途中の点を通る)", () => {
+  // 画面座標(y下向き)。始点(10,0)→終点(-10,0)、途中(0,10)=画面の下側 → 時計回りの半円
+  const a = arcThrough([10, 0], [-10, 0], [0, 10]);
+  assert.deepEqual(a.pts[1], [10, 0]);
+  assert.ok(Math.abs(a.sweep - 180) < 1e-6);
+  // 途中(0,-10)=上側 → 始点と終点を入れ替えた半円(始点は終点側)
+  const b = arcThrough([10, 0], [-10, 0], [0, -10]);
+  assert.deepEqual(b.pts[1], [-10, 0]);
+  // どちらも、途中の点が弧の上にある
+  for (const [arc, m] of [[a, [0, 10]], [b, [0, -10]]]) {
+    const g = _arcGeometry(arc.pts[0], arc.pts[1], arc.sweep);
+    const t = Math.atan2(m[1] - g.c[1], m[0] - g.c[0]);
+    const rel = ((((t - g.t0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2));
+    assert.ok(rel <= (g.sweep * Math.PI) / 180 + 1e-9);
+  }
+  // 1/4円
+  const q = arcThrough([10, 0], [0, 10], [7.0710678, 7.0710678]);
+  assert.ok(Math.abs(q.sweep - 90) < 1e-3);
+  assert.equal(arcThrough([0, 0], [1, 1], [2, 2]), null);
+});
+test("正多角形", () => {
+  const p = regularPolygonPts([0, 0], [10, 0], 6);
+  assert.equal(p.length, 6);
+  for (const q of p) assert.ok(Math.abs(Math.hypot(q[0], q[1]) - 10) < 1e-9);
+  assert.equal(regularPolygonPts([0, 0], [10, 0], 1).length, 3); // 下限は3
+  assert.equal(regularPolygonPts([0, 0], [10, 0], 500).length, 64); // 上限は64
+});
+test("楕円の頂点列", () => {
+  const p = ellipsePolygonPts([0, 0], [20, 10], 24);
+  assert.equal(p.length, 24);
+  assert.ok(Math.abs(p[0][0] - 20) < 1e-9 && Math.abs(p[0][1] - 5) < 1e-9);
+});

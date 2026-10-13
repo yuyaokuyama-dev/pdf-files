@@ -2,6 +2,7 @@
 import {
   dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, dimOpts, simplify,
   arcGeometry, arcAngleOf, arcBounds, clampSweep, ARC_MIN, ARC_MAX, eraseStroke,
+  arcThrough, regularPolygonPts, ellipsePolygonPts,
 } from "./geometry.js";
 import { renderShape, renderShapes, shapeBounds, shapeVertices, textMetrics, textCorners, fontCss, labelFor, arcLines } from "./render.js";
 import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
@@ -25,6 +26,22 @@ const sv = (name, attrs = {}) => {
 };
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+
+/** 辺ごとの線分(辺ハンドル用)。対象外の図形・頂点が多すぎる図形は null */
+function edgesOf(sh) {
+  const pts = sh.pts || [];
+  if (sh.type === "rect") {
+    const [x0, y0, x1, y1] = [Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])];
+    const c = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    return c.map((p, i) => [p, c[(i + 1) % 4]]);
+  }
+  if ((sh.type === "polygon" || sh.type === "polyline") && pts.length >= 2 && pts.length <= 16) {
+    const n = sh.type === "polygon" ? pts.length : pts.length - 1;
+    return Array.from({ length: n }, (_, i) => [pts[i], pts[(i + 1) % pts.length]]);
+  }
+  return null;
+}
 
 export class Editor {
   /**
@@ -53,6 +70,7 @@ export class Editor {
     this.arc = { sweep: 180, r1: false, r2: false }; // 円弧の開き角(度)と半径の直線①②
     this.dimEnd = { style: "dot", size: 6 }; // 寸法線の端部(黒丸/矢印)とサイズ
     this.eraser = { mode: "stroke", size: 24 }; // 消しゴム: stroke=線ごと / partial=なぞった部分だけ(size=円の直径・画面px)
+    this.modes = { ellipse: "ellipse", arc: "center", poly: "polygon", n: 6 }; // 丸=楕円/円、円弧=中心/3点、多角形=多角形/ポリライン/正多角形(辺の数n)
     this.loadDefaults();
     this.aid = new DrawAid(this); // オブジェクトスナップ・極トラッキング・数値入力
     this.pendingStamp = null;
@@ -102,6 +120,7 @@ export class Editor {
   setModel(model) {
     this.cancelGesture();
     this.cancelPolygon();
+    this.cancelArc3();
     this.aid.cancelPending();
     if (this.editing) this.finishTextEdit(true);
     this.unsub?.();
@@ -328,6 +347,7 @@ export class Editor {
    * ======================================================= */
   setTool(t) {
     if (this.poly && t !== "polygon") this.cancelPolygon();
+    if (t !== "arc") this.cancelArc3();
     this.aid.cancelPending();
     this.cancelGesture();
     this.returnTool = null;
@@ -459,7 +479,8 @@ export class Editor {
       }
       this.aid.cancelPending();
     }
-    if (tool === "polygon") return this.polygonDown(e, pageId, p);
+    if (tool === "polygon" && this.modes.poly !== "regular") return this.polygonDown(e, pageId, p);
+    if (tool === "arc" && this.modes.arc === "three") return this.arc3Down(e, pageId, p);
     if (tool === "text") return this.beginText(pageId, p);
     if (tool === "stamp") return this.placeStamp(pageId, p);
 
@@ -658,10 +679,14 @@ export class Editor {
     switch (g.tool) {
       case "pen":
         return { ...base, type: "pen", pts: g.pts.length ? g.pts : [g.p0] };
+      case "ellipse":
+        if (this.modes.ellipse === "circle") return g.p1 ? { ...base, type: "ellipse", pts: this.circlePts(g.p0, g.p1) } : null;
+        return g.p1 ? { ...base, type: "ellipse", pts: [g.p0, g.p1] } : null;
+      case "polygon":
+        return g.p1 ? { ...base, type: "polygon", pts: regularPolygonPts(g.p0, g.p1, this.modes.n) } : null;
       case "line":
       case "arrow":
       case "rect":
-      case "ellipse":
         return g.p1 ? { ...base, type: g.tool, pts: [g.p0, g.p1], ...(g.tool === "arrow" ? { headSize: this.arrowSize } : {}) } : null;
       case "arc":
         return g.p1 ? { ...base, ...this.newArc(g.p0, g.p1) } : null;
@@ -690,7 +715,14 @@ export class Editor {
     renderShape(sh, el.draft, { page: this.model.page(g.pageId), images: this.model.images });
     el.draft.querySelectorAll(".hit").forEach((n) => n.remove());
     this.aid.drawMark(el.draft, g.mark);
-    if (g.p1) this.aid.readout(el.draft, g.tool, g.p0, g.p1, this.model.page(g.pageId), g.mark);
+    const rt = (g.tool === "ellipse" && this.modes.ellipse === "circle") || g.tool === "polygon" ? "circle" : g.tool;
+    if (g.p1) this.aid.readout(el.draft, rt, g.p0, g.p1, this.model.page(g.pageId), g.mark);
+  }
+
+  /** 円: 中心 c と、円周上の点 p から、外接の対角2点 */
+  circlePts(c, p) {
+    const r = dist(c, p);
+    return [[c[0] - r, c[1] - r], [c[0] + r, c[1] + r]];
   }
 
   /** 下書き用に図形を描く(当たり判定は外す) */
@@ -748,8 +780,13 @@ export class Editor {
         this.addAndSelect(pageId, { type: tool, pts: [g.p0, p1], style: { ...this.style }, ...(tool === "arrow" ? { headSize: this.arrowSize } : {}) });
         break;
       case "rect":
-      case "ellipse":
         this.addAndSelect(pageId, { type: tool, pts: [g.p0, p1], style: { ...this.style } });
+        break;
+      case "ellipse":
+        this.addAndSelect(pageId, { type: "ellipse", pts: this.modes.ellipse === "circle" ? this.circlePts(g.p0, p1) : [g.p0, p1], style: { ...this.style } });
+        break;
+      case "polygon":
+        this.addAndSelect(pageId, { type: "polygon", pts: regularPolygonPts(g.p0, p1, this.modes.n), style: { ...this.style } });
         break;
       case "arc":
         this.addAndSelect(pageId, { ...this.newArc(g.p0, p1), style: { ...this.style } });
@@ -818,7 +855,7 @@ export class Editor {
     const dbl = this.isDoubleTap(e, "polygon");
     if (!this.poly || this.poly.pageId !== pageId) {
       this.cancelPolygon();
-      this.poly = { pageId, pts: [], hover: null, snapPts: this.aid.pointsFor(pageId), mark: null };
+      this.poly = { pageId, pts: [], hover: null, snapPts: this.aid.pointsFor(pageId), mark: null, open: this.modes.poly === "polyline" };
       this.polyMoveFn = (ev) => {
         if (!this.poly) return;
         const raw = this.clampToPage(this.pt(ev, this.poly.pageId), this.poly.pageId);
@@ -832,7 +869,9 @@ export class Editor {
     const pts = this.poly.pts;
     const first = pts[0];
     const closeR = 12 / this.zoom;
-    if (pts.length >= 3 && (dbl || dist(p, first) < closeR)) return this.finishPolygon();
+    if (this.poly.open) {
+      if (pts.length >= 2 && dbl) return this.finishPolygon();
+    } else if (pts.length >= 3 && (dbl || dist(p, first) < closeR)) return this.finishPolygon();
     p = this.clampToPage(this.aid.resolve(p, { pts: this.poly.snapPts, p0: pts[pts.length - 1] || null, ev: e }).p, pageId);
     if (pts.length && dist(p, pts[pts.length - 1]) < 2) return;
     pts.push(p);
@@ -846,7 +885,10 @@ export class Editor {
     const el = this.els.get(poly.pageId);
     el.draft.replaceChildren();
     const pts = poly.hover && poly.pts.length ? [...poly.pts, poly.hover] : poly.pts;
-    if (pts.length > 1) {
+    if (pts.length > 1 && poly.open) {
+      const ln = renderShape({ id: "draft2", type: "polyline", pts, style: { ...this.style } }, el.draft, {});
+      ln.querySelectorAll(".hit").forEach((n) => n.remove());
+    } else if (pts.length > 1) {
       renderShape({ id: "draft", type: "polygon", pts, style: { ...this.style, fill: "none" } }, el.draft, {});
       el.draft.querySelectorAll(".hit").forEach((n) => n.remove());
       // 最後の辺(戻る線)は点線で表現するため、開いた線として上書き
@@ -860,13 +902,67 @@ export class Editor {
   finishPolygon() {
     const poly = this.poly;
     if (!poly) return;
-    if (poly.pts.length < 3) return this.cancelPolygon();
+    if (poly.pts.length < (poly.open ? 2 : 3)) return this.cancelPolygon();
     const { pageId } = poly;
     const pts = poly.pts.slice();
     this.lastTap = { t: 0, x: 0, y: 0, key: null };
     this.cancelPolygon();
-    this.addAndSelect(pageId, { type: "polygon", pts, style: { ...this.style } });
+    this.addAndSelect(pageId, { type: poly.open ? "polyline" : "polygon", pts, style: { ...this.style, ...(poly.open ? { fill: "none" } : {}) } });
   }
+  /* ---------- 円弧(3点: 始点 → 終点 → 途中の点) ---------- */
+  arc3Down(e, pageId, p) {
+    p = this.clampToPage(p, pageId);
+    if (!this.arc3 || this.arc3.pageId !== pageId) {
+      this.cancelArc3();
+      this.arc3 = { pageId, pts: [], hover: null, mark: null, snapPts: this.aid.pointsFor(pageId) };
+      this.arc3MoveFn = (ev) => {
+        const a = this.arc3;
+        if (!a) return;
+        const r = this.aid.resolve(this.clampToPage(this.pt(ev, a.pageId), a.pageId), { pts: a.snapPts, ev, polar: false });
+        a.hover = r.p;
+        a.mark = r.mark;
+        this.drawArc3Draft();
+      };
+      this.els.get(pageId).svg.addEventListener("pointermove", this.arc3MoveFn);
+    }
+    const a = this.arc3;
+    const r = this.aid.resolve(p, { pts: a.snapPts, ev: e, polar: false });
+    const q = this.clampToPage(r.p, pageId);
+    if (a.pts.length && dist(q, a.pts[a.pts.length - 1]) < 2) return;
+    a.pts.push(q);
+    a.hover = q;
+    if (a.pts.length < 3) return this.drawArc3Draft();
+    const arc = arcThrough(a.pts[0], a.pts[1], a.pts[2]);
+    this.cancelArc3();
+    if (!arc) return this.emit("toast", { text: "3点が一直線上にあるため、円弧にできません" });
+    this.addAndSelect(pageId, { type: "arc", pts: arc.pts, sweep: arc.sweep, ...(this.arc.r1 ? { r1: true } : {}), ...(this.arc.r2 ? { r2: true } : {}), style: { ...this.style } });
+  }
+  drawArc3Draft() {
+    const a = this.arc3;
+    if (!a) return;
+    const el = this.els.get(a.pageId);
+    el.draft.replaceChildren();
+    const z = this.zoom;
+    if (a.pts.length === 1 && a.hover) {
+      this.renderDraft({ id: "draft", type: "line", pts: [a.pts[0], a.hover], style: { ...this.style, dash: true } }, el.draft);
+    } else if (a.pts.length === 2 && a.hover) {
+      const arc = arcThrough(a.pts[0], a.pts[1], a.hover);
+      if (arc) this.renderDraft({ id: "draft", type: "arc", pts: arc.pts, sweep: arc.sweep, style: { ...this.style } }, el.draft);
+      else this.renderDraft({ id: "draft", type: "line", pts: [a.pts[0], a.pts[1]], style: { ...this.style, dash: true } }, el.draft);
+    }
+    this.aid.drawMark(el.draft, a.mark);
+    a.pts.forEach((q, i) => el.draft.appendChild(sv("circle", { cx: q[0], cy: q[1], r: (i === 0 ? 5 : 4) / z, fill: "#fff", stroke: "#2563eb", "stroke-width": 1.5 / z, "pointer-events": "none" })));
+  }
+  cancelArc3() {
+    if (!this.arc3) return;
+    const el = this.els.get(this.arc3.pageId);
+    if (el) {
+      el.svg.removeEventListener("pointermove", this.arc3MoveFn);
+      el.draft.replaceChildren();
+    }
+    this.arc3 = null;
+  }
+
   cancelPolygon() {
     if (!this.poly) return;
     const el = this.els.get(this.poly.pageId);
@@ -1011,6 +1107,10 @@ export class Editor {
     if (handle && this.sel) {
       e.preventDefault();
       if (dbl && handle.dataset.kind === "v") return this.removeVertex(+handle.dataset.idx);
+      if (dbl && handle.dataset.kind === "edge") {
+        const f = this.model.findShape(this.sel.shapeId);
+        if (f && f.shape.type !== "rect") return this.insertVertex(f.page.id, f.shape, p);
+      }
       if (dbl && handle.dataset.kind === "off") {
         const f = this.model.findShape(this.sel.shapeId);
         if (f) return this.emit("dim-edit", { pageId: f.page.id, shape: f.shape });
@@ -1037,7 +1137,7 @@ export class Editor {
     if (dbl && !this.multi) {
       if (shape.type === "text") return this.editText(pageId, shape, false);
       if (shape.type === "dim") return this.emit("dim-edit", { pageId, shape });
-      if (shape.type === "polygon" || shape.type === "cloud") return this.insertVertex(pageId, shape, p);
+      if (shape.type === "polygon" || shape.type === "polyline" || shape.type === "cloud") return this.insertVertex(pageId, shape, p);
     }
     const inSel = this.selectionPageId() === pageId && this.selectedIds().includes(id);
     if (modKey || (tool !== "select" && !inSel)) {
@@ -1276,6 +1376,7 @@ export class Editor {
     const startCorners = corners ? rectPoints(shape.pts[0], shape.pts[1]) : null;
     this.g = { kind: "handle", pageId, id: e.pointerId, before: this.model.snapshot(), moved: false };
     el.svg.setPointerCapture?.(e.pointerId);
+    const sp = shape.pts.map((pt) => [pt[0], pt[1]]);
     let rotM = null;
     let rotCenter = null;
     const arc = shape.type === "arc" ? { c: shape.pts[0], ...arcGeometry(shape.pts[0], shape.pts[1], shape.sweep) } : null;
@@ -1319,6 +1420,33 @@ export class Editor {
         const ny = (b[0] - a[0]) / L;
         const m = mid(a, b);
         shape.off = (q[0] - m[0]) * nx + (q[1] - m[1]) * ny;
+      } else if (kind === "edge") {
+        const r = this.aid.resolve(q, { pts: hPts, ev });
+        q = this.clampToPage(r.p, pageId);
+        hMark = r.mark;
+        if (shape.type === "rect") {
+          let [x0, y0, x1, y1] = [Math.min(sp[0][0], sp[1][0]), Math.min(sp[0][1], sp[1][1]), Math.max(sp[0][0], sp[1][0]), Math.max(sp[0][1], sp[1][1])];
+          if (idx === 0) y0 = q[1];
+          else if (idx === 1) x1 = q[0];
+          else if (idx === 2) y1 = q[1];
+          else x0 = q[0];
+          shape.pts = [[x0, y0], [x1, y1]];
+        } else {
+          const n = sp.length;
+          const closed = shape.type === "polygon";
+          const A = sp[idx];
+          const B = sp[(idx + 1) % n];
+          const L = dist(A, B) || 1;
+          const nx = -(B[1] - A[1]) / L;
+          const ny = (B[0] - A[0]) / L;
+          const m0 = mid(A, B);
+          const d = (q[0] - m0[0]) * nx + (q[1] - m0[1]) * ny;
+          const next = sp.map((pt) => [pt[0], pt[1]]);
+          next[idx] = [A[0] + nx * d, A[1] + ny * d];
+          next[(idx + 1) % n] = [B[0] + nx * d, B[1] + ny * d];
+          if (!closed && idx + 1 >= n) return;
+          shape.pts = next;
+        }
       } else if (corners) {
         const opp = startCorners[(idx + 2) % 4];
         if (shape.type === "image" && shape.aspect) {
@@ -1409,7 +1537,8 @@ export class Editor {
     const pts = shape.pts;
     let best = -1;
     let bd = Infinity;
-    for (let i = 0; i < pts.length; i++) {
+    const nSeg = shape.type === "polyline" ? pts.length - 1 : pts.length;
+    for (let i = 0; i < nSeg; i++) {
       const d = distToSegment(p, pts[i], pts[(i + 1) % pts.length]);
       if (d < bd) {
         bd = d;
@@ -1426,7 +1555,7 @@ export class Editor {
     const f = this.model.findShape(this.sel.shapeId);
     if (!f) return;
     const s = f.shape;
-    if ((s.type === "polygon" || s.type === "cloud") && s.pts.length > 3) {
+    if (((s.type === "polygon" || s.type === "cloud") && s.pts.length > 3) || (s.type === "polyline" && s.pts.length > 2)) {
       this.model.mutate(() => s.pts.splice(idx, 1));
     }
   }
@@ -1453,17 +1582,46 @@ export class Editor {
       if (d.arrowSize) this.arrowSize = d.arrowSize;
       if (d.arc) Object.assign(this.arc, d.arc);
       if (d.eraser) Object.assign(this.eraser, d.eraser);
+      if (d.modes) Object.assign(this.modes, d.modes);
     } catch {
       /* 破損していたら既定のまま */
     }
   }
   saveDefaults() {
     try {
-      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, measureWidth: this.measureWidth, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc, eraser: this.eraser }));
+      localStorage.setItem("apdf_defaults_v1", JSON.stringify({ style: this.style, textStyle: this.textStyle, dimSize: this.dimSize, measureWidth: this.measureWidth, dimEnd: this.dimEnd, cloudPitch: this.cloudPitch, arrowSize: this.arrowSize, arc: this.arc, eraser: this.eraser, modes: this.modes }));
     } catch {
       /* 保存できなくてもこのセッションでは有効 */
     }
   }
+  /** 描き方の切り替え(丸=楕円/円、円弧=中心/3点、多角形=多角形/ポリライン/正多角形、辺の数) */
+  setMode(key, value) {
+    if (!(key in this.modes)) return;
+    this.cancelPolygon();
+    this.cancelArc3();
+    this.modes[key] = key === "n" ? Math.max(3, Math.min(64, Math.round(+value) || 6)) : value;
+    this.saveDefaults();
+    this.emit("mode", this.modes);
+  }
+  /** 選択中の図形を雲マークに変換する(四角・丸・多角形) */
+  convertToCloud() {
+    const f = this.sel && this.model.findShape(this.sel.shapeId);
+    if (!f || f.shape.locked) return;
+    const s = f.shape;
+    let pts = null;
+    if (s.type === "rect") pts = rectPoints(s.pts[0], s.pts[1]);
+    else if (s.type === "ellipse") pts = ellipsePolygonPts(s.pts[0], s.pts[1], 20);
+    else if (s.type === "polygon") pts = s.pts.map((q) => [q[0], q[1]]);
+    if (!pts) return;
+    this.model.mutate(() => {
+      s.type = "cloud";
+      s.pts = pts;
+      s.pitch = this.cloudPitch;
+    });
+    this.refreshLayer(f.page);
+    this.setSelection({ pageId: f.page.id, shapeId: s.id });
+  }
+
   /** 選択中の図形の線・色・文字の設定を、新規作成時の初期設定にする */
   setDefaultsFrom(sh) {
     const st = sh.style || {};
@@ -1516,6 +1674,14 @@ export class Editor {
       const c = sv("circle", { class: "handle", cx: v[0], cy: v[1], r: R, "stroke-width": 1.6 / z, "data-kind": "v", "data-idx": i });
       el.ui.appendChild(c);
     });
+    // 辺の中点ハンドル: 辺をドラッグすると、その辺だけが垂直方向に動く
+    const edgeList = edgesOf(sh);
+    if (edgeList) {
+      edgeList.forEach(([p, q], i) => {
+        const m = mid(p, q);
+        el.ui.appendChild(sv("rect", { class: "handle mid", x: m[0] - R * 0.8, y: m[1] - R * 0.8, width: R * 1.6, height: R * 1.6, rx: R / 4, "stroke-width": 1.6 / z, "data-kind": "edge", "data-idx": i }));
+      });
+    }
     if (sh.type === "dim") {
       const g = dimensionGeometry(sh.pts[0], sh.pts[1], sh.off ?? 24, sh.size || 12, dimOpts(sh));
       const m = mid(g.line[0], g.line[1]);
@@ -1709,6 +1875,7 @@ export class Editor {
       this.aid.setConfig({ polar: !this.aid.cfg.polar });
     } else if (e.key === "Escape") {
       if (this.aid.pending) this.aid.cancelPending();
+      else if (this.arc3) this.cancelArc3();
       else if (this.poly) this.cancelPolygon();
       else if (this.g) this.cancelGesture();
       else if (this.confirmCreated()) return;

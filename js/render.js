@@ -172,6 +172,12 @@ export function renderShape(shape, parent, opts = {}) {
       hit(d);
       break;
     }
+    case "polyline": {
+      const d = linePath(shape.pts);
+      el("path", { d, fill: "none", ...common }, g);
+      hit(d);
+      break;
+    }
     case "polygon": {
       const d = polygonPath(shape.pts);
       el("path", { d, ...fillAttrs, ...common }, g);

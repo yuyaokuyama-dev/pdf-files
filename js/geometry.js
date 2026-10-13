@@ -452,3 +452,57 @@ export function eraseStroke(pts, a, b, R) {
   flush();
   return touched ? out : null;
 }
+
+/* ---------- 作図コマンド用 ---------- */
+
+/** 3点を通る円の中心と半径。一直線上なら null */
+export function circleThrough(a, b, c) {
+  const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+  if (Math.abs(d) < 1e-9) return null;
+  const a2 = a[0] * a[0] + a[1] * a[1];
+  const b2 = b[0] * b[0] + b[1] * b[1];
+  const c2 = c[0] * c[0] + c[1] * c[1];
+  const ux = (a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d;
+  const uy = (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d;
+  return { c: [ux, uy], r: Math.hypot(a[0] - ux, a[1] - uy) };
+}
+
+/**
+ * 円弧を「始点 a → 終点 b → 途中の点 m」の3点から作る。
+ * 画面上で時計回りに測る開き角(sweep)の円弧として { pts: [中心, 始点], sweep } を返す。一直線上なら null
+ */
+export function arcThrough(a, b, m) {
+  const k = circleThrough(a, b, m);
+  if (!k) return null;
+  const tau = Math.PI * 2;
+  const ang = (p) => Math.atan2(p[1] - k.c[1], p[0] - k.c[0]);
+  const cw = (from, to) => (((to - from) % tau) + tau) % tau; // from から時計回りに to までの角
+  const ab = cw(ang(a), ang(b));
+  const am = cw(ang(a), ang(m));
+  const toDegC = (r) => clampSweep((r * 180) / Math.PI);
+  if (am < ab) return { pts: [k.c, a], sweep: toDegC(ab) }; // a から時計回りに m を通って b へ
+  return { pts: [k.c, b], sweep: toDegC(cw(ang(b), ang(a))) }; // 向きが逆なら b から a へ
+}
+
+/** 正n角形の頂点(中心 c、頂点の1つ v が決める向きと大きさ) */
+export function regularPolygonPts(c, v, n) {
+  const N = Math.max(3, Math.min(64, Math.round(n) || 3));
+  const r = dist(c, v);
+  const t0 = Math.atan2(v[1] - c[1], v[0] - c[0]);
+  return Array.from({ length: N }, (_, i) => {
+    const t = t0 + (i * Math.PI * 2) / N;
+    return [c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)];
+  });
+}
+
+/** 楕円(外接の対角2点)を頂点列にする(雲マークへの変換用) */
+export function ellipsePolygonPts(p0, p1, n = 24) {
+  const cx = (p0[0] + p1[0]) / 2;
+  const cy = (p0[1] + p1[1]) / 2;
+  const rx = Math.abs(p1[0] - p0[0]) / 2;
+  const ry = Math.abs(p1[1] - p0[1]) / 2;
+  return Array.from({ length: n }, (_, i) => {
+    const t = (i * Math.PI * 2) / n;
+    return [cx + rx * Math.cos(t), cy + ry * Math.sin(t)];
+  });
+}
