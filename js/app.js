@@ -9,6 +9,8 @@ import { Props } from "./props.js";
 import { LayerPanel } from "./layerpanel.js";
 import { exportPdf, LEVELS } from "./export.js";
 import { pageOf } from "./editdata.js";
+import { buildDxf } from "./dxf.js";
+import { textMetrics } from "./render.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
 import { browseDrive } from "./drivebrowse.js";
@@ -1225,6 +1227,7 @@ function saveMenu(anchor) {
     { label: saveOriginalLabel(S.model.meta), icon: "download", onClick: () => saveOriginal(S.model.meta.projectId), disabled: !has },
     { label: S.model.meta.driveId ? "Googleドライブに保存(上書き/別名)" : "Googleドライブに保存", icon: "drive", onClick: saveToDrive, disabled: !has },
     { label: "PDFを端末に保存(最適化)", icon: "download", onClick: downloadPdf, disabled: !has },
+    { label: "DXFで書き出す(描いた図形・CAD用)", icon: "download", onClick: exportDxf, disabled: !has },
     { label: "Gmailでメール送信", icon: "mail", onClick: mailPdf, disabled: !has },
     { sep: true },
     { label: "ファイル名を変更", icon: "text", onClick: renameDoc, disabled: !has },
@@ -1809,8 +1812,8 @@ async function runExport(level, opts = {}) {
   }
 }
 
-async function deliverFile(bytes, name) {
-  const file = new File([bytes], name, { type: "application/pdf" });
+async function deliverFile(bytes, name, type = "application/pdf") {
+  const file = new File([bytes], name, { type });
   const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
   if (mobile && navigator.canShare?.({ files: [file] })) {
     try {
@@ -1931,6 +1934,29 @@ async function downloadPdf() {
     await saveProjectNow();
     toast(`${target?.name || o.name}(${fmtBytes(res.bytes.length)})を保存しました`);
   }
+}
+
+/** DXF書き出し: 描いた図形を、実寸のDXF(CADで開ける形式)で保存する */
+async function exportDxf() {
+  const m = S.model;
+  if (!m.pages.length) return;
+  const cur = Math.max(0, m.pages.findIndex((p) => p.id === S.editor.curPageId));
+  let pageIdx = cur;
+  const opts = m.pages.map((p, i) => `<option value="${i}"${i === cur ? " selected" : ""}>${i + 1}ページ目(図形 ${p.shapes.length}個${p.scale ? "・縮尺あり" : ""})</option>`).join("");
+  const ok = await dialog({
+    title: "DXFで書き出す",
+    body: `<label class="field">書き出すページ<select id="dxPage">${opts}</select></label>
+      <p class="note">描いた図形(線・四角・円・円弧・多角形・ポリライン・雲・文字・寸法・引出線)を、レイヤー・色・線の太さ・線種つきで書き出します。縮尺を設定したページは<b>実寸(mm)</b>、未設定のページは用紙上の寸法(mm)になります。写真・スタンプ・署名は含まれません。</p>`,
+    buttons: [{ label: "キャンセル", value: null }, { label: "書き出す", value: true, primary: true, action: (d) => { pageIdx = +d.querySelector("#dxPage").value; } }],
+  });
+  if (!ok) return;
+  const page = m.pages[pageIdx];
+  const r = buildDxf(page, m.layers, { metrics: (s) => textMetrics(s) });
+  const base = m.meta.name.replace(/\.pdf$/i, "");
+  const name = `${base}-${pageIdx + 1}.dxf`;
+  const how = await deliverFile(new TextEncoder().encode(r.text), name, "application/dxf");
+  if (how === "cancel") return;
+  toast(`${name} を書き出しました(図形${r.count}個${r.skipped ? `・対象外${r.skipped}個` : ""}${page.scale ? "・実寸" : "・用紙上の寸法"})`);
 }
 
 /* =========================================================
