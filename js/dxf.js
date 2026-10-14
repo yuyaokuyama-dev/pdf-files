@@ -95,15 +95,19 @@ class Writer {
 
 /**
  * ページの図形を DXF の文字列にする。
- * page: { w, h, shapes, scale }  layers: 文書のレイヤー  opts.metrics(shape): 文字の大きさ { w, h, lines }(引出線の囲みに使う)
+ * page: { w, h, shapes, scale }  layers: 文書のレイヤー  opts.metrics(shape): 文字の大きさ { w, h, lines }(引出線の囲みに使う)  opts.pdfPaths: 元PDFの線(pdfvec.js の paths)
  * 返り値: { text, count, skipped, mmPerPt }
  */
+export const PDF_LAYER_ID = "__pdf";
+
 export function buildDxf(page, layers = [], opts = {}) {
   const k = mmPerPt(page);
   const H = page.h;
   const P = (p) => [p[0] * k, (H - p[1]) * k];
   const shapes = visibleShapes(page.shapes || [], layers);
-  const layerList = layers.length ? layers : [{ id: BASE_LAYER_ID, name: "0", color: "#111827", width: 1, dash: "" }];
+  const layerList = (layers.length ? layers : [{ id: BASE_LAYER_ID, name: "0", color: "#111827", width: 1, dash: "" }]).slice();
+  const pdfPaths = opts.pdfPaths || [];
+  if (pdfPaths.length) layerList.push({ id: PDF_LAYER_ID, name: "PDF元図", color: "#000000", width: 0.5, dash: "" });
   const names = new Map(layerList.map((l) => [l.id, layerName(l.name)]));
   const used = new Set();
   for (const l of layerList) {
@@ -244,6 +248,13 @@ export function buildDxf(page, layers = [], opts = {}) {
     const v = measure(sh.pts[0], sh.pts[1], page.scale);
     return v == null ? "" : formatLength(v, page.scale.unit);
   };
+
+  // 元PDFの線(あれば図形の下=先に書く)
+  for (const p of pdfPaths) {
+    const sh = { layer: PDF_LAYER_ID, style: { color: p.color, width: Math.max(0.1, p.width) }, bl: [] };
+    if (p.pts.length === 2 && !p.closed) line(sh, p.pts[0], p.pts[1]);
+    else poly(sh, p.pts, p.closed);
+  }
 
   for (const sh of shapes) {
     switch (sh.type) {

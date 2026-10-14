@@ -52,10 +52,12 @@ function stripEditStreams(pg) {
  * PDFを作る。
  * embedEdit: 図形をPDF内の専用レイヤーに描き、編集用データ(図形・レイヤー)を添付する。
  * editImages: 写真・スタンプ・署名も編集用データに含める(容量が増える)
+ * keepLayers: 図形をレイヤーごとに分けて書き出し、他のPDFソフトでもレイヤーの表示・非表示ができるようにする(編集用データは付けない。レイヤーが2つ以上あるときだけ)
  */
-export async function exportPdf(doc, { level = "small", onProgress, embedEdit = false, editImages = false } = {}) {
+export async function exportPdf(doc, { level = "small", onProgress, embedEdit = false, editImages = false, keepLayers = false } = {}) {
   const cfg = LEVELS[level] || LEVELS.small;
   const wantEdit = !!embedEdit && !cfg.rasterize;
+  const keepOc = !!keepLayers && !wantEdit && !cfg.rasterize && (doc.layers || []).length > 1;
   const ocgs = new Map(); // レイヤーid → { ref, key }
   const editPages = [];
   const out = await PDFDocument.create();
@@ -136,7 +138,8 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
       let o = ocgs.get(layerId);
       if (!o) {
         const L = (doc.layers || []).find((l) => l.id === layerId);
-        const ref = out.context.register(out.context.obj({ Type: "OCG", Name: PDFHexString.fromText(OC_PREFIX + (L?.name ?? layerId)) }));
+        // 編集用レイヤーは名前の先頭に印を付ける(開き直すと非表示にして図形として復元)。レイヤー保持だけのときは普通の名前
+        const ref = out.context.register(out.context.obj({ Type: "OCG", Name: PDFHexString.fromText((keepOc ? "" : OC_PREFIX) + (L?.name ?? layerId)) }));
         o = { ref, key: `PFL${ocgs.size}` };
         ocgs.set(layerId, o);
       }
@@ -186,7 +189,8 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
         pg.contentStream = inEdit ? editStream : baseStream;
         pg.contentStreamRef = inEdit ? editRef : baseRef;
       }
-      if (inEdit) pg.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of("OC"), PDFName.of(ocgFor(layerIdOf(sh)).key)]));
+      const inOc = inEdit || keepOc;
+      if (inOc) pg.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence, [PDFName.of("OC"), PDFName.of(ocgFor(layerIdOf(sh)).key)]));
       const st = sh.style || {};
       const color = hexToRgb(st.color || "#e11d48");
       const width = st.width ?? 2;
@@ -308,8 +312,12 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
         default:
           break;
       }
-      if (inEdit) pg.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
+      if (inOc) pg.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
     }
+  }
+  if (keepOc && ocgs.size) {
+    const refs = [...ocgs.values()].map((o) => o.ref);
+    out.catalog.set(PDFName.of("OCProperties"), out.context.obj({ OCGs: refs, D: { Order: refs, ON: refs } }));
   }
   if (wantEdit && editPages.some((e) => e && e.shapes)) {
     const refs = [...ocgs.values()].map((o) => o.ref);

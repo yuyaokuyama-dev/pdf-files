@@ -66,7 +66,7 @@ export function dialog({ title, body, buttons = [{ label: "閉じる", value: tr
           const r = await b.action(dlg);
           if (r === false) return;
         }
-        close(b.value ?? true);
+        close(b.value === undefined ? true : b.value);
       }),
     );
     dlg.querySelector("form").addEventListener("submit", (e) => e.preventDefault());

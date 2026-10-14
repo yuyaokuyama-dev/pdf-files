@@ -10,12 +10,13 @@ import { LayerPanel } from "./layerpanel.js";
 import { exportPdf, LEVELS } from "./export.js";
 import { pageOf } from "./editdata.js";
 import { buildDxf } from "./dxf.js";
-import { textMetrics } from "./render.js";
+import { extractVectorPaths } from "./pdfvec.js";
+import { textMetrics, serializeOverlay } from "./render.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
 import { browseDrive } from "./drivebrowse.js";
 import { makeScale, formatLength, PAPERS, guessPaper, scaleFromPaper } from "./geometry.js";
-import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, loadImage } from "./raster.js";
+import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, loadImage, renderPageJpeg } from "./raster.js";
 import { createPad } from "./pad.js";
 import { icon } from "./icons.js";
 import { TabBar, createWindowSync, sideBySideFeatures } from "./tabs.js";
@@ -1228,6 +1229,7 @@ function saveMenu(anchor) {
     { label: S.model.meta.driveId ? "Googleドライブに保存(上書き/別名)" : "Googleドライブに保存", icon: "drive", onClick: saveToDrive, disabled: !has },
     { label: "PDFを端末に保存(最適化)", icon: "download", onClick: downloadPdf, disabled: !has },
     { label: "DXFで書き出す(描いた図形・CAD用)", icon: "download", onClick: exportDxf, disabled: !has },
+    { label: "画像・SVGで書き出す(ページ単位)", icon: "download", onClick: exportPageImage, disabled: !has },
     { label: "Gmailでメール送信", icon: "mail", onClick: mailPdf, disabled: !has },
     { sep: true },
     { label: "ファイル名を変更", icon: "text", onClick: renameDoc, disabled: !has },
@@ -1914,11 +1916,21 @@ async function exportPages(ids) {
 }
 
 async function downloadPdf() {
-  const o = await askExport({ title: "PDFを端末に保存", ok: typeof window.showSaveFilePicker === "function" ? "作成して保存先を選ぶ" : "作成して保存" });
+  const multi = S.model.layers.length > 1;
+  const o = await askExport({
+    title: "PDFを端末に保存",
+    ok: typeof window.showSaveFilePicker === "function" ? "作成して保存先を選ぶ" : "作成して保存",
+    extraHtml: multi ? `<label class="check field" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="exKeepLayers"${S.settings.keepLayers === false ? "" : " checked"}><span>レイヤーを残す<br><span class="note">他のPDFソフトでも、レイヤーごとに表示・非表示できます(「全ページを画像にする」を選ぶと残りません)。ファイルが少し重くなる場合は外してください。</span></span></label>` : "",
+    extraRead: (d) => (multi ? { keepLayers: d.querySelector("#exKeepLayers").checked } : null),
+  });
   if (!o) return;
+  if (o.extra) {
+    S.settings.keepLayers = o.extra.keepLayers;
+    S.store.setSetting("settings", S.settings);
+  }
   const target = await pickSaveTarget(o.name); // 最初は今のファイルと同じ場所
   if (target === "cancel") return;
-  const res = await runExport(o.level);
+  const res = await runExport(o.level, { keepLayers: !!o.extra?.keepLayers });
   if (!res) return;
   S.model.meta.name = o.name;
   updateEmpty();
@@ -1942,21 +1954,100 @@ async function exportDxf() {
   if (!m.pages.length) return;
   const cur = Math.max(0, m.pages.findIndex((p) => p.id === S.editor.curPageId));
   let pageIdx = cur;
+  let withPdf = false;
   const opts = m.pages.map((p, i) => `<option value="${i}"${i === cur ? " selected" : ""}>${i + 1}ページ目(図形 ${p.shapes.length}個${p.scale ? "・縮尺あり" : ""})</option>`).join("");
   const ok = await dialog({
     title: "DXFで書き出す",
     body: `<label class="field">書き出すページ<select id="dxPage">${opts}</select></label>
-      <p class="note">描いた図形(線・四角・円・円弧・多角形・ポリライン・雲・文字・寸法・引出線)を、レイヤー・色・線の太さ・線種つきで書き出します。縮尺を設定したページは<b>実寸(mm)</b>、未設定のページは用紙上の寸法(mm)になります。写真・スタンプ・署名は含まれません。</p>`,
-    buttons: [{ label: "キャンセル", value: null }, { label: "書き出す", value: true, primary: true, action: (d) => { pageIdx = +d.querySelector("#dxPage").value; } }],
+      <p class="note">描いた図形(線・四角・円・円弧・多角形・ポリライン・雲・文字・寸法・引出線)を、レイヤー・色・線の太さ・線種つきで書き出します。縮尺を設定したページは<b>実寸(mm)</b>、未設定のページは用紙上の寸法(mm)になります。写真・スタンプ・署名は含まれません。</p>
+      <label class="check" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="dxPdf"> 元のPDFの線も含める(別レイヤー「PDF元図」。図面PDFのような線画向け。文字・画像・塗りは含まれません)</label>`,
+    buttons: [{ label: "キャンセル", value: null }, { label: "書き出す", value: true, primary: true, action: (d) => { pageIdx = +d.querySelector("#dxPage").value; withPdf = d.querySelector("#dxPdf").checked; } }],
   });
   if (!ok) return;
   const page = m.pages[pageIdx];
-  const r = buildDxf(page, m.layers, { metrics: (s) => textMetrics(s) });
+  let pdfPaths = [];
+  let pdfNote = "";
+  if (withPdf) {
+    try {
+      const pp = await getPdfPage(page);
+      if (pp) {
+        const rot = ((page.baseRot || 0) + page.rot) % 360;
+        const ol = await pp.getOperatorList();
+        const res = extractVectorPaths(ol, pdfjs.OPS, pp.getViewport({ scale: 1, rotation: rot }).transform);
+        pdfPaths = res.paths;
+        pdfNote = `・元PDFの線${pdfPaths.length}本${res.truncated ? "(多いため一部のみ)" : ""}`;
+      }
+    } catch (e) {
+      console.error(e);
+      toast("元のPDFの線は取り出せませんでした(描いた図形だけ書き出します)", { error: true });
+    }
+  }
+  const r = buildDxf(page, m.layers, { metrics: (s) => textMetrics(s), pdfPaths });
   const base = m.meta.name.replace(/\.pdf$/i, "");
   const name = `${base}-${pageIdx + 1}.dxf`;
   const how = await deliverFile(new TextEncoder().encode(r.text), name, "application/dxf");
   if (how === "cancel") return;
-  toast(`${name} を書き出しました(図形${r.count}個${r.skipped ? `・対象外${r.skipped}個` : ""}${page.scale ? "・実寸" : "・用紙上の寸法"})`);
+  toast(`${name} を書き出しました(図形${r.count}個${pdfNote}${r.skipped ? `・対象外${r.skipped}個` : ""}${page.scale ? "・実寸" : "・用紙上の寸法"})`);
+}
+
+/** 画像・SVG書き出し: 選んだページを PNG / JPEG / SVG にする(元PDFの絵を含める/含めないを選べる) */
+async function exportPageImage() {
+  const m = S.model;
+  if (!m.pages.length) return;
+  const cur = Math.max(0, m.pages.findIndex((p) => p.id === S.editor.curPageId));
+  const sel = { idx: cur, fmt: S.settings.imgFmt || "png", dpi: S.settings.imgDpi || 150, bg: S.settings.imgBg !== false };
+  const popts = m.pages.map((p, i) => `<option value="${i}"${i === cur ? " selected" : ""}>${i + 1}ページ目</option>`).join("");
+  const fmtOpts = [["png", "PNG(きれい・図面向き)"], ["jpeg", "JPEG(軽い・写真向き)"], ["svg", "SVG(拡大しても劣化しない・描いた図形)"]]
+    .map(([v, t]) => `<option value="${v}"${v === sel.fmt ? " selected" : ""}>${t}</option>`).join("");
+  const dpiOpts = [72, 150, 300].map((d) => `<option value="${d}"${d === sel.dpi ? " selected" : ""}>${d} dpi${d === 72 ? "(小さい)" : d === 300 ? "(印刷向き)" : ""}</option>`).join("");
+  const ok = await dialog({
+    title: "画像・SVGで書き出す",
+    body: `<label class="field">書き出すページ<select id="imPage">${popts}</select></label>
+      <label class="field">形式<select id="imFmt">${fmtOpts}</select></label>
+      <label class="field">解像度<select id="imDpi">${dpiOpts}</select></label>
+      <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="imBg"${sel.bg ? " checked" : ""}> 元のPDFの絵(背景)も含める</label>
+      <p class="note">SVGは描いた図形がそのまま線として残ります(背景を含める場合は背景だけ画像になります)。複数ページをまとめて出したいときは、ページ一覧で選んで「PDFで書き出す」を使ってください。</p>`,
+    buttons: [{ label: "キャンセル", value: null }, { label: "書き出す", value: true, primary: true, action: (d) => {
+      sel.idx = +d.querySelector("#imPage").value; sel.fmt = d.querySelector("#imFmt").value;
+      sel.dpi = +d.querySelector("#imDpi").value; sel.bg = d.querySelector("#imBg").checked;
+    } }],
+  });
+  if (!ok) return;
+  S.settings.imgFmt = sel.fmt; S.settings.imgDpi = sel.dpi; S.settings.imgBg = sel.bg;
+  S.store.setSetting("settings", S.settings);
+  const page = m.pages[sel.idx];
+  const rot = ((page.baseRot || 0) + page.rot) % 360;
+  const overlay = serializeOverlay(page, m.images, page.w, page.h, m.layers);
+  const base = m.meta.name.replace(/\.pdf$/i, "");
+  const ext = sel.fmt === "jpeg" ? "jpg" : sel.fmt;
+  const name = `${base}-${sel.idx + 1}.${ext}`;
+  let bytes, type;
+  try {
+    const pdfPage = sel.bg ? await getPdfPage(page) : null;
+    if (sel.fmt === "svg") {
+      let svg = overlay;
+      if (pdfPage) {
+        const r = await renderPageJpeg({ pdfPage, rotation: rot, w: page.w, h: page.h, overlaySvg: null, dpi: sel.dpi, mime: "image/png" });
+        let bin = "";
+        for (let i = 0; i < r.bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, r.bytes.subarray(i, i + 0x8000));
+        const img = `<image x="0" y="0" width="${page.w}" height="${page.h}" href="data:image/png;base64,${btoa(bin)}"/>`;
+        svg = svg.replace(/(<svg[^>]*>)/, `$1${img}`);
+      }
+      bytes = new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8"?>\n' + svg);
+      type = "image/svg+xml";
+    } else {
+      const mime = sel.fmt === "jpeg" ? "image/jpeg" : "image/png";
+      const r = await renderPageJpeg({ pdfPage, rotation: rot, w: page.w, h: page.h, overlaySvg: overlay, dpi: sel.dpi, quality: 0.9, mime, transparent: mime === "image/png" && !sel.bg });
+      bytes = r.bytes;
+      type = mime;
+    }
+  } catch (e) {
+    console.error(e);
+    return toast(`書き出せませんでした: ${e.message}`, { error: true });
+  }
+  const how = await deliverFile(bytes, name, type);
+  if (how === "cancel") return;
+  toast(`${name}(${fmtBytes(bytes.length)})を書き出しました`);
 }
 
 /* =========================================================

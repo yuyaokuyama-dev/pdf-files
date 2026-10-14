@@ -178,14 +178,16 @@ export function makeHankoDataUrl(text, color = "#d9261c", size = 240) {
 }
 
 /** ページを JPEG にレンダリング(最大圧縮モード用)。pdfPage: pdf.js page、overlaySvg: 図形SVG文字列 */
-export async function renderPageJpeg({ pdfPage, rotation, w, h, overlaySvg, dpi = 130, quality = 0.6 }) {
+export async function renderPageJpeg({ pdfPage, rotation, w, h, overlaySvg, dpi = 130, quality = 0.6, mime = "image/jpeg", transparent = false }) {
   const scale = dpi / 72;
   const c = document.createElement("canvas");
   c.width = Math.round(w * scale);
   c.height = Math.round(h * scale);
   const g = c.getContext("2d");
-  g.fillStyle = "#fff";
-  g.fillRect(0, 0, c.width, c.height);
+  if (!transparent) {
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, c.width, c.height);
+  }
   if (pdfPage) {
     const vp = pdfPage.getViewport({ scale, rotation });
     await pdfPage.render({ canvasContext: g, canvas: c, viewport: vp, optionalContentConfigPromise: pdfPage.pfOc }).promise;
@@ -199,5 +201,5 @@ export async function renderPageJpeg({ pdfPage, rotation, w, h, overlaySvg, dpi 
       URL.revokeObjectURL(url);
     }
   }
-  return { bytes: await blobToBytes(await canvasToBlob(c, "image/jpeg", quality)), w, h };
+  return { bytes: await blobToBytes(await canvasToBlob(c, mime, quality)), w, h };
 }
