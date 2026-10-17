@@ -24,7 +24,7 @@ const start = (name, opts) => ed(([n, o]) => window.__apdf.editor.startCommand(n
 const types = async () => (await shapes(page)).map((s) => s.type).join(",");
 
 /* ---- メニュー ---- */
-await page.click('.tool[data-tool="modify"]');
+await page.click('#tools [data-group="modify"]');
 const items = await page.locator("#menu button").allTextContents();
 check("「修正」メニューに各コマンドが並ぶ", ["トリム", "延長", "フィレット", "面取り", "切断", "ストレッチ", "結合", "分解"].every((w) => items.some((t) => t.includes(w))), items.join("|"));
 await page.keyboard.press("Escape");

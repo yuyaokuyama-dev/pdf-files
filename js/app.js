@@ -11,6 +11,7 @@ import { exportPdf, LEVELS } from "./export.js";
 import { pageOf } from "./editdata.js";
 import { buildDxf } from "./dxf.js";
 import { extractVectorPaths } from "./pdfvec.js";
+import { Toolbar } from "./toolbar.js";
 import { textMetrics, serializeOverlay } from "./render.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
@@ -382,18 +383,30 @@ function initUI() {
 
 function buildTools() {
   const nav = $("#tools");
-  nav.innerHTML = `<button class="tool" id="btnPages" title="ページ一覧を開く・閉じる">${icon("pages", 24)}<span>ページ</span></button><button class="tool" id="btnLayers" title="レイヤーパネルを開く・閉じる">${icon("layers", 24)}<span>レイヤー</span></button><span class="tool-sep"></span>` + TOOLS.map((t) =>
-    t.sep ? '<span class="tool-sep"></span>' : `<button class="tool" data-tool="${t.id}" title="${t.label}">${icon(t.icon, 24)}<span>${t.label}</span></button>`,
-  ).join("");
-  nav.addEventListener("click", (e) => {
-    const b = e.target.closest(".tool[data-tool]");
-    if (!b) return;
-    const id = b.dataset.tool;
-    if (id === "camera") return photoMenu(b);
-    if (id === "modify") return modifyMenu(b);
-    if (id === "stamp") return enterStampTool();
-    S.editor.setTool(id);
+  S.toolbar = new Toolbar({
+    nav,
+    tools: TOOLS,
+    icon,
+    getPalette: () => S.settings.palette,
+    setPalette: (list) => {
+      S.settings.palette = list;
+      S.store.setSetting("settings", S.settings);
+    },
+    onRender: () => S.toolbar && highlightTools(),
+    onPick: (id, b) => {
+      if (id === "camera") return photoMenu(b);
+      if (id === "modify") return modifyMenu(b);
+      if (id === "stamp") return enterStampTool();
+      S.editor.setTool(id);
+    },
   });
+  highlightTools();
+}
+/** いま選んでいるツールを光らせる(作成直後の調整中は、戻り先のツールを光らせたままにする) */
+function highlightTools() {
+  const ed = S.editor;
+  if (!ed) return;
+  S.toolbar.highlight(ed.returnTool || ed.tool);
 }
 
 /** 引出線の文字を入れる・直す */
@@ -491,8 +504,7 @@ function wireEditorEvents() {
   const ed = S.editor;
   ed.on("tool", (t) => {
     // 作成直後の調整中は、戻り先のツールを光らせたままにする
-    const lit = ed.returnTool || t;
-    document.querySelectorAll(".tool").forEach((b) => b.classList.toggle("on", b.dataset.tool === lit));
+    highlightTools();
     $("#btnLayers")?.classList.toggle("on", !!S.layerPanel?.open);
     const def = TOOLS.find((x) => x.id === t);
     if (ed.returnTool) showHint(`色や太さなどを調整できます。何もない所をタップすると確定して「${TOOLS.find((x) => x.id === ed.returnTool)?.label || ""}」に戻ります`, 3800);
@@ -529,7 +541,7 @@ function wireEditorEvents() {
     }
   });
   ed.on("pages", () => updateEmpty());
-  document.querySelector('.tool[data-tool="select"]').classList.add("on");
+  highlightTools();
 }
 
 function wireTopbar() {
