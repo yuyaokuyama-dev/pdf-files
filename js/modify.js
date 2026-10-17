@@ -360,6 +360,89 @@ export function trimPolyline(pts, cutters, pick) {
   return out;
 }
 
+/** 閉じた輪の上で、他の図形との交点の弧長(0〜total 未満・近いものは1つに)。輪は ring + 先頭点 の折れ線として数える */
+function ringCuts(pts, cum, total, cutters) {
+  const cuts = [];
+  for (let i = 1; i < pts.length; i++) {
+    for (const [c, d] of cutters) {
+      const t = segHitT(pts[i - 1], pts[i], c, d);
+      if (t == null) continue;
+      let s = cum[i - 1] + (cum[i] - cum[i - 1]) * t;
+      if (s >= total - EPS) s = 0;
+      cuts.push(s);
+    }
+  }
+  cuts.sort((a, b) => a - b);
+  const out = cuts.filter((s, i) => i === 0 || s - cuts[i - 1] > EPS);
+  if (out.length > 1 && out[0] + total - out[out.length - 1] <= EPS) out.pop();
+  return out;
+}
+
+/**
+ * 閉じた図形(四角・多角形・だ円)のトリム: ring(頂点の輪)を他の図形との交点で区切り、pick に近い区間を消す。
+ * 戻り値は残る1本の開いた折れ線(消した区間の終わりから、始まりまで一周)。交点が2つ未満なら null
+ */
+export function trimRing(ring, cutters, pick) {
+  if (ring.length < 3) return null;
+  const pts = [...ring, ring[0]];
+  const cum = cumLen(pts);
+  const total = cum[cum.length - 1];
+  const cuts = ringCuts(pts, cum, total, cutters);
+  if (cuts.length < 2) return null;
+  const sp = project(pts, cum, pick).s;
+  // pick のいる区間 [lo, hi](最後の区間は 0 をまたぐ)
+  let k = cuts.length - 1;
+  for (let i = 0; i < cuts.length - 1; i++) if (sp >= cuts[i] && sp < cuts[i + 1]) k = i;
+  const lo = cuts[k];
+  const hi = k === cuts.length - 1 ? cuts[0] + total : cuts[k + 1];
+  // 輪を2周ぶん並べて、hi → lo + total を取り出す
+  const dbl = [...pts, ...pts.slice(1)];
+  return subPolyline(dbl, cumLen(dbl), hi, lo + total);
+}
+
+/**
+ * 円・円弧のトリム: 中心 c・半径 r・始まりの角 a0(ラジアン)から時計回りに sweep 度の弧を、他の図形との交点で区切る。
+ * 戻り値は残る弧 [{ u0: 始まりからの角度(度), sweep(度) }](0〜2個。円なら1個)。交点が足りなければ null
+ */
+export function trimArc(c, r, a0, sweep, cutters, pick) {
+  const full = sweep >= 360 - 1e-6;
+  const n = Math.max(90, Math.ceil(sweep));
+  const at = (u) => [c[0] + r * Math.cos(a0 + (u * Math.PI) / 180), c[1] + r * Math.sin(a0 + (u * Math.PI) / 180)];
+  const us = [];
+  for (let i = 0; i < n; i++) {
+    const u0 = (sweep * i) / n;
+    const u1 = (sweep * (i + 1)) / n;
+    const a = at(u0);
+    const b = at(u1);
+    for (const [p, q] of cutters) {
+      const t = segHitT(a, b, p, q);
+      if (t == null) continue;
+      us.push(u0 + (u1 - u0) * t);
+    }
+  }
+  us.sort((x, y) => x - y);
+  let cuts = us.filter((u, i) => i === 0 || u - us[i - 1] > 1e-4);
+  if (full) cuts = cuts.map((u) => (u >= 360 - 1e-4 ? 0 : u)).sort((x, y) => x - y).filter((u, i, arr) => i === 0 || u - arr[i - 1] > 1e-4);
+  else cuts = cuts.filter((u) => u > 1e-4 && u < sweep - 1e-4);
+  if (full ? cuts.length < 2 : cuts.length < 1) return null;
+  let up = ((((Math.atan2(pick[1] - c[1], pick[0] - c[0]) - a0) * 180) / Math.PI) % 360 + 360) % 360;
+  if (!full && up > sweep) up = up - sweep < 360 - up ? sweep : 0; // 弧の外側の方向は、近い端として扱う
+  if (full) {
+    let k = cuts.length - 1;
+    for (let i = 0; i < cuts.length - 1; i++) if (up >= cuts[i] && up < cuts[i + 1]) k = i;
+    const lo = cuts[k];
+    const hi = k === cuts.length - 1 ? cuts[0] + 360 : cuts[k + 1];
+    return [{ u0: hi % 360, sweep: lo + 360 - hi }];
+  }
+  const bounds = [0, ...cuts, sweep];
+  let k = 0;
+  while (k < bounds.length - 2 && up > bounds[k + 1]) k++;
+  const out = [];
+  if (bounds[k] > 1e-4) out.push({ u0: 0, sweep: bounds[k] });
+  if (bounds[k + 1] < sweep - 1e-4) out.push({ u0: bounds[k + 1], sweep: sweep - bounds[k + 1] });
+  return out;
+}
+
 /** 延長: pick に近い側の端を、いまの向きのまま最初に当たる線分まで伸ばす。当たらなければ null */
 export function extendPolyline(pts, cutters, pick) {
   if (pts.length < 2) return null;
