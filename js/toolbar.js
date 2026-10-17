@@ -4,7 +4,17 @@
 /** グループ(案B): 作図 / 寸法・計測 / 修正 / 挿入。修正は従来どおりメニューが開く */
 export const GROUPS = [
   { id: "draw", label: "作図", icon: "polygon", tools: ["pen", "eraser", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud"] },
-  { id: "dim", label: "寸法・計測", icon: "dim", tools: ["leader", "dim", "calib", "measure"] },
+  {
+    id: "dim", label: "寸法・計測", icon: "dim", tools: ["leader", "dim", "calib", "measure"],
+    // 図形を選ばずに点を指して入れる寸法(ツールではなくコマンド。基本パレットには入れられない)
+    commands: [
+      { id: "dimradius", label: "半径寸法", icon: "ellipse", title: "半径寸法(円・円弧)" },
+      { id: "dimdiameter", label: "直径寸法", icon: "ellipse", title: "直径寸法(円・円弧)" },
+      { id: "dimangle", label: "角度寸法", icon: "arc", title: "角度寸法(頂点と2本の線上の点)" },
+      { id: "dimseries", label: "直列寸法", icon: "dim", title: "直列寸法(測点を順に並べる)" },
+      { id: "dimpara", label: "並列寸法", icon: "dim", title: "並列寸法(基準点から各点まで)" },
+    ],
+  },
   { id: "modify", label: "修正", icon: "modify", direct: "modify" },
   { id: "insert", label: "挿入", icon: "stamp", tools: ["text", "sign", "stamp", "camera"] },
 ];
@@ -32,13 +42,14 @@ export class Toolbar {
    * nav: #tools / tools: TOOLS(id・icon・label) / icon(name,size) / getPalette()・setPalette(list)
    * onPick(id, button): 機能を選んだ / onRender(): 作り直したあと(選択中の強調を付け直す)
    */
-  constructor({ nav, tools, icon, getPalette, setPalette, onPick, onRender }) {
+  constructor({ nav, tools, icon, getPalette, setPalette, onPick, onCommand, onRender }) {
     this.nav = nav;
     this.tools = new Map(tools.filter((t) => !t.sep).map((t) => [t.id, t]));
     this.icon = icon;
     this.getPalette = getPalette;
     this.setPalette = setPalette;
     this.onPick = onPick;
+    this.onCommand = onCommand;
     this.onRender = onRender;
     this.pop = null;
     this.openId = null;
@@ -104,7 +115,7 @@ export class Toolbar {
     const pal = new Set(this.list());
     const pop = document.createElement("div");
     pop.className = "toolgroup";
-    pop.innerHTML = `<div class="tg-title">${esc(def.label)}</div><div class="tg-grid">${def.tools.map((id) => this.tools.get(id)).filter(Boolean).map((t) => this.btn(t, pal.has(t.id) ? " inpal" : "")).join("")}</div>
+    pop.innerHTML = `<div class="tg-title">${esc(def.label)}</div><div class="tg-grid">${def.tools.map((id) => this.tools.get(id)).filter(Boolean).map((t) => this.btn(t, pal.has(t.id) ? " inpal" : "")).join("")}${(def.commands || []).map((c) => `<button class="tool cmd" data-cmd="${c.id}" title="${esc(c.title || c.label)}">${this.icon(c.icon, 24)}<span>${esc(c.label)}</span></button>`).join("")}</div>
       <div class="tg-note">よく使うものは、基本パレット(左のボタン列)へドラッグして入れられます。基本パレットから外へドラッグすると外せます。</div>
       <button class="btn tg-reset" type="button">基本パレットを初期に戻す</button>`;
     document.body.appendChild(pop);
@@ -119,6 +130,11 @@ export class Toolbar {
       if (e.target.closest(".tg-reset")) {
         this.save(null);
         return this.openPopup(def, anchor);
+      }
+      const c = e.target.closest(".tool[data-cmd]");
+      if (c) {
+        this.closePopup();
+        return this.onCommand?.(c.dataset.cmd);
       }
       const b = e.target.closest(".tool[data-tool]");
       if (b) {

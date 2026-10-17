@@ -456,6 +456,18 @@ export class Props {
         ed.setMode(b.dataset.key, b.dataset.v);
         this.refresh();
         break;
+      case "rect-side": {
+        const side = b.dataset.side;
+        ed.updateSelected((sh) => {
+          if (sh.type !== "rect") return;
+          const h = new Set(sh.hide || []);
+          h.has(side) ? h.delete(side) : h.add(side);
+          if (h.size) sh.hide = [...h];
+          else delete sh.hide;
+        });
+        this.refresh();
+        break;
+      }
       case "to-cloud":
         ed.convertToCloud();
         this.refresh();
@@ -716,6 +728,14 @@ export class Props {
         <button class="btn danger" data-act="del">${icon("trash", 16)}削除</button></div>`);
       if (t === "polygon" || t === "polyline" || t === "cloud") parts.push(`<p class="hint">頂点をドラッグで移動、辺の中点の四角をドラッグで辺ごと移動、辺をダブルタップで頂点を追加、頂点をダブルタップで削除できます。</p>`);
       if (t === "rect") parts.push(`<p class="hint">四隅の丸で大きさ、各辺の中点の四角で辺ごと動かせます。</p>`);
+      if (t === "rect" && ctx.sel && ctx.shape) {
+        const hide = ctx.shape.hide || [];
+        const edge = (side, x1, y1, x2, y2) => {
+          const off = hide.includes(side);
+          return `<g data-act="rect-side" data-side="${side}" style="cursor:pointer"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${off ? "#9ca3af" : "#2563eb"}" stroke-width="${off ? 2 : 4}"${off ? ' stroke-dasharray="3 4"' : ""} stroke-linecap="round"/><rect x="${Math.min(x1, x2) - 8}" y="${Math.min(y1, y2) - 8}" width="${Math.abs(x2 - x1) + 16}" height="${Math.abs(y2 - y1) + 16}" fill="transparent"/></g>`;
+        };
+        parts.push(`<div class="field">線の表示(辺をクリックで切り替え)<svg viewBox="0 0 120 80" width="120" height="80" role="group" aria-label="四角の辺"><rect x="20" y="16" width="80" height="48" fill="rgba(37,99,235,.10)"/>${edge("t", 20, 16, 100, 16)}${edge("r", 100, 16, 100, 64)}${edge("b", 20, 64, 100, 64)}${edge("l", 20, 16, 20, 64)}</svg><p class="hint">青い実線が表示、灰色の点線が非表示です。塗りつぶしは辺を隠しても残ります。</p></div>`);
+      }
       if (["rect", "ellipse", "polygon"].includes(t)) parts.push(`<div class="actions"><button class="btn" data-act="to-cloud">雲マークに変換</button></div>`);
       if (t === "arc") parts.push(`<p class="hint">両端の丸で開き角、弧の中央の四角で大きさ、外側の丸で回転できます。常に正円のままです。</p>`);
     }

@@ -3,7 +3,7 @@ import { angleDimGeometry, defaultAngleRadius, leaderTipShape } from "./dimx.js"
 import { PDFDocument, PDFName, PDFDict, PDFArray, PDFHexString, PDFOperator, PDFOperatorNames, PDFBool, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
-  dimensionGeometry, rectPoints, dashArray, dimOpts, arcPath,
+  dimensionGeometry, rectPoints, rectHiddenEdges, rectRuns, dashArray, dimOpts, arcPath,
 } from "./geometry.js";
 import { textMetrics, labelFor, serializeOverlay, arcLines } from "./render.js";
 import { TEXT_LINE } from "./render.js";
@@ -211,9 +211,17 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           path(polygonPath(arrowHead(a, b, size)), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: 1 });
           break;
         }
-        case "rect":
-          path(polygonPath(rectPoints(sh.pts[0], sh.pts[1])), { ...strokeOpts, ...fillOpts });
+        case "rect": {
+          const rp = rectPoints(sh.pts[0], sh.pts[1]);
+          const hidden = rectHiddenEdges(sh);
+          if (!hidden) {
+            path(polygonPath(rp), { ...strokeOpts, ...fillOpts });
+            break;
+          }
+          if (hasFill) path(polygonPath(rp), fillOpts);
+          for (const r of rectRuns(rp, hidden)) path(linePath(r.pts), strokeOpts);
           break;
+        }
         case "ellipse":
           path(ellipsePath(sh.pts[0], sh.pts[1]), { ...strokeOpts, ...fillOpts });
           break;

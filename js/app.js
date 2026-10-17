@@ -393,6 +393,7 @@ function buildTools() {
       S.store.setSetting("settings", S.settings);
     },
     onRender: () => S.toolbar && highlightTools(),
+    onCommand: (name) => S.editor.startCommand(name),
     onPick: (id, b) => {
       if (id === "camera") return photoMenu(b);
       if (id === "modify") return modifyMenu(b);
@@ -470,12 +471,6 @@ async function modifyMenu(anchor) {
     },
     { label: "切断(線を2つに分ける)", icon: "line", onClick: () => ed.startCommand("break") },
     { label: "ストレッチ(窓で囲んだ部分を引き伸ばす)", icon: "rect", onClick: () => ed.startCommand("stretch") },
-    { header: "寸法を入れる(図形を選ばずに始められます)" },
-    { label: "半径寸法(円・円弧)", icon: "ellipse", onClick: () => ed.startCommand("dimradius") },
-    { label: "直径寸法(円・円弧)", icon: "ellipse", onClick: () => ed.startCommand("dimdiameter") },
-    { label: "角度寸法(頂点と2本の線上の点)", icon: "arc", onClick: () => ed.startCommand("dimangle") },
-    { label: "直列寸法(測点を順に並べる)", icon: "dim", onClick: () => ed.startCommand("dimseries") },
-    { label: "並列寸法(基準点から各点まで)", icon: "dim", onClick: () => ed.startCommand("dimpara") },
     { header: "選んだ図形に対して" },
     { label: "移動(基点→移動先をタップ)", icon: "hand", disabled: !sel, onClick: () => ed.startCommand("move") },
     { label: "コピー(基点→コピー先をタップ)", icon: "copy", disabled: !sel, onClick: () => ed.startCommand("copy") },

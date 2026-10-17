@@ -40,6 +40,7 @@ jobs:
           node tests/e2e-export2.mjs
           node tests/e2e-polish7.mjs
           node tests/e2e-toolbar.mjs
+          node tests/e2e-rectsides.mjs
           node tests/e2e-doc.mjs
           node tests/e2e-net.mjs
           node tests/e2e-auth.mjs

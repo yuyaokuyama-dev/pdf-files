@@ -1,6 +1,6 @@
 // 修正コマンド(移動・回転・尺度・鏡像・配列・オフセット)の計算(DOM非依存・node でテスト可能)
 // 座標系: ページ表示座標(pt, 左上原点, y は下向き)。回転角は画面で時計回りが正(度)。
-import { ellipsePolygonPts, rectPoints } from "./geometry.js";
+import { ellipsePolygonPts, rectPoints, rectEdgeSides, rectHiddenEdges } from "./geometry.js";
 
 const rad = (d) => (d * Math.PI) / 180;
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -45,8 +45,26 @@ export function transformShape(shape, m, opts = {}) {
     case "ellipse": {
       if (keepsAxes(m)) {
         s.pts = shape.pts.map(map);
+        const hid = shape.type === "rect" && rectHiddenEdges(shape);
+        if (hid) {
+          // 隠した辺は、変換のあとに同じ辺が来る側(上下左右)へ移す
+          const old = rectPoints(shape.pts[0], shape.pts[1]);
+          const nw = rectPoints(s.pts[0], s.pts[1]);
+          const mids = (r) => r.map((p, i) => [(p[0] + r[(i + 1) % 4][0]) / 2, (p[1] + r[(i + 1) % 4][1]) / 2]);
+          const nm = mids(nw);
+          const sides = rectEdgeSides(s.pts[0], s.pts[1]);
+          s.hide = [];
+          mids(old).forEach((q, i) => {
+            if (!hid[i]) return;
+            const t = map(q);
+            let best = 0;
+            nm.forEach((c, j) => Math.hypot(c[0] - t[0], c[1] - t[1]) < Math.hypot(nm[best][0] - t[0], nm[best][1] - t[1]) && (best = j));
+            s.hide.push(sides[best]);
+          });
+        }
         return s;
       }
+      delete s.hide;
       s.type = "polygon";
       s.pts = (shape.type === "rect" ? rectPoints(shape.pts[0], shape.pts[1]) : ellipsePolygonPts(shape.pts[0], shape.pts[1], 48)).map(map);
       if (shape.type === "rect") delete s.pitch;
@@ -594,8 +612,11 @@ export function explodeShape(shape) {
   const n = closed ? pts.length : pts.length - 1;
   if (n < 2 && !(n === 1 && !closed)) return null;
   const out = [];
+  const hidden = shape.type === "rect" ? rectHiddenEdges(shape) : null; // 隠した辺は線にしない
   for (let i = 0; i < n; i++) {
+    if (hidden?.[i]) continue;
     const l = clone(shape);
+    delete l.hide;
     delete l.pitch;
     delete l.sweep;
     l.type = "line";

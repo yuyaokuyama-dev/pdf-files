@@ -287,3 +287,21 @@ test("楕円の頂点列", () => {
   assert.equal(p.length, 24);
   assert.ok(Math.abs(p[0][0] - 20) < 1e-9 && Math.abs(p[0][1] - 5) < 1e-9);
 });
+
+import { rectEdgeSides, rectHiddenEdges, rectRuns, rectPoints as rp2 } from "../js/geometry.js";
+test("四角の辺: 上下左右の名前と、隠した辺ごとの折れ線", () => {
+  assert.deepEqual(rectEdgeSides([0, 0], [10, 5]), ["t", "r", "b", "l"]);
+  assert.deepEqual(rectEdgeSides([10, 5], [0, 0]), ["b", "l", "t", "r"]); // 対角が逆でも上下左右は同じ
+  assert.equal(rectHiddenEdges({ pts: [[0, 0], [10, 5]] }), null);
+  assert.deepEqual(rectHiddenEdges({ pts: [[0, 0], [10, 5]], hide: ["l", "r"] }), [false, true, false, true]);
+  assert.deepEqual(rectHiddenEdges({ pts: [[10, 5], [0, 0]], hide: ["l", "r"] }), [false, true, false, true]);
+  const pts = rp2([0, 0], [10, 5]);
+  assert.equal(rectRuns(pts, null)[0].closed, true);
+  const two = rectRuns(pts, [false, true, false, true]);
+  assert.equal(two.length, 2);
+  assert.ok(two.every((r) => r.pts.length === 2 && !r.closed));
+  const u = rectRuns(pts, [false, false, false, true]); // 左だけ隠す: コの字(つながった1本)
+  assert.equal(u.length, 1);
+  assert.equal(u[0].pts.length, 4);
+  assert.equal(rectRuns(pts, [true, true, true, true]).length, 0);
+});
