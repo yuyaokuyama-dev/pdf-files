@@ -85,6 +85,18 @@ await page.waitForSelector("#app:not([hidden])", { timeout: 15000 }).catch(() =>
 await page.waitForSelector("#tools .tool.pal");
 check("再読み込みしても基本パレットが残る", (await pal()).includes("arc"), JSON.stringify(await pal()));
 
+// 寸法を入れるコマンドは「寸法・計測」グループにある(修正メニューにはない)
+await page.click('#tools [data-group="dim"]');
+const cmds = await page.locator('.toolgroup .tool[data-cmd]').evaluateAll((b) => b.map((x) => x.dataset.cmd));
+check("寸法・計測グループに寸法コマンド5つ", cmds.join() === "dimradius,dimdiameter,dimangle,dimseries,dimpara", cmds.join());
+await page.click('.toolgroup .tool[data-cmd="dimseries"]');
+check("押すと直列寸法が始まる", (await page.evaluate(() => window.__apdf.editor.cmd?.name)) === "dimseries");
+await page.keyboard.press("Escape");
+await page.click('#tools [data-group="modify"]');
+const menuText = await page.locator("#menu").innerText();
+check("修正メニューから寸法コマンドは無くなった", !/半径寸法|直列寸法/.test(menuText), menuText.slice(0, 80));
+await page.keyboard.press("Escape");
+
 check("コンソールエラーなし", errors.length === 0, errors.join("|"));
 await env.close();
 summary();

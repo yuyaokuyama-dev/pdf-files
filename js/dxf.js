@@ -1,7 +1,7 @@
 // DXF書き出し(描いた図形 → DXF)。DOM非依存・node でテスト可能。
 // 座標: ページ表示座標(pt, 左上原点, y下向き)→ DXF(y上向き)。縮尺があれば実寸(mm)、なければ用紙上の寸法(mm)。
 // 形式は AutoCAD 2007 形式(AC1021, UTF-8)。文字はそのまま日本語で書き、図形は線・ポリライン・円・円弧・楕円・文字(MTEXT)・塗り三角形で表す。
-import { dimensionGeometry, dimOpts, arrowHead, arrowShaft, arrowSizeOf, rectPoints, signedArea, formatLength, measure } from "./geometry.js";
+import { dimensionGeometry, dimOpts, arrowHead, arrowShaft, arrowSizeOf, rectPoints, rectHiddenEdges, rectRuns, signedArea, formatLength, measure } from "./geometry.js";
 import { angleDimGeometry, defaultAngleRadius } from "./dimx.js";
 import { leaderGeometry, LEADER_DEFAULT } from "./leader.js";
 import { visibleShapes, layerIdOf, BASE_LAYER_ID } from "./layers.js";
@@ -277,7 +277,7 @@ export function buildDxf(page, layers = [], opts = {}) {
         poly(sh, sh.pts, true);
         break;
       case "rect":
-        poly(sh, rectPoints(sh.pts[0], sh.pts[1]), true);
+        for (const r of rectRuns(rectPoints(sh.pts[0], sh.pts[1]), rectHiddenEdges(sh))) poly(sh, r.pts, r.closed);
         break;
       case "ellipse": {
         const [p0, p1] = sh.pts;

@@ -33,6 +33,38 @@ export function rectPoints(p0, p1) {
   ];
 }
 
+/** 四角の辺 i(rectPoints の i→i+1)が、画面で上(t)・右(r)・下(b)・左(l)のどれか */
+export function rectEdgeSides(p0, p1) {
+  const top = p0[1] <= p1[1];
+  const right = p1[0] >= p0[0];
+  return [top ? "t" : "b", right ? "r" : "l", top ? "b" : "t", right ? "l" : "r"];
+}
+
+/** 非表示の辺を辺の番号ごとの真偽で返す。ひとつも隠していなければ null */
+export function rectHiddenEdges(shape) {
+  if (!shape.hide?.length) return null;
+  const f = rectEdgeSides(shape.pts[0], shape.pts[1]).map((s) => shape.hide.includes(s));
+  return f.some(Boolean) ? f : null;
+}
+
+/** 見える辺を、つながるものごとの折れ線にまとめる(4辺とも見えるなら閉じた1本) */
+export function rectRuns(pts, hidden) {
+  if (!hidden) return [{ pts, closed: true }];
+  const start = hidden.indexOf(true);
+  const runs = [];
+  let cur = null;
+  for (let k = 1; k <= 4; k++) {
+    const i = (start + k) % 4;
+    if (hidden[i]) {
+      cur = null;
+      continue;
+    }
+    if (!cur) runs.push((cur = { pts: [pts[i]], closed: false }));
+    cur.pts.push(pts[(i + 1) % 4]);
+  }
+  return runs;
+}
+
 /** 直線(開いたパス) */
 export function linePath(pts) {
   return pts.map((p, i) => `${i ? "L" : "M"}${f(p[0])} ${f(p[1])}`).join(" ");

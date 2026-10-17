@@ -2,7 +2,7 @@
 import { angleDimGeometry, defaultAngleRadius, leaderTipShape } from "./dimx.js";
 import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
-  dimensionGeometry, rectPoints, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
+  dimensionGeometry, rectPoints, rectHiddenEdges, rectRuns, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
   arcPath, arcBounds, arcGeometry,
 } from "./geometry.js";
 import { visibleShapes } from "./layers.js";
@@ -166,7 +166,17 @@ export function renderShape(shape, parent, opts = {}) {
       break;
     }
     case "rect": {
-      const d = polygonPath(rectPoints(shape.pts[0], shape.pts[1]));
+      const rp = rectPoints(shape.pts[0], shape.pts[1]);
+      const d = polygonPath(rp);
+      const hidden = rectHiddenEdges(shape);
+      if (hidden) {
+        // 辺を隠した四角: 塗りは全体に残し、線は見える辺だけ引く
+        const ld = rectRuns(rp, hidden).map((r) => linePath(r.pts)).join(" ");
+        if (fill !== "none") el("path", { d, ...fillAttrs, stroke: "none", opacity: common.opacity }, g);
+        if (ld) el("path", { d: ld, fill: "none", ...common }, g);
+        hit(fill !== "none" ? d : ld || d, fill !== "none");
+        break;
+      }
       el("path", { d, ...fillAttrs, ...common }, g);
       hit(d, fill !== "none");
       break;

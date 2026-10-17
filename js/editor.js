@@ -2150,7 +2150,7 @@ export class Editor {
     const out = roundCorners(pts, sh.type !== "polyline", r, [idx]);
     if (!out) return this.emit("toast", { text: "この角は丸められません(端の点、またはほぼ一直線です)" });
     this.model.mutate(() => {
-      if (sh.type === "rect") sh.type = "polygon";
+      if (sh.type === "rect") { sh.type = "polygon"; delete sh.hide; }
       sh.pts = out;
     });
   }
@@ -2164,7 +2164,7 @@ export class Editor {
       for (const { shape: sh } of items) {
         const out = roundCorners(sh.type === "rect" ? rectPoints(sh.pts[0], sh.pts[1]) : sh.pts, sh.type !== "polyline", r);
         if (!out) continue;
-        if (sh.type === "rect") sh.type = "polygon";
+        if (sh.type === "rect") { sh.type = "polygon"; delete sh.hide; }
         sh.pts = out;
         n++;
       }
