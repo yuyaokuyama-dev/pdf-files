@@ -38,6 +38,7 @@ jobs:
           node tests/e2e-polish.mjs
           node tests/e2e-dxf.mjs
           node tests/e2e-export2.mjs
+          node tests/e2e-polish7.mjs
           node tests/e2e-doc.mjs
           node tests/e2e-net.mjs
           node tests/e2e-auth.mjs

@@ -115,7 +115,7 @@ export function rotateAbout(p, c, deg) {
  */
 export function cloudPath(pts, pitch = 16) {
   if (pts.length < 3) return linePath(pts);
-  pitch = Math.max(4, pitch);
+  pitch = Math.max(1, pitch);
   const sweep = signedArea(pts) > 0 ? 1 : 0; // 外側へ膨らむ向き
   let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
   for (let i = 0; i < pts.length; i++) {
@@ -123,7 +123,7 @@ export function cloudPath(pts, pitch = 16) {
     const b = pts[(i + 1) % pts.length];
     const L = dist(a, b);
     if (L < 0.01) continue;
-    const n = Math.max(1, Math.round(L / pitch));
+    const n = Math.min(1000, Math.max(1, Math.round(L / pitch)));
     const chord = L / n;
     const r = chord * 0.62;
     for (let k = 1; k <= n; k++) {
@@ -140,7 +140,7 @@ export function cloudPath(pts, pitch = 16) {
 export function arrowHead(from, tip, size) {
   const ang = Math.atan2(tip[1] - from[1], tip[0] - from[0]);
   const s = size;
-  const w = Math.PI / 7;
+  const w = Math.PI / 10; // 矢じりの開き(片側18°)。鋭角ぎみ
   return [
     [tip[0], tip[1]],
     [tip[0] - s * Math.cos(ang - w), tip[1] - s * Math.sin(ang - w)],
@@ -175,7 +175,7 @@ export function dimensionGeometry(p0, p1, off, size = 12, opts = {}) {
   const sgn = off >= 0 ? 1 : -1;
   const a0 = [p0[0] + nx * off, p0[1] + ny * off];
   const a1 = [p1[0] + nx * off, p1[1] + ny * off];
-  const ext = 4 * sgn; // 補助線は寸法線より少し突き出す
+  const ext = endStyle === "dot" ? 0 : 4 * sgn; // 補助線は寸法線より少し突き出す(黒丸のときは突き出さない)
   const e0 = [a0[0] + nx * ext, a0[1] + ny * ext];
   const e1 = [a1[0] + nx * ext, a1[1] + ny * ext];
   const gap = 2 * sgn; // 測点から少し離して始める

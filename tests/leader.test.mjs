@@ -21,7 +21,15 @@ test("アンダーライン: 線は文字の下の端につながり、文字は
   const [p, q] = g.box.pts;
   assert.deepEqual(p, [100, 50]);
   assert.ok(near(q[1], 50) && q[0] > 100 + m.w);
-  assert.ok(g.textTL[1] + m.h <= 50 && g.textTL[0] >= 100);
+  assert.ok(g.textTL[1] + m.h <= 50 + (base.size || 14) * 0.2 && g.textTL[0] >= 100); // 文字の枠の下の余白ぶんだけ線に近づける
+});
+test("文字の上下位置(toff): +で下がり、-で上がる。基準は0", () => {
+  const m = { w: 40, h: 17.5 };
+  const y0 = leaderGeometry(base, m).textTL[1];
+  assert.ok(near(leaderGeometry({ ...base, toff: 3 }, m).textTL[1], y0 + 3));
+  assert.ok(near(leaderGeometry({ ...base, toff: -2 }, m).textTL[1], y0 - 2));
+  const c = { ...base, box: "circle" };
+  assert.ok(near(leaderGeometry({ ...c, toff: 2 }, m).textTL[1], leaderGeometry(c, m).textTL[1] + 2));
 });
 test("先端が右にあれば、文字は左へ伸びる", () => {
   const g = leaderGeometry({ ...base, pts: [[200, 0], [100, 50]] }, { w: 40, h: 17.5 });

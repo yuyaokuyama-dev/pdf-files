@@ -300,7 +300,7 @@ export function buildDxf(page, layers = [], opts = {}) {
           poly(sh, pts, false);
           break;
         }
-        const pitch = Math.max(4, sh.pitch || 16);
+        const pitch = Math.max(1, sh.pitch || 16);
         const sweepSign = signedArea(pts) > 0 ? 1 : -1; // 外側へ膨らむ向き(画面で時計回り=+)
         const verts = [{ p: pts[0], b: 0 }];
         for (let i = 0; i < pts.length; i++) {

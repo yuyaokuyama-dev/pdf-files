@@ -16,6 +16,7 @@ const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "leader", "dim", "calib", "measure", "sign", "stamp"]);
 const LINE_TOOLS = new Set(["line", "arrow", "arc", "dim", "calib", "measure"]);
 const MAX_PIXELS = 16_000_000;
+const MAX_ZOOM = 20; // 表示倍率の上限(2000%)。ページ全体を描ききれない倍率では、見えている範囲だけを描き直す
 
 export const isDrawTool = (t) => DRAW_TOOLS.has(t);
 /** 選択系のツール。marquee=範囲選択(窓・交差)、lasso=投げ縄。どれも選択した図形を動かせる */
@@ -104,7 +105,11 @@ export class Editor {
       }
     }, { root: viewer, rootMargin: "800px 0px" });
 
-    viewer.addEventListener("scroll", () => this.updateCurrentPage(), { passive: true });
+    viewer.addEventListener("scroll", () => {
+      this.updateCurrentPage();
+      clearTimeout(this._st);
+      this._st = setTimeout(() => this.refreshRegions(), 120);
+    }, { passive: true });
     viewer.addEventListener("pointerdown", (e) => this.onViewerPointerDown(e), true);
     viewer.addEventListener("pointermove", (e) => this.onViewerPointerMove(e), true);
     viewer.addEventListener("pointerup", (e) => this.onViewerPointerEnd(e), true);
@@ -232,12 +237,37 @@ export class Editor {
     renderShapes(page.shapes, el.layer, { page, images: this.model.images, exclude: this.editingId, layers: this.model.layers });
   }
 
-  async renderCanvas(id) {
+  /** いま見えている範囲(ページ座標pt)を、少し余裕をつけて返す。ページ全体を一度に描けないほど拡大したときだけ使う */
+  visibleRegion(id, margin = 0.25) {
+    const page = this.model.page(id);
+    const el = this.els.get(id);
+    const vr = this.viewer.getBoundingClientRect();
+    const wr = el.wrap.getBoundingClientRect();
+    const z = this.zoom;
+    const x0 = Math.max(0, (vr.left - wr.left) / z), x1 = Math.min(page.w, (vr.right - wr.left) / z);
+    const y0 = Math.max(0, (vr.top - wr.top) / z), y1 = Math.min(page.h, (vr.bottom - wr.top) / z);
+    if (x1 <= x0 || y1 <= y0) return null;
+    const mx = (x1 - x0) * margin, my = (y1 - y0) * margin;
+    return { x: Math.max(0, x0 - mx), y: Math.max(0, y0 - my), x1: Math.min(page.w, x1 + mx), y1: Math.min(page.h, y1 + my), vx0: x0, vy0: y0, vx1: x1, vy1: y1 };
+  }
+
+  /** 部分描画中のページで、見えている範囲が描いた範囲からはみ出したら描き直す */
+  refreshRegions() {
+    for (const [id, el] of this.els) {
+      if (!el.region || !el.renderedScale) continue;
+      const v = this.visibleRegion(id, 0);
+      const r = el.region;
+      if (v && (v.vx0 < r.x - 0.5 || v.vy0 < r.y - 0.5 || v.vx1 > r.x1 + 0.5 || v.vy1 > r.y1 + 0.5)) this.renderCanvas(id, true);
+    }
+  }
+
+  async renderCanvas(id, force = false) {
     const page = this.model.page(id);
     const el = this.els.get(id);
     if (!page || !el) return;
     const want = this.zoom * this.dpr;
-    if (el.renderedScale && Math.abs(el.renderedScale - want) < 0.001) return;
+    const partial = page.w * page.h * want * want > MAX_PIXELS;
+    if (!force && el.renderedScale && Math.abs(el.renderedScale - want) < 0.001 && !!el.region === partial) return;
     const token = ++el.token;
     el.task?.cancel?.();
     let pdfPage = null;
@@ -247,10 +277,13 @@ export class Editor {
       console.warn(e);
     }
     if (token !== el.token) return;
+    let region = { x: 0, y: 0, x1: page.w, y1: page.h };
+    if (partial) region = this.visibleRegion(id) || region;
+    const rw = region.x1 - region.x, rh = region.y1 - region.y;
     let scale = want;
-    if (page.w * page.h * scale * scale > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (page.w * page.h));
-    const w = Math.max(1, Math.round(page.w * scale));
-    const h = Math.max(1, Math.round(page.h * scale));
+    if (rw * rh * scale * scale > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (rw * rh));
+    const w = Math.max(1, Math.round(rw * scale));
+    const h = Math.max(1, Math.round(rh * scale));
     const tmp = document.createElement("canvas");
     tmp.width = w;
     tmp.height = h;
@@ -258,7 +291,7 @@ export class Editor {
     g.fillStyle = "#fff";
     g.fillRect(0, 0, w, h);
     if (pdfPage) {
-      const vp = pdfPage.getViewport({ scale: w / page.w, rotation: ((page.baseRot || 0) + page.rot) % 360 });
+      const vp = pdfPage.getViewport({ scale: w / rw, rotation: ((page.baseRot || 0) + page.rot) % 360, offsetX: -region.x * (w / rw), offsetY: -region.y * (h / rh) });
       const task = pdfPage.render({ canvasContext: g, canvas: tmp, viewport: vp, optionalContentConfigPromise: pdfPage.pfOc });
       el.task = task;
       try {
@@ -272,6 +305,19 @@ export class Editor {
     el.canvas.width = w;
     el.canvas.height = h;
     el.canvas.getContext("2d").drawImage(tmp, 0, 0);
+    // 部分描画のときは、描いた範囲の位置・大きさに合わせる(%指定なので倍率が変わっても追従する)
+    const st = el.canvas.style;
+    if (partial) {
+      el.region = region;
+      st.inset = "auto";
+      st.left = `${(region.x / page.w) * 100}%`;
+      st.top = `${(region.y / page.h) * 100}%`;
+      st.width = `${(rw / page.w) * 100}%`;
+      st.height = `${(rh / page.h) * 100}%`;
+    } else {
+      el.region = null;
+      st.inset = st.left = st.top = st.width = st.height = "";
+    }
     el.renderedScale = want;
     el.wrap.dataset.rendered = "1";
   }
@@ -284,12 +330,13 @@ export class Editor {
     el.canvas.width = 1;
     el.canvas.height = 1;
     el.renderedScale = 0;
+    el.region = null;
     delete el.wrap.dataset.rendered;
   }
 
   /* ---------- ズーム ---------- */
   setZoom(z, { render = true } = {}) {
-    z = Math.max(0.2, Math.min(6, z));
+    z = Math.max(0.2, Math.min(MAX_ZOOM, z));
     this.zoom = z;
     this.applyZoomToEls();
     this.emit("zoom", z);
@@ -301,15 +348,24 @@ export class Editor {
     }
   }
   zoomAt(z, cx, cy) {
-    const r = this.viewer.getBoundingClientRect();
-    const px = cx - r.left;
-    const py = cy - r.top;
-    const k = Math.max(0.2, Math.min(6, z)) / this.zoom;
-    const ax = this.viewer.scrollLeft + px;
-    const ay = this.viewer.scrollTop + py;
+    // カーソル(指)の下にあるページ上の点が、拡大縮小のあとも同じ位置に見えるようにする
+    // (ページは中央寄せなので、スクロール量だけでなくページの位置から求める)
+    let best = null;
+    let bd = Infinity;
+    for (const el of this.els.values()) {
+      const r = el.wrap.getBoundingClientRect();
+      const d = cy < r.top ? r.top - cy : cy > r.bottom ? cy - r.bottom : 0;
+      if (d < bd) { bd = d; best = { el, r }; }
+    }
+    const oldZ = this.zoom;
+    const z2 = Math.max(0.2, Math.min(MAX_ZOOM, z));
+    if (!best || z2 === oldZ) return this.setZoom(z);
+    const px = (cx - best.r.left) / oldZ;
+    const py = (cy - best.r.top) / oldZ;
     this.setZoom(z);
-    this.viewer.scrollLeft = ax * k - px;
-    this.viewer.scrollTop = ay * k - py;
+    const r2 = best.el.wrap.getBoundingClientRect();
+    this.viewer.scrollLeft += r2.left + px * this.zoom - cx;
+    this.viewer.scrollTop += r2.top + py * this.zoom - cy;
   }
   zoomBy(f) {
     const r = this.viewer.getBoundingClientRect();
@@ -428,7 +484,7 @@ export class Editor {
   onViewerTouchMove(e) {
     if (this.pinch && e.touches.length >= 2) {
       const t = this.twoTouch(e);
-      const z = Math.max(0.2, Math.min(6, this.pinch.z0 * (t.d / this.pinch.d0)));
+      const z = Math.max(0.2, Math.min(MAX_ZOOM, this.pinch.z0 * (t.d / this.pinch.d0)));
       this.pinch.z = z;
       this.pinch.m = t;
       const s = z / this.pinch.z0;
@@ -1653,7 +1709,7 @@ export class Editor {
       this.dimEnd = { style: sh.endStyle ?? "arrow", size: sh.endSize ?? (sh.size || 12) / 2 };
     }
     if (sh.type === "arrow") this.arrowSize = sh.headSize ?? Math.max(10, (st.width ?? 1) * 4.5);
-    if (sh.type === "leader") this.leader = { size: sh.size || LEADER_DEFAULT.size, box: sh.box ?? LEADER_DEFAULT.box, tip: sh.tip ?? LEADER_DEFAULT.tip, tipSize: sh.tipSize ?? LEADER_DEFAULT.tipSize };
+    if (sh.type === "leader") this.leader = { size: sh.size || LEADER_DEFAULT.size, box: sh.box ?? LEADER_DEFAULT.box, tip: sh.tip ?? LEADER_DEFAULT.tip, tipSize: sh.tipSize ?? LEADER_DEFAULT.tipSize, toff: sh.toff ?? 0 };
     if (sh.type === "cloud" && sh.pitch) this.cloudPitch = sh.pitch;
     if (sh.type === "arc") this.arc = { sweep: clampSweep(sh.sweep), r1: !!sh.r1, r2: !!sh.r2 };
     this.saveDefaults();
