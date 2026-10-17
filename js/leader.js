@@ -13,7 +13,7 @@ export const LEADER_TIPS = [
   { id: "dot", label: "黒丸" },
   { id: "none", label: "なし" },
 ];
-export const LEADER_DEFAULT = { size: 14, box: "underline", tip: "arrow", tipSize: 8 };
+export const LEADER_DEFAULT = { size: 14, box: "underline", tip: "arrow", tipSize: 8, toff: 0 };
 
 const f = (n) => +n.toFixed(2);
 
@@ -37,6 +37,7 @@ export function leaderGeometry(shape, m) {
   const boxMode = shape.box ?? LEADER_DEFAULT.box;
   const dir = anchor[0] >= tip[0] ? 1 : -1;
   const pad = size * 0.35;
+  const toff = shape.toff ?? 0; // 文字の上下位置の調整(pt・+で下げる)。基準の位置は、文字をアンダーラインにやや近づけた位置
 
   let line = [anchor, tip];
   let tipShape = null;
@@ -58,16 +59,16 @@ export function leaderGeometry(shape, m) {
       const x = dir > 0 ? anchor[0] + stub : anchor[0] - stub - W;
       const y = anchor[1] - H / 2;
       box = { type: "stadium", x, y, w: W, h: H, stub: [anchor, [anchor[0] + dir * stub, anchor[1]]] };
-      textTL = [x + (W - m.w) / 2, y + (H - m.h) / 2];
+      textTL = [x + (W - m.w) / 2, y + (H - m.h) / 2 + toff];
       pts.push([x, y], [x + W, y + H]);
     } else if (boxMode === "underline") {
       const W = m.w + 2 * pad;
       const end = [anchor[0] + dir * W, anchor[1]];
       box = { type: "underline", pts: [anchor, end] };
-      textTL = [dir > 0 ? anchor[0] + pad : anchor[0] - W + pad, anchor[1] - m.h - pad * 0.4];
+      textTL = [dir > 0 ? anchor[0] + pad : anchor[0] - W + pad, anchor[1] - m.h + size * 0.15 + toff];
       pts.push(end, textTL, [textTL[0] + m.w, textTL[1] + m.h]);
     } else {
-      textTL = [dir > 0 ? anchor[0] + pad : anchor[0] - pad - m.w, anchor[1] - m.h / 2];
+      textTL = [dir > 0 ? anchor[0] + pad : anchor[0] - pad - m.w, anchor[1] - m.h / 2 + toff];
       pts.push(textTL, [textTL[0] + m.w, textTL[1] + m.h]);
     }
   }

@@ -25,7 +25,7 @@ function rotateTextAbout(sh, deg) {
 }
 
 const PT_MM = 25.4 / 72;
-const LEADER_FIELD = { lsize: "size", lbox: "box", ltip: "tip", ltipSize: "tipSize", ltext: "text" };
+const LEADER_FIELD = { lsize: "size", lbox: "box", ltip: "tip", ltipSize: "tipSize", ltoff: "toff", ltext: "text" };
 const ARC_PRESETS = [{ s: 90, label: "1/4円" }, { s: 180, label: "半円" }, { s: 270, label: "3/4円" }];
 const arcAngle = (sh) => {
   const [c, a] = sh.pts;
@@ -144,6 +144,7 @@ export class Props {
       case "lsize":
       case "lbox":
       case "ltip":
+      case "ltoff":
       case "ltipSize": {
         const f = LEADER_FIELD[key];
         return sh ? sh[f] ?? LEADER_DEFAULT[f] : ed.leader[f];
@@ -217,6 +218,7 @@ export class Props {
           case "lsize":
           case "lbox":
           case "ltip":
+          case "ltoff":
           case "ltipSize":
             sh[LEADER_FIELD[key]] = value;
             break;
@@ -263,6 +265,7 @@ export class Props {
         case "lsize":
         case "lbox":
         case "ltip":
+        case "ltoff":
         case "ltipSize":
           ed.leader[LEADER_FIELD[key]] = value;
           ed.saveDefaults();
@@ -618,11 +621,12 @@ export class Props {
       if (ctx.sel) parts.push(`<label class="field">文字(空欄なら文字なしの引出線)<input type="text" data-k="ltext" value="${esc(g("ltext"))}" placeholder="例: 1 / 仕上げ材"></label>`);
       parts.push(sel("lbox", "文字の囲み", LEADER_BOXES));
       parts.push(sel("ltip", "引出線の先端", LEADER_TIPS));
-      parts.push(num("lsize", "文字の大きさ", 6, 48, 1));
+      parts.push(num("lsize", "文字の大きさ", 1, 48, 0.5));
+      parts.push(num("ltoff", "文字の上下位置(+で下げる・-で上げる)", -12, 12, 0.5, (v) => (v > 0 ? "+" : "") + Number(v).toFixed(1)));
       parts.push(num("ltipSize", "先端(矢印・黒丸)の大きさ", 3, 30, 0.5, (v) => Number(v).toFixed(1)));
     }
     if (t === "arrow") parts.push(num("headSize", "矢印のサイズ(線の太さとは別)", 3, 60, 0.5, (v) => Number(v).toFixed(1)));
-    if (t === "cloud") parts.push(num("pitch", "雲のピッチ(円弧の大きさ)", 6, 80, 1));
+    if (t === "cloud") parts.push(num("pitch", "雲のピッチ(円弧の大きさ)", 1, 80, 0.5));
     if (t === "arc") {
       const sw = g("sweep");
       parts.push(`<div class="field">開き角<div class="actions" style="margin:0">${ARC_PRESETS.map((p) => `<button class="btn${sw === p.s ? " primary" : ""}" data-act="arc-preset" data-s="${p.s}">${p.label}</button>`).join("")}</div>
@@ -637,7 +641,7 @@ export class Props {
     }
     if (t === "text") {
       const size = g("size") || 18;
-      parts.push(`<label class="field">文字サイズ<div class="row"><input type="range" data-k="size" min="3" max="120" step="0.5" value="${size}"><input type="number" data-k="size" min="3" max="400" step="0.5" value="${size}" style="width:70px;height:34px"></div></label>`);
+      parts.push(`<label class="field">文字サイズ<div class="row"><input type="range" data-k="size" min="1" max="120" step="0.5" value="${size}"><input type="number" data-k="size" min="1" max="400" step="0.5" value="${size}" style="width:70px;height:34px"></div></label>`);
       parts.push(`<label class="field">フォント<select data-k="font">${FONTS.map((f) => `<option value="${f.id}"${(g("font") || "gothic") === f.id ? " selected" : ""} style="font-family:${f.css.replace(/"/g, "'")}">${f.label}</option>`).join("")}</select></label>`);
       parts.push(`<label class="field check" style="display:flex"><input type="checkbox" data-k="bold"${g("bold") ? " checked" : ""}> 太字</label>`);
       if (ctx.sel) {
@@ -647,7 +651,7 @@ export class Props {
       }
     }
     if (t === "dim" || t === "dimang" || t === "measure") {
-      parts.push(num("size", "文字サイズ", 3, 48, 0.5));
+      parts.push(num("size", "文字サイズ", 1, 48, 0.5));
       parts.push(`<label class="field">寸法線の端部<select data-k="endStyle"><option value="dot"${g("endStyle") === "dot" ? " selected" : ""}>黒丸</option><option value="arrow"${g("endStyle") === "arrow" ? " selected" : ""}>矢印</option></select></label>`);
       parts.push(num("endSize", "端部のサイズ", 1, 20, 0.5, (v) => Number(v).toFixed(1)));
       if (ctx.sel && ctx.shape.textOff) {

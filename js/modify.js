@@ -75,7 +75,7 @@ export function transformShape(shape, m, opts = {}) {
       const ang = rad(shape.angle || 0);
       const ctr = [shape.pts[0][0] + (mt.w / 2) * Math.cos(ang) - (mt.h / 2) * Math.sin(ang), shape.pts[0][1] + (mt.w / 2) * Math.sin(ang) + (mt.h / 2) * Math.cos(ang)];
       const nc = map(ctr);
-      if (m.k !== 1) s.size = Math.max(4, (shape.size || 18) * m.k);
+      if (m.k !== 1) s.size = Math.max(1, (shape.size || 18) * m.k);
       const na = (((shape.angle || 0) + (m.flip ? 0 : m.rot)) % 360 + 360) % 360;
       if (na) s.angle = na;
       else delete s.angle;
@@ -97,7 +97,7 @@ export function transformShape(shape, m, opts = {}) {
     case "leader":
       s.pts = shape.pts.map(map);
       if (m.k !== 1) {
-        s.size = Math.max(4, (shape.size || 14) * m.k);
+        s.size = Math.max(1, (shape.size || 14) * m.k);
         if (shape.tipSize) s.tipSize = shape.tipSize * m.k;
       }
       return s;
