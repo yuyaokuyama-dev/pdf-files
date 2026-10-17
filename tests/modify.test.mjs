@@ -241,3 +241,44 @@ test("角丸め: 全部丸める・半径は辺の半分まで・端や一直線
   assert.equal(roundCorners([[0, 0], [50, 0], [100, 0]], false, 10, null), null);
   assert.equal(roundCorners(sq, true, 0), null);
 });
+
+import { trimRing, trimArc } from "../js/modify.js";
+test("四角のトリム: 交差する2本のあいだの辺を消すと、残りは開いた1本の折れ線", () => {
+  const ring = [[0, 0], [100, 0], [100, 100], [0, 100]];
+  const cutters = [[[40, -10], [40, 110]], [[60, -10], [60, 110]]]; // 上辺と下辺の x=40, 60 で交わる縦線2本
+  const out = trimRing(ring, cutters, [50, 0]); // 上辺の x=40〜60 を消す
+  assert.ok(out);
+  assert.ok(closeP(out[0], [60, 0]) && closeP(out.at(-1), [40, 0]));
+  assert.equal(out.length, 6); // 60,0 → 100,0 → 100,100 → 0,100 → 0,0 → 40,0
+  assert.ok(closeP(out[2], [100, 100]));
+});
+test("四角のトリム: 交点が1つでは足りない", () => {
+  const ring = [[0, 0], [100, 0], [100, 100], [0, 100]];
+  assert.equal(trimRing(ring, [[[50, -10], [50, 50]]], [50, 0]), null);
+  assert.equal(trimRing(ring, [], [50, 0]), null);
+});
+test("四角のトリム: 0 をまたぐ区間(最初の頂点を含む辺)も消せる", () => {
+  const ring = [[0, 0], [100, 0], [100, 100], [0, 100]];
+  const cutters = [[[0, 40], [-10, 40]], [[40, -10], [40, 10]]]; // 左辺 y=40 と 上辺 x=40
+  const out = trimRing(ring, cutters, [0, 0]); // 角(0,0)の付近を消す
+  assert.ok(out);
+  assert.ok(closeP(out[0], [40, 0]) && closeP(out.at(-1), [0, 40]));
+  assert.ok(out.length === 5 && closeP(out[1], [100, 0]));
+});
+test("円弧のトリム: 途中の交点で区切って、つまんだ側を消す", () => {
+  // 中心(0,0)・半径100・右(0°)から時計回りに180°(下半分)。x=0 の縦線で交わる位置は 90°
+  const cutters = [[[0, -200], [0, 200]]];
+  const keepRight = trimArc([0, 0], 100, 0, 180, cutters, [-80, 60]); // 左側(90°〜180°)を消す
+  assert.equal(keepRight.length, 1);
+  assert.ok(Math.abs(keepRight[0].u0) < 1e-6 && Math.abs(keepRight[0].sweep - 90) < 0.5);
+  const keepLeft = trimArc([0, 0], 100, 0, 180, cutters, [80, 60]);
+  assert.ok(Math.abs(keepLeft[0].u0 - 90) < 0.5 && Math.abs(keepLeft[0].sweep - 90) < 0.5);
+  assert.equal(trimArc([0, 0], 100, 0, 180, [[[300, -200], [300, 200]]], [80, 60]), null);
+});
+test("円のトリム: 2点で交わる弦の片側を消すと、残りは1つの円弧", () => {
+  const cutters = [[[-200, 0], [200, 0]]]; // 水平線: 円と 0°・180° で交わる
+  const out = trimArc([0, 0], 100, 0, 360, cutters, [0, 100]); // 下側(0〜180°)を消す
+  assert.equal(out.length, 1);
+  assert.ok(Math.abs(out[0].u0 - 180) < 0.5 && Math.abs(out[0].sweep - 180) < 0.5);
+  assert.equal(trimArc([0, 0], 100, 0, 360, [[[0, 0], [200, 0]]], [0, 100]), null); // 交点1つでは足りない
+});

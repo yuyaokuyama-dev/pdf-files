@@ -42,6 +42,7 @@ jobs:
           node tests/e2e-toolbar.mjs
           node tests/e2e-rectsides.mjs
           node tests/e2e-shortcuts.mjs
+          node tests/e2e-trim.mjs
           node tests/e2e-doc.mjs
           node tests/e2e-net.mjs
           node tests/e2e-auth.mjs

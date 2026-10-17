@@ -11,7 +11,7 @@ import { normRect, pickByRect, pickByLasso, shapePolyline } from "./select.js";
 import { isLayerLocked, isLayerVisible, BL_KEYS, stampNewShape } from "./layers.js";
 import { DrawAid, DYN_TOOLS } from "./drawaid.js";
 import { LEADER_DEFAULT } from "./leader.js";
-import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, extendPolyline, filletLines, chamferLines, stretchShape, roundCorners, splitPolyline, joinChains, explodeShape } from "./modify.js";
+import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, trimRing, trimArc, extendPolyline, filletLines, chamferLines, stretchShape, roundCorners, splitPolyline, joinChains, explodeShape } from "./modify.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "leader", "dim", "calib", "measure", "sign", "stamp"]);
@@ -1975,7 +1975,7 @@ export class Editor {
     if (!PICK.has(name) && !items.length) return this.emit("toast", { text: "先に図形を選んでください" });
     if (name === "offset" && items.length !== 1) return this.emit("toast", { text: "オフセットは図形を1つだけ選んでください" });
     const prompts = {
-      trim: ["消したい部分をタップ(他の図形との交点までが消えます。続けて何度でも)"],
+      trim: ["消したい部分をタップ(線・四角・丸・円弧・多角形。他の図形との交点までが消えます。続けて何度でも)"],
       extend: ["伸ばしたい線の端の近くをタップ(続けて何度でも)"],
       fillet: ["1本目の線の、残す側をタップ", "2本目の線の、残す側をタップ"],
       chamfer: ["1本目の線の、残す側をタップ", "2本目の線の、残す側をタップ"],
@@ -2256,6 +2256,67 @@ export class Editor {
     }
     return segs;
   }
+  /** トリム(線以外): 四角・多角形・だ円は開いた線(ポリライン)に、円・円弧は円弧になる。交わる図形が足りなければ何もしない */
+  trimShape(f, p) {
+    const sh = f.shape;
+    const warn = (text) => this.emit("toast", { text });
+    const cutters = this.cutterSegments(f.page, sh.id);
+    const open = (ring) => {
+      const out = trimRing(ring, cutters, p);
+      if (!out) return warn("四角・多角形・だ円は、ほかの図形と2か所以上で交わっていないとトリムできません");
+      this.model.mutate(() => {
+        sh.type = "polyline";
+        sh.pts = out;
+        for (const k of ["hide", "pitch", "sweep"]) delete sh[k];
+        sh.style = { ...(sh.style || {}), fill: "none" };
+      });
+    };
+    const arcs = (c, r, a0, sweep, isArc) => {
+      const pieces = trimArc(c, r, a0, sweep, cutters, p);
+      if (!pieces) return warn(isArc ? "交わる図形がないのでトリムできません" : "円は、ほかの図形と2か所以上で交わっていないとトリムできません");
+      const at = (u) => [c[0] + r * Math.cos(a0 + (u * Math.PI) / 180), c[1] + r * Math.sin(a0 + (u * Math.PI) / 180)];
+      const r1 = isArc && sh.r1;
+      const r2 = isArc && sh.r2;
+      const mk = (pc, base) => {
+        const a = Object.assign(clone(base), { type: "arc", pts: [[c[0], c[1]], at(pc.u0)], sweep: pc.sweep });
+        delete a.r1;
+        delete a.r2;
+        // 半径の線は、元の弧の端が残っている側にだけ引き継ぐ
+        if (r1 && pc.u0 < 1e-6) a.r1 = true;
+        if (r2 && pc.u0 + pc.sweep > sweep - 1e-4) a.r2 = true;
+        a.style = { ...(base.style || {}), fill: "none" };
+        return a;
+      };
+      this.model.mutate(() => {
+        const made = pieces.map((pc) => mk(pc, sh));
+        const i = f.page.shapes.indexOf(sh);
+        made.slice(1).forEach((a) => (a.id = "h" + uid()));
+        if (made.length) {
+          made[0].id = sh.id;
+          f.page.shapes.splice(i, 1, ...made);
+        } else f.page.shapes.splice(i, 1);
+      });
+    };
+    switch (sh.type) {
+      case "rect":
+        return open(rectPoints(sh.pts[0], sh.pts[1]));
+      case "polygon":
+        return open(sh.pts);
+      case "ellipse": {
+        const [p0, p1] = sh.pts;
+        const w = Math.abs(p1[0] - p0[0]);
+        const h = Math.abs(p1[1] - p0[1]);
+        if (Math.abs(w - h) < 1e-6 * Math.max(w, h, 1)) return arcs([(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2], w / 2, 0, 360, false);
+        return open(ellipsePolygonPts(p0, p1, 96));
+      }
+      case "arc": {
+        const g = arcGeometry(sh.pts[0], sh.pts[1], sh.sweep);
+        return arcs(g.c, g.r, g.t0, g.sweep, true);
+      }
+      default:
+        return warn("線・四角・丸・円弧・多角形をタップしてください");
+    }
+  }
   /** タップした位置の図形(ロック・非表示は除く) */
   shapeUnder(e) {
     const id = e.target.closest?.(".shape")?.dataset.id;
@@ -2270,8 +2331,9 @@ export class Editor {
     const name = c.name;
     const LINEISH = new Set(["line", "arrow", "polyline"]);
     const warn = (text) => this.emit("toast", { text });
-    if (!f || f.page.id !== pageId) return warn("線をタップしてください");
+    if (!f || f.page.id !== pageId) return warn(name === "trim" ? "線・四角・丸・円弧・多角形をタップしてください" : "線をタップしてください");
     const sh = f.shape;
+    if (name === "trim" && !LINEISH.has(sh.type)) return this.trimShape(f, p);
     if (name === "trim" || name === "extend" || name === "break") {
       if (!LINEISH.has(sh.type) || (name === "break" && sh.type === "arrow")) return warn(name === "break" ? "線・ポリラインをタップしてください" : "線・矢印・ポリラインをタップしてください");
       if (name === "break") {
