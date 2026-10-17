@@ -10,7 +10,9 @@ export const SNAP_KINDS = [
   { id: "quad", label: "四半円点" },
   { id: "int", label: "交点" },
 ];
-export const DEFAULT_SNAP = { osnap: true, kinds: ["end", "mid", "center", "quad", "int"], polar: true, step: 45, dyn: true };
+export const SNAP_LABELS = { end: "端点", mid: "中点", center: "中心", quad: "四半円点", int: "交点" };
+// mode: "ctrl" = Ctrl(Mac は ⌘)を押している間だけ吸着(指でなぞるときは常に) / "always" = 常に吸着
+export const DEFAULT_SNAP = { osnap: true, kinds: ["end", "mid", "center", "quad", "int"], polar: true, step: 45, dyn: true, mode: "ctrl" };
 
 const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
 const SKIP = new Set(["pen", "text", "image"]);

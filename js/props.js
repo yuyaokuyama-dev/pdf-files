@@ -324,7 +324,8 @@ export class Props {
       if (key === "snapOsnap") {
         aid.setConfig({ osnap: v });
         this.refresh();
-      } else if (key === "snapPolar") aid.setConfig({ polar: v });
+      } else if (key === "snapMode") aid.setConfig({ mode: v === "always" ? "always" : "ctrl" });
+      else if (key === "snapPolar") aid.setConfig({ polar: v });
       else if (key === "snapDyn") aid.setConfig({ dyn: v });
       else if (key === "snapStep") {
         if (!isInput && v > 0 && v <= 90) aid.setConfig({ step: v });
@@ -723,6 +724,7 @@ export class Props {
       const c = ed.aid.cfg;
       parts.push(`<details class="snapbox"><summary>スナップ・数値入力</summary>
         <label class="check"><input type="checkbox" data-k="snapOsnap"${c.osnap ? " checked" : ""}> オブジェクトスナップ(F3)</label>
+        <label class="field">吸着するとき<select data-k="snapMode"${c.osnap ? "" : " disabled"}><option value="ctrl"${c.mode === "ctrl" ? " selected" : ""}>Ctrl(Macは⌘)を押している間だけ(指では常に)</option><option value="always"${c.mode === "always" ? " selected" : ""}>常に</option></select></label>
         <div class="snapkinds">${SNAP_KINDS.map((x) => `<label class="check"><input type="checkbox" data-k="snapKind:${x.id}"${c.kinds.includes(x.id) ? " checked" : ""}${c.osnap ? "" : " disabled"}> ${x.label}</label>`).join("")}</div>
         <label class="check"><input type="checkbox" data-k="snapPolar"${c.polar ? " checked" : ""}> 極トラッキング(F10)</label>
         <label class="field">角度の刻み(度)<input type="number" data-k="snapStep" min="1" max="90" step="0.5" value="${c.step}" style="width:90px;height:34px"></label>

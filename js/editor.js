@@ -21,6 +21,7 @@ const MAX_ZOOM = 20; // 表示倍率の上限(2000%)。ページ全体を描き�
 export const isDrawTool = (t) => DRAW_TOOLS.has(t);
 /** 選択系のツール。marquee=範囲選択(窓・交差)、lasso=投げ縄。どれも選択した図形を動かせる */
 const SELECT_TOOLS = new Set(["select", "marquee", "lasso"]);
+const SNAP_HOVER_TOOLS = new Set(["line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "leader", "dim", "calib", "measure"]);
 export const isSelectTool = (t) => SELECT_TOOLS.has(t);
 
 const sv = (name, attrs = {}) => {
@@ -125,6 +126,9 @@ export class Editor {
       this.zoomAt(this.zoom * Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY);
     }, { passive: false });
     document.addEventListener("keydown", (e) => this.onKey(e));
+    const ctrlKey = (e) => (e.key === "Control" || e.key === "Meta") && this.refreshSnapHover(e);
+    document.addEventListener("keydown", ctrlKey);
+    document.addEventListener("keyup", ctrlKey);
     new ResizeObserver(() => this.updateCurrentPage()).observe(viewer);
     this.unsub = model.onChange((k) => this.sync(k));
   }
@@ -172,6 +176,7 @@ export class Editor {
       this.rebuildPages();
       return;
     }
+    this.aid._hp = null; // スナップ点の候補は作り直す
     for (const p of this.model.pages) this.refreshLayer(p);
     if (!this.pruneSelection()) this.renderSelection();
     if (kind === "restore") this.emit("selection", this.multi ? { pageId: this.multi.pageId, multi: true, count: this.multi.ids.length } : this.sel);
@@ -209,7 +214,7 @@ export class Editor {
     const el = { wrap, canvas, svg, layer, draft, ui, no, renderedScale: 0, task: null, token: 0 };
     this.els.set(page.id, el);
     svg.addEventListener("pointerdown", (e) => this.onPointerDown(e, page.id));
-    svg.addEventListener("pointermove", (e) => this.eraserHover(e, page.id));
+    svg.addEventListener("pointermove", (e) => { this.eraserHover(e, page.id); this.snapHover(e, page.id); });
     svg.addEventListener("pointerleave", () => this.g?.kind !== "erase" && el.draft.replaceChildren());
     this.refreshLayer(page, true);
     this.io.observe(wrap);
@@ -604,6 +609,20 @@ export class Editor {
       cx: p[0], cy: p[1], r: this.eraser.size / 2 / this.zoom,
       fill: "rgba(37,99,235,0.08)", stroke: "#2563eb", "stroke-width": 1 / this.zoom, class: "eraser-cursor",
     }));
+  }
+  /** 図形を描くツールで、ボタンを押す前にもスナップ点の記号を出す(Ctrl中) */
+  snapHover(e, pageId, last = true) {
+    if (last) this.hoverLast = { pageId, raw: this.pt(e, pageId), pointerType: e.pointerType };
+    if (e.pointerType === "touch" || e.buttons || this.g || this.poly || this.arc3 || this.cmd || this.editing) return;
+    if (!SNAP_HOVER_TOOLS.has(this.tool)) return;
+    this.aid.hover(pageId, this.hoverLast.raw, e);
+  }
+  /** Ctrl を押した/離したとき、マウスを動かさなくても記号を出し入れする */
+  refreshSnapHover(e) {
+    const h = this.hoverLast;
+    if (!h || h.pointerType === "touch" || this.g || this.poly || this.arc3 || this.cmd || !SNAP_HOVER_TOOLS.has(this.tool)) return;
+    if (!this.els.has(h.pageId)) return;
+    this.aid.hover(h.pageId, h.raw, { pointerType: h.pointerType, ctrlKey: e.type === "keydown" ? true : false, metaKey: false });
   }
   eraserHover(e, pageId) {
     if (this.tool !== "eraser" || this.eraser.mode !== "partial" || this.g) return;

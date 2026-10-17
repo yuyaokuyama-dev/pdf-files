@@ -1,7 +1,7 @@
 // 作図の補助: オブジェクトスナップ・極トラッキング(Shift=90°固定)・数値入力(動的入力)
 import { formatLength, dist } from "./geometry.js";
 import { visibleShapes } from "./layers.js";
-import { DEFAULT_SNAP, collectSnapPoints, nearestSnap, polarSnap, polarOf, pointAt } from "./snap.js";
+import { DEFAULT_SNAP, SNAP_LABELS, collectSnapPoints, nearestSnap, polarSnap, polarOf, pointAt } from "./snap.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const sv = (name, attrs = {}) => {
@@ -46,10 +46,17 @@ export class DrawAid {
    * 点 raw をスナップした結果 { p, mark } を返す。
    * pts: pointsFor() の結果 / p0: 基準点(あれば極トラッキング) / ev: Shift で 90° 固定
    */
+  /** いまスナップを効かせるか(F3のON/OFF・モード・Ctrl/指) */
+  snapOn(ev) {
+    if (!this.cfg.osnap || !this.cfg.kinds.length) return false;
+    if (this.cfg.mode === "always") return true;
+    return ev?.pointerType === "touch" || !!(ev?.ctrlKey || ev?.metaKey);
+  }
+
   resolve(raw, { pts = null, p0 = null, ev = null, polar = true } = {}) {
     let p = raw;
     let mark = null;
-    if (pts && pts.length) {
+    if (pts && pts.length && this.snapOn(ev)) {
       const r = (ev?.pointerType === "touch" ? 18 : 10) / this.ed.zoom;
       const q = nearestSnap(pts, raw, r);
       if (q) {
@@ -102,6 +109,22 @@ export class DrawAid {
         m = sv("rect", { ...at, x: x - s, y: y - s, width: s * 2, height: s * 2 });
     }
     layer.appendChild(m);
+    const name = SNAP_LABELS[mark.kind];
+    if (name) {
+      // AutoCAD と同じく、記号の横に種類の名前を出す
+      layer.appendChild(sv("text", { x: x + s * 1.8, y: y - s * 1.8, "font-size": 11 / z, fill: col, stroke: "#fff", "stroke-width": 3 / z, "paint-order": "stroke", "font-family": "sans-serif", "pointer-events": "none" })).textContent = name;
+    }
+  }
+
+  /** ボタンを押す前(マウスを動かしているだけ)でも、Ctrl中は近くのスナップ点に記号を出す */
+  hover(pageId, raw, ev) {
+    const el = this.ed.els.get(pageId);
+    if (!el) return;
+    el.draft.replaceChildren();
+    if (!this.snapOn(ev)) return;
+    if (!this._hp || this._hp.pageId !== pageId) this._hp = { pageId, pts: this.pointsFor(pageId) };
+    const r = this.resolve(raw, { pts: this._hp.pts, polar: false, ev });
+    if (r.mark) this.drawMark(el.draft, r.mark);
   }
 
   fmtLen(pt, page) {
@@ -123,7 +146,7 @@ export class DrawAid {
     } else if (tool === "arc" || tool === "circle") {
       text = `半径 ${this.fmtLen(dist(p0, p1), page)}`;
     } else return;
-    if (mark && mark.kind !== "polar") text += `  [${({ end: "端点", mid: "中点", center: "中心", quad: "四半円点", int: "交点" })[mark.kind] || ""}]`;
+    if (mark && mark.kind !== "polar") text += `  [${SNAP_LABELS[mark.kind] || ""}]`;
     const z = this.ed.zoom;
     const fs = 12 / z;
     const x = p1[0] + 12 / z;
