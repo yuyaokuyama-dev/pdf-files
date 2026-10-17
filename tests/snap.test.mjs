@@ -60,3 +60,17 @@ test("Shiftの直交ロック: 常に90°刻み", () => {
   const r2 = polarSnap([0, 0], [10, -100], { lock90: true });
   assert.ok(near(r2.ang, 90) && near(r2.p[0], 0, 1e-6));
 });
+
+import { DrawAid } from "../js/drawaid.js";
+test("スナップを効かせる条件: 既定はCtrl(⌘)中だけ・指では常に・モードalwaysなら常に・OFFなら無効", () => {
+  const a = new DrawAid({ emit() {} });
+  assert.equal(a.cfg.mode, "ctrl");
+  assert.equal(a.snapOn({ pointerType: "mouse" }), false);
+  assert.equal(a.snapOn({ pointerType: "mouse", ctrlKey: true }), true);
+  assert.equal(a.snapOn({ pointerType: "mouse", metaKey: true }), true);
+  assert.equal(a.snapOn({ pointerType: "touch" }), true);
+  a.cfg.mode = "always";
+  assert.equal(a.snapOn({ pointerType: "mouse" }), true);
+  a.cfg.osnap = false;
+  assert.equal(a.snapOn({ pointerType: "mouse", ctrlKey: true }), false);
+});

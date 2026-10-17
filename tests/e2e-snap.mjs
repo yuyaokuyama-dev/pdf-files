@@ -21,9 +21,32 @@ await page.keyboard.press("Escape");
 await page.keyboard.press("Escape");
 
 /* ---- オブジェクトスナップ: Aの端点(200,100)の近くから描き始める ---- */
+// Ctrl を押していなければ吸着しない
 await tool(page, "line");
 await drag(page, 0, [204, 103], [260, 170]);
 let s = await last();
+check("Ctrlなしでは吸着しない(既定は押している間だけ)", near(s.pts[0][0], 204, 0.8) && near(s.pts[0][1], 103, 0.8), JSON.stringify(s.pts));
+await page.evaluate(() => window.__apdf.model.undo()); // この線の端点にも吸着してしまうので取り消す
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+// 押す前(ホバー)でも、Ctrl中は記号と名前が出る
+await tool(page, "line");
+const [hx, hy] = await toScreen(page, 0, 204, 103);
+await page.mouse.move(hx, hy);
+check("Ctrlなしでは記号は出ない", (await page.locator(".page svg .draft text").count()) === 0);
+await page.keyboard.down("Control");
+await page.mouse.move(hx + 1, hy + 1);
+check("Ctrl中は端点の記号と名前が出る", (await page.locator(".page svg .draft text").first().textContent().catch(() => "")) === "端点");
+await page.keyboard.up("Control");
+await page.waitForTimeout(100);
+check("Ctrlを離すと記号が消える(動かさなくても)", (await page.locator(".page svg .draft text").count()) === 0);
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+await tool(page, "line");
+await page.keyboard.down("Control");
+await drag(page, 0, [204, 103], [260, 170]);
+await page.keyboard.up("Control");
+s = await last();
 check("描き始めがAの端点にスナップ", near(s.pts[0][0], 200) && near(s.pts[0][1], 100), JSON.stringify(s.pts));
 check("終点はそのまま", near(s.pts[1][0], 260, 3), JSON.stringify(s.pts));
 await page.keyboard.press("Escape");
@@ -31,7 +54,9 @@ await page.keyboard.press("Escape");
 
 /* ---- 中点スナップ(150,100) ---- */
 await tool(page, "line");
+await page.keyboard.down("Control");
 await drag(page, 0, [400, 300], [152, 102]);
+await page.keyboard.up("Control");
 s = await last();
 check("終点がAの中点にスナップ", near(s.pts[1][0], 150) && near(s.pts[1][1], 100), JSON.stringify(s.pts[1]));
 await page.keyboard.press("Escape");
