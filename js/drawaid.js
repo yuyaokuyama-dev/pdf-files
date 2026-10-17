@@ -44,13 +44,20 @@ export class DrawAid {
 
   /**
    * 点 raw をスナップした結果 { p, mark } を返す。
-   * pts: pointsFor() の結果 / p0: 基準点(あれば極トラッキング) / ev: Shift で 90° 固定
+   * pts: pointsFor() の結果 / p0: 基準点(あれば極トラッキング) / ev: Shift で 90° 固定・Alt で極トラッキング
    */
   /** いまスナップを効かせるか(F3のON/OFF・モード・Ctrl/指) */
   snapOn(ev) {
     if (!this.cfg.osnap || !this.cfg.kinds.length) return false;
     if (this.cfg.mode === "always") return true;
     return ev?.pointerType === "touch" || !!(ev?.ctrlKey || ev?.metaKey);
+  }
+
+  /** 極トラッキングを効かせるか(F10のON/OFF・モード・Alt/指) */
+  polarOn(ev) {
+    if (!this.cfg.polar) return false;
+    if (this.cfg.polarMode === "always") return true;
+    return ev?.pointerType === "touch" || !!ev?.altKey;
   }
 
   resolve(raw, { pts = null, p0 = null, ev = null, polar = true } = {}) {
@@ -66,7 +73,7 @@ export class DrawAid {
     }
     if (!mark && p0 && polar) {
       const lock = !!ev?.shiftKey;
-      if (lock || this.cfg.polar) {
+      if (lock || this.polarOn(ev)) {
         const r = polarSnap(p0, raw, { step: this.cfg.step, tol: 3, lock90: lock });
         if (r.snapped) {
           p = r.p;

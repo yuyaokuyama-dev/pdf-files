@@ -62,11 +62,19 @@ check("終点がAの中点にスナップ", near(s.pts[1][0], 150) && near(s.pts
 await page.keyboard.press("Escape");
 await page.keyboard.press("Escape");
 
-/* ---- 極トラッキング(既定45°刻み・3°以内) ---- */
+/* ---- 極トラッキング(Altを押している間だけ・既定45°刻み・3°以内) ---- */
 await tool(page, "line");
 await drag(page, 0, [100, 400], [200, 403]);
 s = await last();
-check("ほぼ水平なら水平に合う", near(s.pts[1][1], 400) && near(len(s), Math.hypot(100, 3), 0.5), JSON.stringify(s.pts));
+check("Altなしでは角度に合わない", near(s.pts[1][1], 403), JSON.stringify(s.pts));
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+await tool(page, "line");
+await page.keyboard.down("Alt");
+await drag(page, 0, [100, 400], [200, 403]);
+await page.keyboard.up("Alt");
+s = await last();
+check("Altを押しながらほぼ水平なら水平に合う", near(s.pts[1][1], 400) && near(len(s), Math.hypot(100, 3), 0.5), JSON.stringify(s.pts));
 await page.keyboard.press("Escape");
 await page.keyboard.press("Escape");
 await tool(page, "line");
@@ -79,7 +87,9 @@ await page.keyboard.press("Escape");
 /* ---- 刻み角を変える(30°)と30°に合う ---- */
 await page.evaluate(() => window.__apdf.editor.aid.setConfig({ step: 30 }));
 await tool(page, "line");
+await page.keyboard.down("Alt");
 await drag(page, 0, [300, 500], [300 + 100 * Math.cos((29 * Math.PI) / 180), 500 - 100 * Math.sin((29 * Math.PI) / 180)]);
+await page.keyboard.up("Alt");
 s = await last();
 {
   const ang = (Math.atan2(-(s.pts[1][1] - s.pts[0][1]), s.pts[1][0] - s.pts[0][0]) * 180) / Math.PI;
