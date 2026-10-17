@@ -122,7 +122,8 @@ input[type=color] { width: 38px; height: 28px; padding: 0; border: 1px solid var
 .props .actions .btn { flex: 1; min-width: 70px; min-height: 36px; padding: 0 8px; font-size: 13px; }
 
 .tool-hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(76px + var(--safe-b)); z-index: 30; background: rgba(27,36,48,.92); color: #fff; padding: 8px 12px; border-radius: 99px; font-size: 13px; display: flex; gap: 10px; align-items: center; max-width: 94vw; }
-.tool-hint .btn { min-height: 30px; padding: 0 12px; }
+.tool-hint { pointer-events: none; }
+.tool-hint .btn { min-height: 30px; padding: 0 12px; pointer-events: auto; }
 
 /* ---------- メニュー・ダイアログ・通知 ---------- */
 .menu { position: fixed; z-index: 100; min-width: 230px; max-width: 92vw; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.2); padding: 6px; max-height: 80dvh; overflow-y: auto; }
@@ -269,3 +270,21 @@ html[data-ui="xlarge"] .btn.icon { width: 54px; }
 .snapbox summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .snapbox .check { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
 .snapbox .snapkinds { padding-left: 18px; }
+
+/* ツールバーのグループ・基本パレットのドラッグ */
+.tool.group { position: relative; }
+.tool.group.open { background: #eef2ff; border-color: var(--accent); }
+.tool.dragging { opacity: .35; }
+.drag-ghost { position: fixed; z-index: 120; pointer-events: none; background: #fff; border: 1px solid var(--accent); box-shadow: 0 6px 18px rgba(0,0,0,.25); opacity: .95; }
+.drag-ghost.del { border-color: #dc2626; background: #fee2e2; color: #dc2626; }
+.tool-drop { position: fixed; z-index: 119; width: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+.toolgroup { position: fixed; z-index: 70; width: min(300px, calc(100vw - 16px)); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.22); padding: 8px 10px 10px; }
+.tg-title { font-size: 12px; color: var(--muted, #6b7280); margin: 2px 2px 6px; }
+.tg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px; }
+.toolgroup .tool { width: auto; touch-action: none; }
+.toolgroup .tool.inpal::after { content: "●"; position: absolute; top: 2px; right: 6px; font-size: 8px; color: var(--accent); }
+.toolgroup .tool { position: relative; }
+.tg-note { font-size: 11px; color: var(--muted, #6b7280); margin: 8px 2px 6px; line-height: 1.5; }
+.tg-reset { min-height: 30px; font-size: 12px; padding: 0 10px; }
+.tool.group span { white-space: nowrap; }
+.tool.group[data-group="dim"] { width: 76px; }

@@ -72,7 +72,15 @@ export async function click(page, pi, p, opts = {}) {
   const [x, y] = await toScreen(page, pi, p[0], p[1]);
   await page.mouse.click(x, y, opts);
 }
-export const tool = (page, id) => page.click(`.tool[data-tool="${id}"]`);
+const TOOL_GROUP = { pen: "draw", eraser: "draw", line: "draw", arrow: "draw", rect: "draw", ellipse: "draw", arc: "draw", polygon: "draw", cloud: "draw", leader: "dim", dim: "dim", calib: "dim", measure: "dim", text: "insert", sign: "insert", stamp: "insert", camera: "insert" };
+/** ツールを選ぶ。基本パレットになければ、グループを開いて選ぶ */
+export async function tool(page, id) {
+  const direct = `#tools .tool[data-tool="${id}"]`;
+  if (id === "modify") return page.click('#tools [data-group="modify"]');
+  if (await page.locator(direct).count()) return page.click(direct);
+  await page.click(`#tools [data-group="${TOOL_GROUP[id]}"]`);
+  return page.click(`.toolgroup .tool[data-tool="${id}"]`);
+}
 export const shapes = (page, pi = 0) => page.evaluate((i) => JSON.parse(JSON.stringify(window.__apdf.model.pages[i].shapes)), pi);
 
 let pass = 0, fail = 0;

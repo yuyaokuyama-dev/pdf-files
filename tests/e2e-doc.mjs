@@ -200,7 +200,7 @@ await page.evaluate(() => {
 await page.waitForFunction(() => window.__photoBlob);
 const photoBytes = await page.evaluate(async () => Array.from(new Uint8Array(await window.__photoBlob.arrayBuffer())));
 await page.evaluate(() => window.__apdf.editor.setTool("select"));
-await page.click('.tool[data-tool="camera"]');
+await tool(page, "camera");
 {
   const [fc] = await Promise.all([page.waitForEvent("filechooser"), page.locator("#menu button", { hasText: "画像ファイルを挿入" }).click()]);
   await fc.setFiles({ name: "photo.jpg", mimeType: "image/jpeg", buffer: Buffer.from(photoBytes) });
@@ -215,7 +215,7 @@ const before = (await shapes(page)).length;
 await drag(page, 0, [mid[0] - 40, mid[1]], [mid[0] + 40, mid[1] + 20]);
 check("写真の上から手書きできる", (await shapes(page)).length === before + 1 && (await shapes(page)).at(-1).type === "pen");
 // 写真を新規ページに
-await page.click('.tool[data-tool="camera"]');
+await tool(page, "camera");
 {
   const [fc] = await Promise.all([page.waitForEvent("filechooser"), page.locator("#menu button", { hasText: "画像ファイルをページ追加" }).click()]);
   await fc.setFiles({ name: "photo2.jpg", mimeType: "image/jpeg", buffer: Buffer.from(photoBytes) });
