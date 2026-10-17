@@ -288,3 +288,23 @@ html[data-ui="xlarge"] .btn.icon { width: 54px; }
 .tg-reset { min-height: 30px; font-size: 12px; padding: 0 10px; }
 .tool.group span { white-space: nowrap; }
 .tool.group[data-group="dim"] { width: 76px; }
+
+/* ショートカットキー設定(設定画面) */
+.sk-box { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.sk-group { margin-top: 8px; font-weight: 600; color: var(--ink); }
+.sk-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sk-row input { width: 88px; height: 34px; text-transform: uppercase; text-align: center; }
+.sk-row input[aria-invalid] { border-color: #dc2626; background: rgba(220, 38, 38, .08); }
+.sk-msg { white-space: pre-line; color: #b45309; font-size: 13px; min-height: 0; }
+#keyBuf { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 60; padding: 6px 16px; border-radius: 999px; background: rgba(17, 24, 39, .88); color: #fff; font: 600 20px/1.2 ui-monospace, monospace; letter-spacing: .1em; pointer-events: none; }
+#keyBuf[hidden] { display: none; }
+
+/* ショートカットキー設定(設定画面) */
+.sk-box { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.sk-group { margin-top: 8px; font-weight: 600; color: var(--ink); }
+.sk-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sk-row input { width: 88px; height: 34px; text-transform: uppercase; text-align: center; }
+.sk-row input[aria-invalid] { border-color: #dc2626; background: rgba(220, 38, 38, .08); }
+.sk-msg { white-space: pre-line; color: #b45309; font-size: 13px; }
+#keyBuf { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 60; padding: 6px 16px; border-radius: 999px; background: rgba(17, 24, 39, .88); color: #fff; font: 600 20px/1.2 ui-monospace, monospace; letter-spacing: .1em; pointer-events: none; }
+#keyBuf[hidden] { display: none; }

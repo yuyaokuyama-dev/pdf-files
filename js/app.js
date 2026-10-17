@@ -20,6 +20,7 @@ import { makeScale, formatLength, PAPERS, guessPaper, scaleFromPaper } from "./g
 import { fileToDataUrl, downscaleToDataUrl, stampFromImage, makeHankoDataUrl, loadImage, renderPageJpeg } from "./raster.js";
 import { createPad } from "./pad.js";
 import { icon } from "./icons.js";
+import { SHORTCUT_GROUPS, SHORTCUT_LABEL, DEFAULT_SHORTCUTS, MAX_CODE_LEN, normalizeCode, resolveShortcuts, diffFromDefault, checkShortcuts } from "./shortcuts.js";
 import { TabBar, createWindowSync, sideBySideFeatures } from "./tabs.js";
 import { canPickHandle, contentKey, pickPdfWithHandle, isSameFile, ensureWritable, writeToHandle } from "./filekey.js";
 import { $, esc, toast, busy, dialog, confirmDialog, alertDialog, promptDialog, showMenu, showBanner, hideBanner, fmtBytes, fmtDate } from "./ui.js";
@@ -242,6 +243,8 @@ async function enterApp(user) {
   S.editor.setPalm(S.settings.palm);
   S.editor.sticky = S.settings.sticky !== false;
   if (S.settings.snap) S.editor.aid.setConfig(S.settings.snap);
+  applyShortcuts();
+  S.editor.on("shortcut-buffer", showKeyBuffer);
   S.editor.on("snap-config", (cfg) => {
     S.settings.snap = cfg;
     S.store.setSetting("settings", S.settings);
@@ -381,6 +384,44 @@ function initUI() {
   document.addEventListener("visibilitychange", () => document.hidden && saveProjectNow());
 }
 
+/** ショートカットの設定を、キー入力の判定とツールバーの表示(ボタンの説明)に反映する */
+function applyShortcuts() {
+  S.shortcutMap = resolveShortcuts(S.settings.shortcuts);
+  S.editor?.setShortcuts(S.shortcutMap);
+  S.toolbar?.render();
+}
+/** 複数文字のショートカットを打っている途中の文字を、画面の下に小さく出す */
+function showKeyBuffer(buf) {
+  let el = document.getElementById("keyBuf");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "keyBuf";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.textContent = buf.toUpperCase();
+  el.hidden = !buf;
+}
+
+/** ツールバーの「ページ」「レイヤー」ボタン。ツールバーを作り直すたび(基本パレットの変更など)に付け直す */
+function wirePanelButtons() {
+  const pages = $("#btnPages");
+  const layers = $("#btnLayers");
+  if (!pages || !layers) return;
+  pages.onclick = () => {
+    const t = $("#thumbs");
+    t.hidden = !t.hidden;
+    pages.classList.toggle("on", !t.hidden);
+    if (!t.hidden) S.thumbs.refresh(true);
+  };
+  layers.onclick = () => {
+    S.layerPanel.setOpen(!S.layerPanel.open);
+    layers.classList.toggle("on", S.layerPanel.open);
+  };
+  pages.classList.toggle("on", !!$("#thumbs") && !$("#thumbs").hidden);
+  layers.classList.toggle("on", !!S.layerPanel?.open);
+}
+
 function buildTools() {
   const nav = $("#tools");
   S.toolbar = new Toolbar({
@@ -392,8 +433,13 @@ function buildTools() {
       S.settings.palette = list;
       S.store.setSetting("settings", S.settings);
     },
-    onRender: () => S.toolbar && highlightTools(),
+    onRender: () => {
+      if (!S.toolbar) return;
+      wirePanelButtons();
+      highlightTools();
+    },
     onCommand: (name) => S.editor.startCommand(name),
+    getShortcut: (id) => S.shortcutMap?.[id],
     onPick: (id, b) => {
       if (id === "camera") return photoMenu(b);
       if (id === "modify") return modifyMenu(b);
@@ -546,16 +592,7 @@ function wireTopbar() {
   $("#btnZoomIn").onclick = () => ed.zoomBy(1.25);
   $("#btnZoomOut").onclick = () => ed.zoomBy(0.8);
   $("#btnZoomFit").onclick = () => ed.fitWidth();
-  $("#btnPages").onclick = () => {
-    const t = $("#thumbs");
-    t.hidden = !t.hidden;
-    $("#btnPages").classList.toggle("on", !t.hidden);
-    if (!t.hidden) S.thumbs.refresh(true);
-  };
-  $("#btnLayers").onclick = () => {
-    S.layerPanel.setOpen(!S.layerPanel.open);
-    $("#btnLayers").classList.toggle("on", S.layerPanel.open);
-  };
+  wirePanelButtons();
   $("#btnFile").onclick = (e) => fileMenu(e.currentTarget);
   $("#btnSave").onclick = (e) => saveMenu(e.currentTarget);
   $("#btnUser").onclick = (e) => userMenu(e.currentTarget);
@@ -2491,6 +2528,55 @@ async function openHistory() {
 /* =========================================================
  * 設定・ヘルプ
  * ======================================================= */
+/* ---------- ショートカットキーの設定(設定画面の中で展開) ---------- */
+const hasKeyboard = () => !matchMedia("(hover: none) and (pointer: coarse)").matches; // 指だけの端末(iPhoneなど)には出さない
+function keysFieldHtml() {
+  if (!hasKeyboard()) return "";
+  const cur = S.shortcutMap || resolveShortcuts(null);
+  const rows = SHORTCUT_GROUPS.map((g) => `<div class="sk-group">${esc(g.label)}</div>${g.items.map(([id, label]) => `<label class="sk-row"><span>${esc(label)}</span><input type="text" data-sk="${id}" value="${esc(cur[id] || "")}" maxlength="${MAX_CODE_LEN}" placeholder="なし" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="${esc(label)}のショートカット"></label>`).join("")}`).join("");
+  return `<div class="field"><b style="color:var(--ink)">ショートカットキー</b>
+    <div><button type="button" class="btn" id="stKeysBtn" aria-expanded="false">ショートカットキー設定</button></div>
+    <div id="stKeysBox" class="sk-box" hidden>
+      <p class="note">機能ごとに、呼び出す文字を入れます(英数字・${MAX_CODE_LEN}文字まで)。例: 線に「L」を入れると、L を押すだけで線が使えます。「RT」のように2文字以上も使えます。空にすると、その機能のショートカットは無しになります。</p>
+      <p class="note">「L」と「LA」を両方使うときは、L を押してから少し待つと L の機能が実行されます。入力欄や文字を打っているとき、Ctrl・Alt を押しているときは反応しません。</p>
+      ${rows}
+      <div class="sk-msg" id="stKeysMsg" role="alert"></div>
+      <button type="button" class="btn" id="stKeysReset">初期の設定に戻す</button>
+    </div></div>`;
+}
+const readKeysBox = (d) => Object.fromEntries([...d.querySelectorAll("[data-sk]")].map((i) => [i.dataset.sk, normalizeCode(i.value)]).filter(([, v]) => v));
+/** 重複・頭が同じ登録を表示する。重複があれば false(保存できない) */
+function showKeysCheck(d, map, onSave = false) {
+  const { dups, prefixes } = checkShortcuts(map);
+  const lab = (ids) => ids.map((x) => SHORTCUT_LABEL[x]).join("・");
+  const lines = dups.map(([c, ids]) => `「${c.toUpperCase()}」が重なっています(${lab(ids)})。どれか1つにしてください。`);
+  if (!lines.length) for (const [a, b] of prefixes) lines.push(`「${a.toUpperCase()}」は「${b.toUpperCase()}」の最初の文字でもあるため、${a.toUpperCase()} を押したあと少し待ってから実行されます。`);
+  d.querySelector("#stKeysMsg").textContent = lines.join("\n");
+  d.querySelectorAll("[data-sk]").forEach((i) => i.toggleAttribute("aria-invalid", dups.some(([c]) => c === normalizeCode(i.value))));
+  if (dups.length && onSave) toast("ショートカットが重なっています");
+  return !dups.length;
+}
+function wireKeysBox(d) {
+  const btn = d.querySelector("#stKeysBtn");
+  if (!btn) return;
+  const box = d.querySelector("#stKeysBox");
+  btn.onclick = () => {
+    box.hidden = !box.hidden;
+    btn.setAttribute("aria-expanded", String(!box.hidden));
+  };
+  box.addEventListener("input", (e) => {
+    const i = e.target.closest("[data-sk]");
+    if (!i) return;
+    const v = normalizeCode(i.value);
+    if (v !== i.value) i.value = v;
+    showKeysCheck(d, readKeysBox(d));
+  });
+  d.querySelector("#stKeysReset").onclick = () => {
+    d.querySelectorAll("[data-sk]").forEach((i) => (i.value = DEFAULT_SHORTCUTS[i.dataset.sk] || ""));
+    showKeysCheck(d, readKeysBox(d));
+  };
+}
+
 async function openSettings() {
   const cfg = G.getConfig();
   const origin = location.origin;
@@ -2519,6 +2605,7 @@ async function openSettings() {
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stSticky"${S.settings.sticky !== false ? " checked" : ""}> 線・図形・寸法などは、描いたあと選択して調整 → 何もない所をタップで同じツールに戻って続けて描く</label>
       <div class="field"><b style="color:var(--ink)">ボタンの大きさ(ツールバーなど)</b>
         <select id="stUi"><option value="auto">自動(iPadなどは大きめ)</option><option value="normal">標準</option><option value="large">大</option><option value="xlarge">特大</option></select></div>
+      ${keysFieldHtml()}
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stPalm"${S.settings.palm ? " checked" : ""}> ペン入力モード(描画はペン/マウスのみ、指はスクロール専用)</label>
       <label class="check" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="stNotify"${S.settings.notify ? " checked" : ""}> オンライン復帰時に通知で知らせる</label>
       <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2540,6 +2627,15 @@ async function openSettings() {
       S.editor.sticky = S.settings.sticky;
       applyUiSize();
       S.settings.notify = d.querySelector("#stNotify").checked;
+      if (d.querySelector("#stKeysBox")) {
+        const map = readKeysBox(d);
+        if (!showKeysCheck(d, map, true)) {
+          d.querySelector("#stKeysBox").hidden = false;
+          return false;
+        }
+        S.settings.shortcuts = diffFromDefault(map);
+        applyShortcuts();
+      }
       S.editor.setPalm(S.settings.palm);
       await S.store.setSetting("settings", S.settings);
       if (G.isConfigured() && navigator.onLine) G.preload();
@@ -2547,6 +2643,7 @@ async function openSettings() {
       return true;
     } }],
     onOpen: (d) => {
+      wireKeysBox(d);
       d.querySelector("#stUpd").onclick = async () => {
         const msg = d.querySelector("#stUpdMsg");
         msg.textContent = "確認しています…";
