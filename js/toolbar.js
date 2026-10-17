@@ -42,13 +42,14 @@ export class Toolbar {
    * nav: #tools / tools: TOOLS(id・icon・label) / icon(name,size) / getPalette()・setPalette(list)
    * onPick(id, button): 機能を選んだ / onRender(): 作り直したあと(選択中の強調を付け直す)
    */
-  constructor({ nav, tools, icon, getPalette, setPalette, onPick, onCommand, onRender }) {
+  constructor({ nav, tools, icon, getPalette, setPalette, getShortcut, onPick, onCommand, onRender }) {
     this.nav = nav;
     this.tools = new Map(tools.filter((t) => !t.sep).map((t) => [t.id, t]));
     this.icon = icon;
     this.getPalette = getPalette;
     this.setPalette = setPalette;
     this.onPick = onPick;
+    this.getShortcut = getShortcut;
     this.onCommand = onCommand;
     this.onRender = onRender;
     this.pop = null;
@@ -67,7 +68,8 @@ export class Toolbar {
   }
 
   btn(t, extra = "") {
-    return `<button class="tool${extra}" data-tool="${t.id}" title="${esc(t.label)}">${this.icon(t.icon, 24)}<span>${esc(t.label)}</span></button>`;
+    const sc = this.getShortcut?.(t.id);
+    return `<button class="tool${extra}" data-tool="${t.id}" title="${esc(t.label)}${sc ? `(${esc(sc.toUpperCase())})` : ""}">${this.icon(t.icon, 24)}<span>${esc(t.label)}</span></button>`;
   }
 
   render() {
@@ -115,7 +117,7 @@ export class Toolbar {
     const pal = new Set(this.list());
     const pop = document.createElement("div");
     pop.className = "toolgroup";
-    pop.innerHTML = `<div class="tg-title">${esc(def.label)}</div><div class="tg-grid">${def.tools.map((id) => this.tools.get(id)).filter(Boolean).map((t) => this.btn(t, pal.has(t.id) ? " inpal" : "")).join("")}${(def.commands || []).map((c) => `<button class="tool cmd" data-cmd="${c.id}" title="${esc(c.title || c.label)}">${this.icon(c.icon, 24)}<span>${esc(c.label)}</span></button>`).join("")}</div>
+    pop.innerHTML = `<div class="tg-title">${esc(def.label)}</div><div class="tg-grid">${def.tools.map((id) => this.tools.get(id)).filter(Boolean).map((t) => this.btn(t, pal.has(t.id) ? " inpal" : "")).join("")}${(def.commands || []).map((c) => `<button class="tool cmd" data-cmd="${c.id}" title="${esc(c.title || c.label)}${this.getShortcut?.(c.id) ? `(${esc(this.getShortcut(c.id).toUpperCase())})` : ""}">${this.icon(c.icon, 24)}<span>${esc(c.label)}</span></button>`).join("")}</div>
       <div class="tg-note">よく使うものは、基本パレット(左のボタン列)へドラッグして入れられます。基本パレットから外へドラッグすると外せます。</div>
       <button class="btn tg-reset" type="button">基本パレットを初期に戻す</button>`;
     document.body.appendChild(pop);

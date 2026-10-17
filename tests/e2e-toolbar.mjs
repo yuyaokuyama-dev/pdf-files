@@ -85,6 +85,12 @@ await page.waitForSelector("#app:not([hidden])", { timeout: 15000 }).catch(() =>
 await page.waitForSelector("#tools .tool.pal");
 check("再読み込みしても基本パレットが残る", (await pal()).includes("arc"), JSON.stringify(await pal()));
 
+// 基本パレットを作り直したあとも「ページ」「レイヤー」ボタンが効く
+await page.evaluate(() => window.__apdf.editor.setTool("select"));
+await page.click("#btnLayers");
+check("パレット変更後もレイヤーボタンでパネルが開く", (await page.evaluate(() => window.__apdf.layerPanel.open)) === true);
+await page.click("#btnLayers");
+
 // 寸法を入れるコマンドは「寸法・計測」グループにある(修正メニューにはない)
 await page.click('#tools [data-group="dim"]');
 const cmds = await page.locator('.toolgroup .tool[data-cmd]').evaluateAll((b) => b.map((x) => x.dataset.cmd));

@@ -1,4 +1,5 @@
 // エディタ本体: ページ表示・ズーム・描画ツール・選択/移動/頂点編集・テキスト編集
+import { KeyMatcher, resolveShortcuts } from "./shortcuts.js";
 import { defaultAngleRadius, angleBetween, chainDims, circleDimPts, dimValueText, refreshedDimText } from "./dimx.js";
 import {
   dist, mid, rectPoints, distToSegment, createPenFilter, measure as measureLen, bbox, dimensionGeometry, dimOpts, simplify,
@@ -21,6 +22,7 @@ const MAX_ZOOM = 20; // 表示倍率の上限(2000%)。ページ全体を描き�
 export const isDrawTool = (t) => DRAW_TOOLS.has(t);
 /** 選択系のツール。marquee=範囲選択(窓・交差)、lasso=投げ縄。どれも選択した図形を動かせる */
 const SELECT_TOOLS = new Set(["select", "marquee", "lasso"]);
+const COMMAND_SHORTCUTS = new Set(["trim", "extend", "break", "stretch", "dimradius", "dimdiameter", "dimangle", "dimseries", "dimpara"]); // 図形を選ばずに始めるコマンド
 const SNAP_HOVER_TOOLS = new Set(["line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "leader", "dim", "calib", "measure"]);
 export const isSelectTool = (t) => SELECT_TOOLS.has(t);
 
@@ -50,7 +52,6 @@ function edgesOf(sh) {
 
 const PICK_CMDS = new Set(["trim", "extend", "fillet", "chamfer", "break", "stretch", "dimradius", "dimdiameter"]);
 /** 1キーで切り替えるツール・コマンド(パソコン) */
-const TOOL_KEYS = { v: "select", w: "marquee", n: "pen", l: "line", r: "rect", c: "ellipse", a: "arc", p: "polygon", o: "cloud", t: "text", q: "leader", d: "dim", e: "eraser", h: "hand", m: "cmd:move", k: "cmd:copy", x: "cmd:explode", j: "cmd:join" };
 
 export class Editor {
   /**
@@ -125,6 +126,8 @@ export class Editor {
       e.preventDefault();
       this.zoomAt(this.zoom * Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY);
     }, { passive: false });
+    this.keys = new KeyMatcher({ onFire: (id) => this.runShortcut(id), onChange: (buf) => this.emit("shortcut-buffer", buf) });
+    this.keys.setMap(resolveShortcuts(null));
     document.addEventListener("keydown", (e) => this.onKey(e));
     const ctrlKey = (e) => (e.key === "Control" || e.key === "Meta") && this.refreshSnapHover(e);
     document.addEventListener("keydown", ctrlKey);
@@ -2459,10 +2462,24 @@ export class Editor {
     if (f?.shape.type === "text") this.editText(f.page.id, f.shape, false);
   }
 
+  /** ショートカットの設定(機能 → 文字)を差し替える */
+  setShortcuts(map) {
+    this.shortcuts = map;
+    this.keys.setMap(map);
+  }
+  /** ショートカットで呼ばれた機能を実行する。cmd:〜 は選んだ図形に対するコマンド、それ以外はツールかコマンド */
+  runShortcut(id) {
+    if (id === "cmd:explode") this.explodeSelected();
+    else if (id === "cmd:join") this.joinSelected();
+    else if (id.startsWith("cmd:")) this.startCommand(id.slice(4));
+    else if (COMMAND_SHORTCUTS.has(id)) this.startCommand(id);
+    else this.setTool(id);
+  }
+
   onKey(e) {
     const tag = (e.target.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return;
-    if (document.querySelector("dialog[open]")) return;
+    if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return this.keys.reset();
+    if (document.querySelector("dialog[open]")) return this.keys.reset();
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
@@ -2490,14 +2507,10 @@ export class Editor {
     } else if (e.key === "F10") {
       e.preventDefault();
       this.aid.setConfig({ polar: !this.aid.cfg.polar });
-    } else if (!mod && !e.altKey && !e.shiftKey && TOOL_KEYS[e.key.toLowerCase()] && !this.editingId) {
-      const k = TOOL_KEYS[e.key.toLowerCase()];
+    } else if (!mod && !e.altKey && !this.editingId && this.keys.feed(e.key)) {
       e.preventDefault();
-      if (k === "cmd:explode") this.explodeSelected();
-      else if (k === "cmd:join") this.joinSelected();
-      else if (k === "cmd:move" || k === "cmd:copy") this.startCommand(k.slice(4));
-      else this.setTool(k);
     } else if (e.key === "Escape") {
+      this.keys.reset();
       if (this.cmd) this.cancelCommand();
       else if (this.aid.pending) this.aid.cancelPending();
       else if (this.arc3) this.cancelArc3();
