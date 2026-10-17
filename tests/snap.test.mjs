@@ -74,3 +74,15 @@ test("スナップを効かせる条件: 既定はCtrl(⌘)中だけ・指では
   a.cfg.osnap = false;
   assert.equal(a.snapOn({ pointerType: "mouse", ctrlKey: true }), false);
 });
+
+test("極トラッキングを効かせる条件: 既定はAlt中だけ・指では常に・モードalwaysなら常に・OFFなら無効", () => {
+  const a = new DrawAid({ emit() {} });
+  assert.equal(a.cfg.polarMode, "alt");
+  assert.equal(a.polarOn({ pointerType: "mouse" }), false);
+  assert.equal(a.polarOn({ pointerType: "mouse", altKey: true }), true);
+  assert.equal(a.polarOn({ pointerType: "touch" }), true);
+  a.cfg.polarMode = "always";
+  assert.equal(a.polarOn({ pointerType: "mouse" }), true);
+  a.cfg.polar = false;
+  assert.equal(a.polarOn({ pointerType: "mouse", altKey: true }), false);
+});
