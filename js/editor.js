@@ -132,6 +132,8 @@ export class Editor {
     const ctrlKey = (e) => (e.key === "Control" || e.key === "Meta") && this.refreshSnapHover(e);
     document.addEventListener("keydown", ctrlKey);
     document.addEventListener("keyup", ctrlKey);
+    // Alt(極トラッキング)だけ押して離すと、ブラウザのメニューに移ってしまうのを防ぐ
+    document.addEventListener("keyup", (e) => e.key === "Alt" && this.g && e.preventDefault());
     new ResizeObserver(() => this.updateCurrentPage()).observe(viewer);
     this.unsub = model.onChange((k) => this.sync(k));
   }

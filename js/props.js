@@ -325,7 +325,10 @@ export class Props {
         aid.setConfig({ osnap: v });
         this.refresh();
       } else if (key === "snapMode") aid.setConfig({ mode: v === "always" ? "always" : "ctrl" });
-      else if (key === "snapPolar") aid.setConfig({ polar: v });
+      else if (key === "snapPolar") {
+        aid.setConfig({ polar: v });
+        this.refresh();
+      } else if (key === "snapPolarMode") aid.setConfig({ polarMode: v === "always" ? "always" : "alt" });
       else if (key === "snapDyn") aid.setConfig({ dyn: v });
       else if (key === "snapStep") {
         if (!isInput && v > 0 && v <= 90) aid.setConfig({ step: v });
@@ -747,6 +750,7 @@ export class Props {
         <label class="field">吸着するとき<select data-k="snapMode"${c.osnap ? "" : " disabled"}><option value="ctrl"${c.mode === "ctrl" ? " selected" : ""}>Ctrl(Macは⌘)を押している間だけ(指では常に)</option><option value="always"${c.mode === "always" ? " selected" : ""}>常に</option></select></label>
         <div class="snapkinds">${SNAP_KINDS.map((x) => `<label class="check"><input type="checkbox" data-k="snapKind:${x.id}"${c.kinds.includes(x.id) ? " checked" : ""}${c.osnap ? "" : " disabled"}> ${x.label}</label>`).join("")}</div>
         <label class="check"><input type="checkbox" data-k="snapPolar"${c.polar ? " checked" : ""}> 極トラッキング(F10)</label>
+        <label class="field">角度に合わせるとき<select data-k="snapPolarMode"${c.polar ? "" : " disabled"}><option value="alt"${c.polarMode !== "always" ? " selected" : ""}>Altを押している間だけ(指では常に)</option><option value="always"${c.polarMode === "always" ? " selected" : ""}>常に</option></select></label>
         <label class="field">角度の刻み(度)<input type="number" data-k="snapStep" min="1" max="90" step="0.5" value="${c.step}" style="width:90px;height:34px"></label>
         <label class="check"><input type="checkbox" data-k="snapDyn"${c.dyn ? " checked" : ""}> 数値入力(線・矢印・四角・丸は、クリックしてから長さなどを入力)</label>
         <p class="hint">Shift を押しながら描くと 90° 刻みに固定します。ドラッグで描くとそのまま描け、クリックだけにすると数値入力になります。</p></details>`);
