@@ -121,3 +121,10 @@ test("補助関数", () => {
   assert.equal(layerName(""), "0");
   assert.equal(mtextEscape("a\\b{c}\nd"), "a\\\\b\\{c\\}\\Pd");
 });
+
+test("元PDFの線は別レイヤー「PDF元図」に入る", () => {
+  const r = buildDxf({ w: 100, h: 100, shapes: [], scale: null }, [], { pdfPaths: [{ pts: [[0, 0], [50, 0]], closed: false, color: "#000000", width: 1 }, { pts: [[0, 0], [10, 0], [10, 10]], closed: true, color: "#ff0000", width: 0.5 }] });
+  assert.equal(r.count, 2);
+  assert.ok(r.text.includes("PDF元図"));
+  assert.ok(/\nLINE\n/.test(r.text) && /LWPOLYLINE/.test(r.text));
+});
