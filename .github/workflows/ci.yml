@@ -33,6 +33,7 @@ jobs:
           node tests/e2e-draw3.mjs
           node tests/e2e-modify.mjs
           node tests/e2e-modify2.mjs
+          node tests/e2e-linewidth.mjs
           node tests/e2e-scalebox.mjs
           node tests/e2e-leader.mjs
           node tests/e2e-dimx.mjs

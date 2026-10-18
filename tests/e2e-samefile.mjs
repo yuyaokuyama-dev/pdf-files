@@ -112,7 +112,7 @@ await p2.evaluate(() => { const S = window.__apdf; S.editor.sticky = false; S.mo
 await setZoom1(p2);
 await tool(p2, "measure");
 await p2.waitForSelector('#props:not([hidden]) input[type=range][data-k="width"]');
-check("計測にも線の太さスライダーがあり、最小は0.5", (await p2.locator('#props input[type=range][data-k="width"]').getAttribute("min")) === "0.5");
+check("計測にも線の太さスライダーがあり、最小は0.1", (await p2.locator('#props input[type=range][data-k="width"]').getAttribute("min")) === "0.1");
 await p2.locator('#props input[type=range][data-k="width"]').evaluate((el) => { el.value = 0.5; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); });
 await drag(p2, 0, [100, 300], [300, 300]);
 let ms = (await shapes(p2)).at(-1);

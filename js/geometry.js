@@ -181,6 +181,8 @@ export function arrowHead(from, tip, size) {
 }
 
 /** 矢じりの大きさ(pt)。個別指定(headSize)が無い従来の図形は、線の太さに比例した大きさのまま */
+/** 寸法の補助線・引出線の太さ。主線より太くならないようにし、細い線(0.1など)にも合わせる */
+export const thinWidth = (width) => Math.min(width, Math.max(0.6, width * 0.6));
 export const arrowSizeOf = (shape, width) => shape.headSize ?? Math.max(10, (width ?? shape.style?.width ?? 1) * 4.5);
 
 /** 矢印の線分(軸)は矢じりの根元までにして、先が太く見えないようにする */

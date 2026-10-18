@@ -305,3 +305,11 @@ test("四角の辺: 上下左右の名前と、隠した辺ごとの折れ線", 
   assert.equal(u[0].pts.length, 4);
   assert.equal(rectRuns(pts, [true, true, true, true]).length, 0);
 });
+
+test("寸法の補助線の太さ: 主線より太くならず、細い線にも合わせる", async () => {
+  const { thinWidth } = await import("../js/geometry.js");
+  assert.equal(thinWidth(0.1), 0.1);
+  assert.equal(thinWidth(0.5), 0.5);
+  assert.equal(thinWidth(1), 0.6);
+  assert.equal(thinWidth(10), 6);
+});

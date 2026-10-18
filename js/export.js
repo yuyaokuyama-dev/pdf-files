@@ -2,7 +2,7 @@
 import { angleDimGeometry, defaultAngleRadius, leaderTipShape } from "./dimx.js";
 import { PDFDocument, PDFName, PDFDict, PDFArray, PDFHexString, PDFOperator, PDFOperatorNames, PDFBool, degrees, rgb, LineCapStyle } from "../vendor/pdf-lib.esm.min.js";
 import {
-  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
+  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, thinWidth, smoothPath,
   dimensionGeometry, rectPoints, rectHiddenEdges, rectRuns, dashArray, dimOpts, arcPath,
 } from "./geometry.js";
 import { textMetrics, labelFor, serializeOverlay, arcLines } from "./render.js";
@@ -208,7 +208,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           const size = arrowSizeOf(sh, width);
           const [a, b] = sh.pts;
           path(linePath(arrowShaft(a, b, size)), strokeOpts);
-          path(polygonPath(arrowHead(a, b, size)), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: 1 });
+          path(polygonPath(arrowHead(a, b, size)), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: Math.min(1, width) });
           break;
         }
         case "rect": {
@@ -253,8 +253,8 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           const m = sh.text ? textMetrics({ ...sh, size: sz }) : null;
           const geo = leaderGeometry(sh, m);
           path(linePath(geo.line), strokeOpts);
-          if (geo.tipShape?.type === "arrow") path(polygonPath(geo.tipShape.poly), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: 1 });
-          else if (geo.tipShape?.type === "dot") path(ellipsePath([geo.tipShape.c[0] - geo.tipShape.r, geo.tipShape.c[1] - geo.tipShape.r], [geo.tipShape.c[0] + geo.tipShape.r, geo.tipShape.c[1] + geo.tipShape.r]), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          if (geo.tipShape?.type === "arrow") path(polygonPath(geo.tipShape.poly), { color, opacity: st.opacity ?? 1, borderColor: color, borderWidth: Math.min(1, width) });
+          else if (geo.tipShape?.type === "dot") path(ellipsePath([geo.tipShape.c[0] - geo.tipShape.r, geo.tipShape.c[1] - geo.tipShape.r], [geo.tipShape.c[0] + geo.tipShape.r, geo.tipShape.c[1] + geo.tipShape.r]), { color, borderColor: color, borderWidth: Math.min(0.5, width), opacity: st.opacity ?? 1 });
           if (geo.box?.type === "underline") path(linePath(geo.box.pts), strokeOpts);
           else if (geo.box?.type === "stadium") {
             path(stadiumPath(geo.box), strokeOpts);
@@ -267,17 +267,17 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
         case "measure": {
           const size = sh.size || 12;
           const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size, dimOpts(sh));
-          const thin = { ...strokeOpts, borderWidth: Math.max(0.6, width * 0.6) };
+          const thin = { ...strokeOpts, borderWidth: thinWidth(width) };
           if (sh.type === "dim" && !sh.noExt) {
             path(linePath(geo.ext0), thin);
             path(linePath(geo.ext1), thin);
           }
           path(linePath(geo.line), strokeOpts);
-          for (const e of geo.ends) path(e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          for (const e of geo.ends) path(e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), { color, borderColor: color, borderWidth: Math.min(0.5, width), opacity: st.opacity ?? 1 });
           if (geo.leader) {
             path(linePath(geo.leader), thin);
             const lt = leaderTipShape(geo.leader, sh.ltip, sh.endSize ?? size / 2);
-            if (lt) path(lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+            if (lt) path(lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), { color, borderColor: color, borderWidth: Math.min(0.5, width), opacity: st.opacity ?? 1 });
           }
           const label = labelFor(sh, page);
           if (label) {
@@ -296,11 +296,11 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           const size = sh.size || 12;
           const geo = angleDimGeometry(sh.pts, sh.r ?? defaultAngleRadius(...sh.pts), size, { endStyle: sh.endStyle ?? "arrow", endSize: sh.endSize ?? size / 2 });
           if (!geo) break;
-          const thin = { ...strokeOpts, borderWidth: Math.max(0.6, width * 0.6) };
+          const thin = { ...strokeOpts, borderWidth: thinWidth(width) };
           path(linePath(geo.ext[0]), thin);
           path(linePath(geo.ext[1]), thin);
           path(geo.arc, strokeOpts);
-          for (const e of geo.ends) path(e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), { color, borderColor: color, borderWidth: 0.5, opacity: st.opacity ?? 1 });
+          for (const e of geo.ends) path(e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), { color, borderColor: color, borderWidth: Math.min(0.5, width), opacity: st.opacity ?? 1 });
           const label = sh.text || geo.label;
           const m = textMetrics({ text: label, size, font: sh.font });
           const h = size * TEXT_LINE;
