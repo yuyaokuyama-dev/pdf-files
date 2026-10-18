@@ -70,6 +70,23 @@ check("保存されたショートカットが再読み込み後も使われる"
 await openSettings();
 await page.click("#stKeysReset");
 check("初期に戻すと L が線に戻る", (await page.inputValue('[data-sk="line"]')) === "l");
+// 見た目: 説明欄は入力欄より狭くならない / 各行にスイッチがあり、オン・オフで登録が付け外しされる
+const w = await page.evaluate(() => {
+  const r = document.querySelector('.sk-row:has([data-sk="line"])');
+  return { name: r.querySelector(".sk-name").getBoundingClientRect().width, input: r.querySelector("[data-sk]").getBoundingClientRect().width };
+});
+check("説明欄の幅が入力欄以上", w.name >= w.input, JSON.stringify(w));
+const nRows = await page.locator(".sk-row").count();
+check("全ての行にスイッチがある", nRows > 0 && (await page.locator(".sk-row [role=switch]").count()) === nRows);
+check("登録のある行はスイッチがオン", await page.locator('[data-skon="line"]').isChecked());
+await page.locator('[data-skon="line"]').uncheck();
+check("スイッチをオフにすると入力欄が空になる", (await page.inputValue('[data-sk="line"]')) === "");
+await page.locator('[data-skon="line"]').check();
+check("オンに戻すと元の文字が戻る", (await page.inputValue('[data-sk="line"]')) === "l");
+await page.fill('[data-sk="line"]', "");
+check("文字を消すとスイッチもオフになる", !(await page.locator('[data-skon="line"]').isChecked()));
+await page.fill('[data-sk="line"]', "l");
+check("文字を入れるとスイッチがオンになる", await page.locator('[data-skon="line"]').isChecked());
 await save();
 await page.waitForSelector("dialog[open]", { state: "detached" });
 await page.keyboard.press("l");
