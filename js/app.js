@@ -2533,7 +2533,7 @@ const hasKeyboard = () => !matchMedia("(hover: none) and (pointer: coarse)").mat
 function keysFieldHtml() {
   if (!hasKeyboard()) return "";
   const cur = S.shortcutMap || resolveShortcuts(null);
-  const rows = SHORTCUT_GROUPS.map((g) => `<div class="sk-group">${esc(g.label)}</div>${g.items.map(([id, label]) => `<label class="sk-row"><span>${esc(label)}</span><input type="text" data-sk="${id}" value="${esc(cur[id] || "")}" maxlength="${MAX_CODE_LEN}" placeholder="なし" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="${esc(label)}のショートカット"></label>`).join("")}`).join("");
+  const rows = SHORTCUT_GROUPS.map((g) => `<div class="sk-group">${esc(g.label)}</div>${g.items.map(([id, label]) => `<div class="sk-row"><input type="checkbox" role="switch" class="sk-sw" data-skon="${id}"${cur[id] ? " checked" : ""} aria-label="${esc(label)}のショートカットを使う"><span class="sk-name">${esc(label)}</span><input type="text" data-sk="${id}" value="${esc(cur[id] || "")}" maxlength="${MAX_CODE_LEN}" placeholder="なし" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="${esc(label)}のショートカット"></div>`).join("")}`).join("");
   return `<div class="field"><b style="color:var(--ink)">ショートカットキー</b>
     <div><button type="button" class="btn" id="stKeysBtn" aria-expanded="false">ショートカットキー設定</button></div>
     <div id="stKeysBox" class="sk-box" hidden>
@@ -2556,6 +2556,10 @@ function showKeysCheck(d, map, onSave = false) {
   if (dups.length && onSave) toast("ショートカットが重なっています");
   return !dups.length;
 }
+const syncKeySwitch = (d, id) => {
+  const sw = d.querySelector(`[data-skon="${id}"]`);
+  if (sw) sw.checked = !!normalizeCode(d.querySelector(`[data-sk="${id}"]`).value);
+};
 function wireKeysBox(d) {
   const btn = d.querySelector("#stKeysBtn");
   if (!btn) return;
@@ -2569,10 +2573,32 @@ function wireKeysBox(d) {
     if (!i) return;
     const v = normalizeCode(i.value);
     if (v !== i.value) i.value = v;
+    syncKeySwitch(d, i.dataset.sk);
     showKeysCheck(d, readKeysBox(d));
   });
+  // スイッチ: オフで登録を外し(入れていた文字は覚えておく)、オンで戻す
+  box.addEventListener("change", (e) => {
+    const sw = e.target.closest("[data-skon]");
+    if (!sw) return;
+    const id = sw.dataset.skon;
+    const i = box.querySelector(`[data-sk="${id}"]`);
+    if (sw.checked) {
+      i.value = i.dataset.prev || DEFAULT_SHORTCUTS[id] || "";
+      if (!i.value) sw.checked = false;
+      else showKeysCheck(d, readKeysBox(d));
+      i.focus();
+    } else {
+      if (i.value) i.dataset.prev = i.value;
+      i.value = "";
+      showKeysCheck(d, readKeysBox(d));
+    }
+  });
   d.querySelector("#stKeysReset").onclick = () => {
-    d.querySelectorAll("[data-sk]").forEach((i) => (i.value = DEFAULT_SHORTCUTS[i.dataset.sk] || ""));
+    d.querySelectorAll("[data-sk]").forEach((i) => {
+      i.value = DEFAULT_SHORTCUTS[i.dataset.sk] || "";
+      delete i.dataset.prev;
+      syncKeySwitch(d, i.dataset.sk);
+    });
     showKeysCheck(d, readKeysBox(d));
   };
 }
