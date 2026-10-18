@@ -64,7 +64,7 @@ export function shapeBounds(shape, page) {
     }
     case "dim": {
       const g = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, shape.size || 12, dimOpts(shape));
-      return bbox([...shape.pts, g.line[0], g.line[1], g.textPos, ...(g.leader || [])]);
+      return bbox([...shape.pts, g.line[0], g.line[1], g.textPos, ...(g.leader || []), ...(g.underline || [])]);
     }
     case "dimang": {
       const size = shape.size || 12;
@@ -264,14 +264,15 @@ export function renderShape(shape, parent, opts = {}) {
       const size = shape.size || 12;
       const label = labelFor(shape, opts.page);
       let geo;
+      const tw = textMetrics({ text: label, size, font: shape.font }).w;
       if (shape.type === "dim") {
-        geo = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, size, dimOpts(shape));
+        geo = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, size, dimOpts(shape, tw));
         if (!shape.noExt) {
           el("path", { d: linePath(geo.ext0), fill: "none", ...common, "stroke-width": thinWidth(width) }, g);
           el("path", { d: linePath(geo.ext1), fill: "none", ...common, "stroke-width": thinWidth(width) }, g);
         }
       } else {
-        geo = dimensionGeometry(shape.pts[0], shape.pts[1], 0, size, dimOpts(shape));
+        geo = dimensionGeometry(shape.pts[0], shape.pts[1], 0, size, dimOpts(shape, tw));
         // 計測は測点上に線を引き、両端に小さな縦棒(エンドマーク)
       }
       const [a0, a1] = geo.line;
@@ -279,6 +280,7 @@ export function renderShape(shape, parent, opts = {}) {
       for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": Math.min(0.5, width), opacity: common.opacity }, g);
       if (geo.leader) {
         el("path", { d: linePath(geo.leader), fill: "none", ...common, "stroke-width": thinWidth(width) }, g);
+        if (geo.underline) el("path", { d: linePath(geo.underline), fill: "none", ...common, "stroke-width": thinWidth(width) }, g);
         const lt = leaderTipShape(geo.leader, shape.ltip, shape.endSize ?? size / 2);
         if (lt) el("path", { d: lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), fill: color, stroke: color, "stroke-width": Math.min(0.5, width), opacity: common.opacity }, g);
       }

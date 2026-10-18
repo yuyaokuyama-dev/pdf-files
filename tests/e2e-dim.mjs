@@ -46,7 +46,7 @@ await page.mouse.up();
 dim = (await shapes(page)).at(-1);
 check("寸法値だけ移動(textOff)し、寸法線自体は動かない", Array.isArray(dim.textOff) && Math.abs(dim.pts[0][0] - 100) < 0.1 && Math.abs(dim.pts[1][0] - 400) < 0.1, JSON.stringify([dim.textOff, dim.pts]));
 const paths = await page.evaluate(() => document.querySelectorAll(".shape-dim path:not(.hit)").length);
-check("引き出し線が追加される(補助線2+寸法線+黒丸2+引き出し線)", paths === 6, String(paths));
+check("引き出し線が追加される(補助線2+寸法線+黒丸2+引き出し線+アンダーライン)", paths === 7, String(paths));
 await page.locator('#props [data-act="text-home"]').click();
 check("元の位置へ戻せる", (await shapes(page)).at(-1).textOff === undefined);
 

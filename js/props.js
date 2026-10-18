@@ -139,6 +139,8 @@ export class Props {
         return sh?.text ?? "";
       case "dltip":
         return sh?.ltip ?? "none";
+      case "ul":
+        return !!sh?.ul;
       case "angR":
         return sh ? sh.r ?? defaultAngleRadius(...sh.pts) : 0;
       case "ltext":
@@ -208,6 +210,10 @@ export class Props {
           case "endSize":
           case "headSize":
             sh[key] = value;
+            break;
+          case "ul":
+            if (value) sh.ul = true;
+            else delete sh.ul;
             break;
           case "dltip":
             if (value === "none") delete sh.ltip;
@@ -679,6 +685,7 @@ export class Props {
       parts.push(`<label class="field">寸法線の端部<select data-k="endStyle"><option value="dot"${g("endStyle") === "dot" ? " selected" : ""}>黒丸</option><option value="arrow"${g("endStyle") === "arrow" ? " selected" : ""}>矢印</option></select></label>`);
       parts.push(num("endSize", "端部のサイズ", 1, 20, 0.5, (v) => Number(v).toFixed(1)));
       if (ctx.sel && ctx.shape.textOff) {
+        if (t === "dim") parts.push(`<label class="field check" style="display:flex"><input type="checkbox" data-k="ul"${g("ul") ? " checked" : ""}> 引出線の先にアンダーラインを引き、その上に寸法値を書く</label>`);
         parts.push(`<label class="field">寸法値の引出線の先端<select data-k="dltip"><option value="none"${g("dltip") === "none" ? " selected" : ""}>なし</option><option value="dot"${g("dltip") === "dot" ? " selected" : ""}>黒丸</option><option value="arrow"${g("dltip") === "arrow" ? " selected" : ""}>矢印</option></select></label>`);
         parts.push(`<div class="actions"><button class="btn" data-act="text-home">寸法値を元の位置へ戻す</button></div>`);
       }

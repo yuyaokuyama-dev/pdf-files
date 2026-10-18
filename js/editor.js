@@ -842,7 +842,7 @@ export class Editor {
     el.draft.replaceChildren();
     const page = this.model.page(pageId);
     const p1 = g.p1 || g.p0;
-    const small = dist(g.p0, p1) < 4;
+    const small = dist(g.p0, p1) * this.zoom < 4; // クリックかドラッグかは画面上の距離で決める(拡大すれば、狭い寸法も描ける)
 
     if (tool === "pen") {
       let pts = g.pts;
@@ -1507,11 +1507,16 @@ export class Editor {
         // 寸法値だけを動かす。元の位置の近くに戻したら引き出し線も消える
         const g0 = dimensionGeometry(shape.pts[0], shape.pts[1], shape.type === "dim" ? shape.off ?? 24 : 0, shape.size || 12, { ...dimOpts(shape), textOff: null });
         const sz = shape.size || 12;
-        const bx = q[0] - g0.textUp[0] * sz * 0.6;
-        const by = q[1] - g0.textUp[1] * sz * 0.6;
+        // アンダーラインのときは、つかんだ点が引出線の先(アンダーラインの始まり)になる。ふつうの配置は、つかんだ点が文字の中心
+        const ulMode = shape.type === "dim" && shape.ul;
+        const bx = q[0] - (ulMode ? 0 : g0.textUp[0] * sz * 0.6);
+        const by = q[1] - (ulMode ? 0 : g0.textUp[1] * sz * 0.6);
         const off = [bx - g0.textBase[0], by - g0.textBase[1]];
         if (Math.hypot(off[0], off[1]) < Math.max(3, sz * 0.4)) delete shape.textOff;
-        else shape.textOff = [+off[0].toFixed(2), +off[1].toFixed(2)];
+        else {
+          shape.textOff = [+off[0].toFixed(2), +off[1].toFixed(2)];
+          if (shape.type === "dim" && shape.ul === undefined) shape.ul = true; // 寸法値を初めて引き出したときは、引出線と同じアンダーラインにする
+        }
       } else if (kind === "off") {
         const [a, b] = shape.pts;
         const L = dist(a, b) || 1;
@@ -1791,11 +1796,12 @@ export class Editor {
     }
     if (sh.type === "dim" || sh.type === "measure") {
       // 寸法値だけを動かすハンドル(文字の右端の外側)
-      const g = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, sh.size || 12, dimOpts(sh));
       const w = textMetrics({ text: labelFor(sh, f.page), size: sh.size || 12, font: sh.font }).w;
+      const g = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, sh.size || 12, dimOpts(sh, w));
       const dir = [Math.cos((g.textAngle * Math.PI) / 180), Math.sin((g.textAngle * Math.PI) / 180)];
-      const hx = g.textPos[0] + dir[0] * (w / 2 + R * 1.6);
-      const hy = g.textPos[1] + dir[1] * (w / 2 + R * 1.6);
+      // アンダーラインのときは、引出線の先(アンダーラインの始まり)につかみ手を置く
+      const hx = g.underline ? g.underline[0][0] : g.textPos[0] + dir[0] * (w / 2 + R * 1.6);
+      const hy = g.underline ? g.underline[0][1] : g.textPos[1] + dir[1] * (w / 2 + R * 1.6);
       el.ui.appendChild(sv("circle", { class: "handle mid", cx: hx, cy: hy, r: R * 0.8, "stroke-width": 1.6 / z, "data-kind": "txt", "data-idx": 0 }));
     }
     if (sh.type === "arc") {

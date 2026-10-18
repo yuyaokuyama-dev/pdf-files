@@ -328,7 +328,8 @@ export function buildDxf(page, layers = [], opts = {}) {
       case "dim":
       case "measure": {
         const size = sh.size || 12;
-        const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size, dimOpts(sh));
+        const tw = opts.metrics ? opts.metrics({ type: "text", text: labelOf(sh), size, font: sh.font }).w : undefined;
+        const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size, dimOpts(sh, tw));
         if (sh.type === "dim" && !sh.noExt) {
           line(sh, geo.ext0[0], geo.ext0[1]);
           line(sh, geo.ext1[0], geo.ext1[1]);
@@ -336,6 +337,7 @@ export function buildDxf(page, layers = [], opts = {}) {
         line(sh, geo.line[0], geo.line[1]);
         for (const e of geo.ends) end(sh, e);
         if (geo.leader) line(sh, geo.leader[0], geo.leader[1]);
+        if (geo.underline) line(sh, geo.underline[0], geo.underline[1]);
         text(sh, geo.textPos, labelOf(sh), size, { attach: 5, angle: geo.textAngle });
         break;
       }
