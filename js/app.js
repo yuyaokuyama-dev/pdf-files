@@ -520,6 +520,8 @@ async function modifyMenu(anchor) {
     { header: "選んだ図形に対して" },
     { label: "移動(基点→移動先をタップ)", icon: "hand", disabled: !sel, onClick: () => ed.startCommand("move") },
     { label: "コピー(基点→コピー先をタップ)", icon: "copy", disabled: !sel, onClick: () => ed.startCommand("copy") },
+    { label: "ミラー複写(軸の2点をタップ・元を残す)", icon: "copy", disabled: !sel, onClick: () => ed.startCommand("mirror", { keep: true }) },
+    { label: "ミラー(軸の2点をタップ・元を消して反転)", icon: "hand", disabled: !sel, onClick: () => ed.startCommand("mirror", { keep: false }) },
     { label: "結合(つながる線をひとつに)", icon: "polygon", disabled: sel < 2, onClick: () => ed.joinSelected() },
     { label: "分解(四角・多角形を線にばらす)", icon: "rect", disabled: !sel, onClick: () => ed.explodeSelected() },
   ]);

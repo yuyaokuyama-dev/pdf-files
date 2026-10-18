@@ -1990,7 +1990,7 @@ export class Editor {
       copy: ["基点をタップ(または基点からコピー先までドラッグ)", "コピー先をタップ(続けて何度でも。終わるには中止)"],
       rotate: ["回転の中心(基点)をタップ"],
       scale: ["尺度の基点をタップ"],
-      mirror: ["鏡像の軸の1点目をタップ", "軸の2点目をタップ"],
+      mirror: ["ミラーの軸の1点目をタップ", "軸の2点目をタップ"],
       polar: ["配列の中心をタップ"],
       offset: ["ずらす側をタップ(続けて何度でも。終わるには中止)"],
     }[name];
@@ -2535,6 +2535,8 @@ export class Editor {
   runShortcut(id) {
     if (id === "cmd:explode") this.explodeSelected();
     else if (id === "cmd:join") this.joinSelected();
+    else if (id === "cmd:mirror") this.startCommand("mirror", { keep: true });
+    else if (id === "cmd:mirrormove") this.startCommand("mirror", { keep: false });
     else if (id.startsWith("cmd:")) this.startCommand(id.slice(4));
     else if (COMMAND_SHORTCUTS.has(id)) this.startCommand(id);
     else this.setTool(id);
