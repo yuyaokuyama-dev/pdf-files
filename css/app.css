@@ -28,6 +28,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn.primary:hover { background: #1d4ed8; }
 .btn.danger { color: var(--red); }
 .btn.icon { width: 38px; padding: 0; }
+.scalebox { display: flex; align-items: center; gap: 2px; height: 36px; padding: 0 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-variant-numeric: tabular-nums; color: var(--ink); }
+.scalebox[hidden] { display: none; }
+.scalebox input { width: 62px; height: 30px; border: 0; background: transparent; font: inherit; color: inherit; text-align: left; padding: 0 2px; -moz-appearance: textfield; }
+.scalebox input::-webkit-outer-spin-button, .scalebox input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.scalebox:focus-within { border-color: var(--accent); }
 .btn.zoom { min-width: 58px; padding: 0 8px; font-variant-numeric: tabular-nums; }
 .btn.wide { width: 100%; }
 .btn:disabled { opacity: .4; pointer-events: none; }
