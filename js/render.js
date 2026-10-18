@@ -1,7 +1,7 @@
 // 図形データ → SVG 要素。画面表示・選択・画像化(書き出し)で共通利用する。
 import { angleDimGeometry, defaultAngleRadius, leaderTipShape } from "./dimx.js";
 import {
-  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, smoothPath,
+  linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, thinWidth, smoothPath,
   dimensionGeometry, rectPoints, rectHiddenEdges, rectRuns, mid, dist, measure, formatLength, bbox, dashArray, dimOpts,
   arcPath, arcBounds, arcGeometry,
 } from "./geometry.js";
@@ -161,7 +161,7 @@ export function renderShape(shape, parent, opts = {}) {
       const [a, b] = shape.pts;
       const [sa, sb] = arrowShaft(a, b, size);
       el("path", { d: linePath([sa, sb]), fill: "none", ...common }, g);
-      el("path", { d: polygonPath(arrowHead(a, b, size)), fill: color, stroke: color, "stroke-width": 1, "stroke-linejoin": "round", opacity: common.opacity }, g);
+      el("path", { d: polygonPath(arrowHead(a, b, size)), fill: color, stroke: color, "stroke-width": Math.min(1, width), "stroke-linejoin": "round", opacity: common.opacity }, g);
       hit(linePath([a, b]));
       break;
     }
@@ -240,7 +240,7 @@ export function renderShape(shape, parent, opts = {}) {
       const m = shape.text ? textMetrics({ ...shape, size: sz }) : null;
       const geo = leaderGeometry(shape, m);
       el("path", { d: linePath(geo.line), fill: "none", ...common }, g);
-      if (geo.tipShape?.type === "arrow") el("path", { d: polygonPath(geo.tipShape.poly), fill: color, stroke: color, "stroke-width": 1, "stroke-linejoin": "round", opacity: common.opacity }, g);
+      if (geo.tipShape?.type === "arrow") el("path", { d: polygonPath(geo.tipShape.poly), fill: color, stroke: color, "stroke-width": Math.min(1, width), "stroke-linejoin": "round", opacity: common.opacity }, g);
       else if (geo.tipShape?.type === "dot") el("circle", { cx: geo.tipShape.c[0], cy: geo.tipShape.c[1], r: geo.tipShape.r, fill: color, opacity: common.opacity }, g);
       if (geo.box?.type === "underline") el("path", { d: linePath(geo.box.pts), fill: "none", ...common }, g);
       else if (geo.box?.type === "stadium") {
@@ -267,8 +267,8 @@ export function renderShape(shape, parent, opts = {}) {
       if (shape.type === "dim") {
         geo = dimensionGeometry(shape.pts[0], shape.pts[1], shape.off ?? 24, size, dimOpts(shape));
         if (!shape.noExt) {
-          el("path", { d: linePath(geo.ext0), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
-          el("path", { d: linePath(geo.ext1), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
+          el("path", { d: linePath(geo.ext0), fill: "none", ...common, "stroke-width": thinWidth(width) }, g);
+          el("path", { d: linePath(geo.ext1), fill: "none", ...common, "stroke-width": thinWidth(width) }, g);
         }
       } else {
         geo = dimensionGeometry(shape.pts[0], shape.pts[1], 0, size, dimOpts(shape));
@@ -276,11 +276,11 @@ export function renderShape(shape, parent, opts = {}) {
       }
       const [a0, a1] = geo.line;
       el("path", { d: linePath([a0, a1]), fill: "none", ...common }, g);
-      for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
+      for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": Math.min(0.5, width), opacity: common.opacity }, g);
       if (geo.leader) {
-        el("path", { d: linePath(geo.leader), fill: "none", ...common, "stroke-width": Math.max(0.6, width * 0.6) }, g);
+        el("path", { d: linePath(geo.leader), fill: "none", ...common, "stroke-width": thinWidth(width) }, g);
         const lt = leaderTipShape(geo.leader, shape.ltip, shape.endSize ?? size / 2);
-        if (lt) el("path", { d: lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
+        if (lt) el("path", { d: lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), fill: color, stroke: color, "stroke-width": Math.min(0.5, width), opacity: common.opacity }, g);
       }
       const t = el("text", {
         x: geo.textPos[0], y: geo.textPos[1] + size * 0.35, "text-anchor": "middle", "font-size": size,
@@ -295,11 +295,11 @@ export function renderShape(shape, parent, opts = {}) {
       const size = shape.size || 12;
       const geo = angleDimGeometry(shape.pts, shape.r ?? defaultAngleRadius(...shape.pts), size, { endStyle: shape.endStyle ?? "arrow", endSize: shape.endSize ?? size / 2 });
       if (!geo) break;
-      const thin = { ...common, "stroke-width": Math.max(0.6, width * 0.6) };
+      const thin = { ...common, "stroke-width": thinWidth(width) };
       el("path", { d: linePath(geo.ext[0]), fill: "none", ...thin }, g);
       el("path", { d: linePath(geo.ext[1]), fill: "none", ...thin }, g);
       el("path", { d: geo.arc, fill: "none", ...common }, g);
-      for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": 0.5, opacity: common.opacity }, g);
+      for (const e of geo.ends) el("path", { d: e.type === "dot" ? ellipsePath([e.c[0] - e.r, e.c[1] - e.r], [e.c[0] + e.r, e.c[1] + e.r]) : polygonPath(e.poly), fill: color, stroke: color, "stroke-width": Math.min(0.5, width), opacity: common.opacity }, g);
       const t = el("text", { x: geo.textPos[0], y: geo.textPos[1] + size * 0.35, "text-anchor": "middle", "font-size": size, "font-family": fontCss(shape.font), fill: shape.color || color, style: "white-space:pre" }, g);
       t.textContent = shape.text || geo.label;
       el("path", { d: geo.arc, fill: "none", stroke: "transparent", "stroke-width": 10, class: "hit" }, g);

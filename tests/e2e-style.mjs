@@ -17,7 +17,7 @@ check("太さの既定は1.0", sh.style.width === 1, JSON.stringify(sh.style));
 const setK = (k, v) => page.locator(`#props [data-k="${k}"]`).first().evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }, v);
 await tool(page, "select");
 await click(page, 0, [160, 100]);
-check("太さスライダーの最小は0.5", (await page.locator('#props input[type=range][data-k="width"]').getAttribute("min")) === "0.5");
+check("太さスライダーの最小は0.1", (await page.locator('#props input[type=range][data-k="width"]').getAttribute("min")) === "0.1");
 await setK("width", 0.5);
 check("太さ0.5にできる", (await shapes(page)).at(-1).style.width === 0.5);
 const opts = await page.locator('#props select[data-k="dash"] option').allTextContents();

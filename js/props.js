@@ -9,6 +9,8 @@ import { SNAP_KINDS, polarOf, pointAt } from "./snap.js";
 import { LEADER_BOXES, LEADER_TIPS, LEADER_DEFAULT } from "./leader.js";
 
 const COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
+const MIN_WIDTH = 0.1; // 線の太さの下限(pt)
+const MAX_WIDTH = 24;
 const LINE_TYPES = new Set(["pen", "line", "arrow", "leader", "rect", "ellipse", "arc", "polygon", "polyline", "cloud", "dim", "dimang", "measure"]);
 const FILL_TYPES = new Set(["rect", "ellipse", "polygon", "cloud"]);
 const TEXT_LIKE = new Set(["text"]);
@@ -397,6 +399,7 @@ export class Props {
       return;
     }
     if (key === "dash") v = v || false;
+    if (key === "width" && Number.isFinite(v)) v = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(v * 100) / 100));
     if (t.type === "number" && (!Number.isFinite(v) || (key !== "angle" && key !== "arcRot" && v <= 0))) return;
     // 入力中は履歴に積まずに反映(ライブ)、確定(change)で1操作として記録する
     this.apply(ctx, key, v, true);
@@ -539,6 +542,11 @@ export class Props {
       const v = g(k) ?? min;
       return `<label class="field">${label}<div class="row"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${v}"><span class="val" data-v="${k}">${fmt ? fmt(v) : v}</span></div></label>`;
     };
+    // 線の太さ: 0.1ptから。スライダーは大まかに、数字の欄は細かく合わせる
+    const widthField = () => {
+      const v = g("width") ?? 1;
+      return `<label class="field">線の太さ<div class="row"><input type="range" data-k="width" min="${MIN_WIDTH}" max="${MAX_WIDTH}" step="0.1" value="${v}"><input type="number" data-k="width" min="${MIN_WIDTH}" max="${MAX_WIDTH}" step="0.1" value="${v}" style="width:70px;height:34px"><span>pt</span></div></label>`;
+    };
     const parts = [];
     const modifyBox = () => {
       const sc = ctx.page?.scale;
@@ -569,7 +577,7 @@ export class Props {
     if (t === "multi") {
       const cur = (g("color") || "#e11d48").toLowerCase();
       parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
-      parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
+      parts.push(widthField());
       parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
       parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
       if (ctx.shape) {
@@ -609,7 +617,7 @@ export class Props {
       const cur = (g("color") || "#e11d48").toLowerCase();
       parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
     }
-    if (LINE_TYPES.has(t)) parts.push(num("width", "線の太さ", 0.5, 24, 0.5, (v) => Number(v).toFixed(1)));
+    if (LINE_TYPES.has(t)) parts.push(widthField());
     if (!ctx.sel) {
       // 作図方法の切り替え(次に描くものだけに効く)
       const M = this.ed.modes;

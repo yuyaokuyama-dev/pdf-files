@@ -62,7 +62,7 @@ export class LayerPanel {
             <span class="lp-n" title="図形の数">${n}</span>
           </div>
           <div class="lp-sub">
-            <label>太さ<input type="number" data-k="width" min="0.5" max="24" step="0.5" value="${l.width}"></label>
+            <label>太さ<input type="number" data-k="width" min="0.1" max="24" step="0.1" value="${l.width}"></label>
             <select data-k="dash" aria-label="線種">${DASH_TYPES.map((d) => `<option value="${d.id}"${normDash(l.dash) === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select>
             <button class="btn" data-act="sel">図形を選択</button>
             <button class="btn danger" data-act="del"${l.id === BASE_LAYER_ID ? " disabled" : ""}>削除</button>
@@ -146,7 +146,7 @@ export class LayerPanel {
       this.model.updateLayer(id, { name });
     } else if (k === "width") {
       const w = Number(v);
-      if (w > 0) this.model.updateLayer(id, { width: Math.min(24, w) });
+      if (w > 0) this.model.updateLayer(id, { width: Math.min(24, Math.max(0.1, w)) });
       else this.refresh();
     } else if (k === "color") {
       this.model.updateLayer(id, { color: v });
