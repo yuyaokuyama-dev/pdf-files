@@ -313,3 +313,24 @@ test("寸法の補助線の太さ: 主線より太くならず、細い線にも
   assert.equal(thinWidth(1), 0.6);
   assert.equal(thinWidth(10), 6);
 });
+
+test("寸法値の引出線: アンダーラインを付けると、先の水平線の上に水平な文字がのる", async () => {
+  const { dimensionGeometry } = await import("../js/geometry.js");
+  const base = { textOff: [60, -40], textW: 40 };
+  const g0 = dimensionGeometry([0, 100], [100, 100], 24, 12, base);
+  assert.equal(g0.underline, null, "ulなしは従来どおり");
+  const g = dimensionGeometry([0, 100], [100, 100], 24, 12, { ...base, ul: true });
+  assert.ok(g.underline);
+  const [a, b] = g.underline;
+  assert.deepEqual(a, g.leader[1], "引出線の終わりからアンダーラインが始まる");
+  assert.equal(a[1], b[1], "水平");
+  assert.ok(b[0] > a[0], "引出線より右側にあるときは右へ伸びる");
+  assert.ok(b[0] - a[0] >= 40, "文字の幅以上の長さ");
+  assert.equal(g.textAngle, 0);
+  assert.ok(g.textPos[1] < a[1], "文字はアンダーラインの上");
+  assert.ok(g.textPos[0] > a[0] && g.textPos[0] < b[0]);
+  const gl = dimensionGeometry([0, 100], [100, 100], 24, 12, { textOff: [-60, -40], textW: 40, ul: true });
+  assert.ok(gl.underline[1][0] < gl.underline[0][0], "左側に出したときは左へ伸びる");
+  const gn = dimensionGeometry([0, 100], [100, 100], 24, 12, { ul: true, textW: 40 });
+  assert.equal(gn.underline, null, "引き出していなければ付かない");
+});

@@ -266,7 +266,8 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
         case "dim":
         case "measure": {
           const size = sh.size || 12;
-          const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size, dimOpts(sh));
+          const label = labelFor(sh, page);
+          const geo = dimensionGeometry(sh.pts[0], sh.pts[1], sh.type === "dim" ? sh.off ?? 24 : 0, size, dimOpts(sh, label ? textMetrics({ text: label, size, font: sh.font }).w : 0));
           const thin = { ...strokeOpts, borderWidth: thinWidth(width) };
           if (sh.type === "dim" && !sh.noExt) {
             path(linePath(geo.ext0), thin);
@@ -279,7 +280,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
             const lt = leaderTipShape(geo.leader, sh.ltip, sh.endSize ?? size / 2);
             if (lt) path(lt.type === "dot" ? ellipsePath([lt.c[0] - lt.r, lt.c[1] - lt.r], [lt.c[0] + lt.r, lt.c[1] + lt.r]) : polygonPath(lt.poly), { color, borderColor: color, borderWidth: Math.min(0.5, width), opacity: st.opacity ?? 1 });
           }
-          const label = labelFor(sh, page);
+          if (geo.underline) path(linePath(geo.underline), thin);
           if (label) {
             const m = textMetrics({ text: label, size, font: sh.font });
             const w = m.w;
