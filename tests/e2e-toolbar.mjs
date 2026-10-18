@@ -68,10 +68,12 @@ await page.click(".toolgroup .tg-reset");
 check("初期に戻せる", JSON.stringify(await pal()) === JSON.stringify(p0), JSON.stringify(await pal()));
 await page.keyboard.press("Escape");
 
-// 修正はそのままメニューが開く
+// 修正も作図・寸法計測と同じ、アイコンと名前だけのパレットが開く
 await page.click('#tools [data-group="modify"]');
-await page.waitForSelector("#menu:not([hidden])");
-check("修正はメニューが開く", true);
+await page.waitForSelector(".toolgroup .tool[data-cmd]");
+const lab = await page.locator(".toolgroup .tool[data-cmd]").evaluateAll((b) => b.map((x) => ({ icon: !!x.querySelector("svg"), name: x.querySelector("span")?.textContent, text: x.textContent })));
+check("修正はアイコンと名前だけのパレットが開く", lab.length >= 12 && lab.every((x) => x.icon && x.name && x.text === x.name), JSON.stringify(lab.slice(0, 2)));
+check("図形を選んでいないと移動・コピーは押せない", await page.locator('.toolgroup .tool[data-cmd="move"]').isDisabled() && !(await page.locator('.toolgroup .tool[data-cmd="trim"]').isDisabled()));
 await page.keyboard.press("Escape");
 
 // 再読み込みしても並びが残る
@@ -99,8 +101,8 @@ await page.click('.toolgroup .tool[data-cmd="dimseries"]');
 check("押すと直列寸法が始まる", (await page.evaluate(() => window.__apdf.editor.cmd?.name)) === "dimseries");
 await page.keyboard.press("Escape");
 await page.click('#tools [data-group="modify"]');
-const menuText = await page.locator("#menu").innerText();
-check("修正メニューから寸法コマンドは無くなった", !/半径寸法|直列寸法/.test(menuText), menuText.slice(0, 80));
+const menuText = await page.locator(".toolgroup").innerText();
+check("修正から寸法コマンドは無くなった", !/半径寸法|直列寸法/.test(menuText), menuText.slice(0, 80));
 await page.keyboard.press("Escape");
 
 check("コンソールエラーなし", errors.length === 0, errors.join("|"));

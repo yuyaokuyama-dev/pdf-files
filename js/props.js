@@ -53,7 +53,7 @@ export class Props {
     this.onStampWidth = onStampWidth;
     this.toast = onToast;
     this.dismissed = false;
-    this.mv = { angle: 90, rcopy: false, k: 2, scopy: false, keep: false, rows: 2, cols: 3, rowd: 20, cold: 20, count: 6, pang: 360, protate: true, dist: 10 };
+    this.mv = { angle: 90, rcopy: false, k: 2, scopy: false, keep: true, rows: 2, cols: 3, rowd: 20, cold: 20, count: 6, pang: 360, protate: true, dist: 10 };
     this.modOpen = false;
     el.addEventListener("toggle", (e) => e.target.classList?.contains("modbox") && (this.modOpen = e.target.open), true);
     editor.on("selection", () => ((this.dismissed = false), this.refresh()));
@@ -551,7 +551,7 @@ export class Props {
         <div class="field">移動・コピー<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="move">移動</button><button class="btn" data-act="cmd" data-c="copy">コピー</button></div></div>
         <div class="field">回転<div class="row">${nf("angle", 64)}<span>度(右回り)</span></div>${ck("rcopy", "元を残してコピー")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="rotate">基点をタップして回転</button></div></div>
         <div class="field">尺度(拡大・縮小)<div class="row">${nf("k", 64, "any", 0.01)}<span>倍</span></div>${ck("scopy", "元を残してコピー")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="scale">基点をタップして拡大縮小</button></div></div>
-        <div class="field">鏡像(線対称)${ck("keep", "元を残す")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="mirror">軸の2点をタップ</button></div></div>
+        <div class="field">ミラー複写(線対称に反転)${ck("keep", "元を残す(外すと元を消して反転)")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="mirror">軸の2点をタップ</button></div></div>
         <div class="field">配列複写(矩形)<div class="row"><span>行</span>${nf("rows", 56, 1, 1)}<span>列</span>${nf("cols", 56, 1, 1)}</div><div class="row"><span>行の間隔</span>${nf("rowd", 64)}<span>${unit}</span></div><div class="row"><span>列の間隔</span>${nf("cold", 64)}<span>${unit}</span></div><div class="actions" style="margin:0"><button class="btn" data-act="cmd-array">配列する</button></div></div>
         <div class="field">配列複写(円形)<div class="row"><span>個数</span>${nf("count", 56, 1, 2)}<span>全体で</span>${nf("pang", 64)}<span>度</span></div>${ck("protate", "図形も回す")}<div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="polar">中心をタップして配列</button></div></div>
         ${single ? `<div class="field">オフセット(平行複写)<div class="row"><span>距離</span>${nf("dist", 70, "any", 0)}<span>${unit}</span></div><div class="actions" style="margin:0"><button class="btn" data-act="cmd" data-c="offset">ずらす側をタップ</button></div></div>` : ""}

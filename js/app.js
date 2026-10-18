@@ -11,7 +11,8 @@ import { exportPdf, LEVELS } from "./export.js";
 import { pageOf } from "./editdata.js";
 import { buildDxf } from "./dxf.js";
 import { extractVectorPaths } from "./pdfvec.js";
-import { Toolbar } from "./toolbar.js";
+import { Toolbar, GROUPS } from "./toolbar.js";
+const MODIFY_CMDS = new Set(GROUPS.find((g) => g.id === "modify").commands.map((c) => c.id));
 import { textMetrics, serializeOverlay } from "./render.js";
 import * as G from "./google.js";
 import { APP_VERSION, APP_DATE } from "./version.js";
@@ -438,11 +439,11 @@ function buildTools() {
       wirePanelButtons();
       highlightTools();
     },
-    onCommand: (name) => S.editor.startCommand(name),
+    onCommand: (name) => (MODIFY_CMDS.has(name) ? modifyCommand(name) : S.editor.startCommand(name)),
+    isDisabled: (c) => (c.need === "sel" && !S.editor.selectedIds().length) || (c.need === "sel2" && S.editor.selectedIds().length < 2),
     getShortcut: (id) => S.shortcutMap?.[id],
     onPick: (id, b) => {
       if (id === "camera") return photoMenu(b);
-      if (id === "modify") return modifyMenu(b);
       if (id === "stamp") return enterStampTool();
       S.editor.setTool(id);
     },
@@ -466,8 +467,8 @@ async function leaderEdit({ pageId, shapeId, isNew }) {
   if (r !== (f.shape.text || "")) ed.model.mutate(() => (f.shape.text = r));
 }
 
-/** 「修正」メニュー: トリム・延長・フィレット・面取り・切断・ストレッチ・結合・分解 */
-async function modifyMenu(anchor) {
+/** 「修正」グループのコマンド。図形を選ぶ必要があるもの・数値を聞くものはここで扱う */
+async function modifyCommand(name) {
   const ed = S.editor;
   const page = ed.model.page(ed.curPageId) || ed.model.pages[0];
   const sc = page?.scale;
@@ -478,51 +479,30 @@ async function modifyMenu(anchor) {
     const n = Number(r);
     return r == null || !Number.isFinite(n) || n < 0 ? null : n;
   };
-  const sel = ed.selectedIds().length;
   const mv = S.modv || (S.modv = { radius: 10, d1: 10, d2: 10 });
-  showMenu(anchor, [
-    { header: "線を整える(図形を選ばずに始められます)" },
-    { label: "トリム(交点までを消す)", icon: "eraser", onClick: () => ed.startCommand("trim") },
-    { label: "延長(次の図形まで伸ばす)", icon: "line", onClick: () => ed.startCommand("extend") },
-    {
-      label: "フィレット(線の角・四角や多角形の角を丸める)",
-      icon: "arc",
-      onClick: async () => {
-        const r = await ask("フィレット", "半径(0なら角をそろえるだけ)", mv.radius);
-        if (r == null) return;
-        mv.radius = r;
-        ed.startCommand("fillet", { radius: r * k });
-      },
-    },
-    {
-      label: "角を全部丸める(選んだ四角・多角形)",
-      icon: "rect",
-      disabled: !sel,
-      onClick: async () => {
-        const r = await ask("角を全部丸める", "半径", mv.radius);
-        if (r == null) return;
-        mv.radius = r;
-        ed.roundSelectedCorners(r * k);
-      },
-    },
-    {
-      label: "面取り(角を斜めに切る)",
-      icon: "polygon",
-      onClick: async () => {
-        const d = await ask("面取り", "角からの距離", mv.d1);
-        if (d == null) return;
-        mv.d1 = d;
-        ed.startCommand("chamfer", { d1: d * k, d2: d * k });
-      },
-    },
-    { label: "切断(線を2つに分ける)", icon: "line", onClick: () => ed.startCommand("break") },
-    { label: "ストレッチ(窓で囲んだ部分を引き伸ばす)", icon: "rect", onClick: () => ed.startCommand("stretch") },
-    { header: "選んだ図形に対して" },
-    { label: "移動(基点→移動先をタップ)", icon: "hand", disabled: !sel, onClick: () => ed.startCommand("move") },
-    { label: "コピー(基点→コピー先をタップ)", icon: "copy", disabled: !sel, onClick: () => ed.startCommand("copy") },
-    { label: "結合(つながる線をひとつに)", icon: "polygon", disabled: sel < 2, onClick: () => ed.joinSelected() },
-    { label: "分解(四角・多角形を線にばらす)", icon: "rect", disabled: !sel, onClick: () => ed.explodeSelected() },
-  ]);
+  if (name === "fillet") {
+    const r = await ask("フィレット", "半径(0なら角をそろえるだけ)", mv.radius);
+    if (r == null) return;
+    mv.radius = r;
+    return ed.startCommand("fillet", { radius: r * k });
+  }
+  if (name === "roundall") {
+    const r = await ask("角を全部丸める", "半径", mv.radius);
+    if (r == null) return;
+    mv.radius = r;
+    return ed.roundSelectedCorners(r * k);
+  }
+  if (name === "chamfer") {
+    const d = await ask("面取り", "角からの距離", mv.d1);
+    if (d == null) return;
+    mv.d1 = d;
+    return ed.startCommand("chamfer", { d1: d * k, d2: d * k });
+  }
+  if (name === "mirrorcopy") return ed.startCommand("mirror", { keep: true });
+  if (name === "mirrormove") return ed.startCommand("mirror", { keep: false });
+  if (name === "join") return ed.joinSelected();
+  if (name === "explode") return ed.explodeSelected();
+  ed.startCommand(name);
 }
 
 function showHint(text, ms = 4200, actions = []) {

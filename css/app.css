@@ -284,6 +284,7 @@ html[data-ui="xlarge"] .btn.icon { width: 54px; }
 .toolgroup .tool { width: auto; touch-action: none; }
 .toolgroup .tool.inpal::after { content: "●"; position: absolute; top: 2px; right: 6px; font-size: 8px; color: var(--accent); }
 .toolgroup .tool { position: relative; }
+.toolgroup .tool:disabled { opacity: .35; cursor: default; }
 .tg-note { font-size: 11px; color: var(--muted, #6b7280); margin: 8px 2px 6px; line-height: 1.5; }
 .tg-reset { min-height: 30px; font-size: 12px; padding: 0 10px; }
 .tool.group span { white-space: nowrap; }

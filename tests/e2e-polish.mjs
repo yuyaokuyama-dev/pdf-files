@@ -59,9 +59,9 @@ for (const mobile of [false, true]) {
   /* ---- 修正メニューに 移動・コピー がある ---- */
   await ed(() => { const m = window.__apdf.model; const e = window.__apdf.editor; e.setSelection({ pageId: m.pages[0].id, shapeId: m.pages[0].shapes.at(-1).id }); });
   await page.click('#tools [data-group="modify"]');
-  const items = await page.locator("#menu button").allTextContents();
-  check("修正メニューに移動・コピーが並ぶ", items.some((t) => t.startsWith("移動")) && items.some((t) => t.startsWith("コピー")), items.join("|"));
-  await page.locator("#menu button", { hasText: "移動(基点" }).click();
+  const items = await page.locator(".toolgroup .tool[data-cmd] span").allTextContents();
+  check("修正に移動・コピーが並ぶ", items.includes("移動") && items.includes("コピー"), items.join("|"));
+  await page.click('.toolgroup .tool[data-cmd="move"]');
   const before = (await shapes(page)).at(-1).pts[0].slice();
   await click(page, 0, [350, 300]);
   await click(page, 0, [400, 350]);

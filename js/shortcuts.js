@@ -10,7 +10,7 @@ export const SHORTCUT_GROUPS = [
   { label: "選ぶ・動かす", items: [["select", "選択"], ["marquee", "範囲選択"], ["lasso", "投げ縄"], ["hand", "移動(画面)"]] },
   { label: "作図", items: [["pen", "ペン"], ["eraser", "消しゴム"], ["line", "線"], ["arrow", "矢印"], ["rect", "四角"], ["ellipse", "丸"], ["arc", "円弧"], ["polygon", "多角形"], ["cloud", "雲"]] },
   { label: "寸法・計測", items: [["leader", "引出線"], ["dim", "寸法線"], ["calib", "縮尺設定"], ["measure", "計測"], ["dimradius", "半径寸法"], ["dimdiameter", "直径寸法"], ["dimangle", "角度寸法"], ["dimseries", "直列寸法"], ["dimpara", "並列寸法"]] },
-  { label: "修正", items: [["cmd:move", "移動(選んだ図形)"], ["cmd:copy", "コピー(選んだ図形)"], ["cmd:join", "結合"], ["cmd:explode", "分解"], ["trim", "トリム"], ["extend", "延長"], ["break", "切断"], ["stretch", "ストレッチ"]] },
+  { label: "修正", items: [["cmd:move", "移動(選んだ図形)"], ["cmd:copy", "コピー(選んだ図形)"], ["cmd:mirror", "ミラー複写(元を残す)"], ["cmd:mirrormove", "ミラー(元を消す)"], ["cmd:join", "結合"], ["cmd:explode", "分解"], ["trim", "トリム"], ["extend", "延長"], ["break", "切断"], ["stretch", "ストレッチ"]] },
   { label: "挿入", items: [["text", "文字"], ["sign", "署名"]] },
 ];
 export const SHORTCUT_IDS = SHORTCUT_GROUPS.flatMap((g) => g.items.map((x) => x[0]));
