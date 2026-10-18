@@ -562,6 +562,8 @@ function wireEditorEvents() {
     }
   });
   ed.on("pages", () => updateEmpty());
+  ed.on("page", () => updateScaleBox());
+  wireScaleBox();
   highlightTools();
 }
 
@@ -596,6 +598,40 @@ function wireTopbar() {
 function updateUndoRedo() {
   $("#btnUndo").disabled = !S.model.canUndo;
   $("#btnRedo").disabled = !S.model.canRedo;
+  updateScaleBox();
+}
+/** 元に戻す・やり直しの隣の「1/○○」: 表示中のページの縮尺を映す(縮尺が未設定・実寸合わせのときは空) */
+function viewPage() {
+  return S.model.page(S.editor.curPageId) || S.model.pages[0] || null;
+}
+function updateScaleBox() {
+  const page = S.model.pages.length ? viewPage() : null;
+  $("#scaleBox").hidden = !page;
+  const input = $("#scaleDen");
+  if (page && document.activeElement !== input) input.value = page.scale?.denom ?? "";
+}
+function wireScaleBox() {
+  const input = $("#scaleDen");
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") input.blur();
+    else if (e.key === "Escape") {
+      input.value = viewPage()?.scale?.denom ?? "";
+      input.blur();
+    }
+  });
+  input.addEventListener("change", () => {
+    const page = viewPage();
+    if (!page) return;
+    const den = parseFloat(input.value);
+    if (!(den > 0)) {
+      if (input.value !== "") toast("縮尺は0より大きい数字を入力してください", { error: true });
+      input.value = page.scale?.denom ?? "";
+      return;
+    }
+    const paper = (page.scale?.paper && PAPERS.find((p) => p.id === page.scale.paper)) || guessPaper(page.w, page.h);
+    S.model.mutate(() => (page.scale = scaleFromPaper(page.w, page.h, paper, den)));
+    toast(`縮尺を 1/${den} に設定しました`);
+  });
 }
 function updateEmpty() {
   const has = S.model.pages.length > 0;
