@@ -1,7 +1,7 @@
 // ツールバー: 「基本パレット」(よく使う機能)と、機能をまとめたグループ。
 // グループのボタンを押すと展開され、そこから基本パレットへドラッグして入れる/基本パレットから外へドラッグして外せる。
 
-/** グループ(案B): 作図 / 寸法・計測 / 修正 / 挿入。修正は従来どおりメニューが開く */
+/** グループ(案B): 作図 / 寸法・計測 / 修正 / 挿入 */
 export const GROUPS = [
   { id: "draw", label: "作図", icon: "polygon", tools: ["pen", "eraser", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud"] },
   {
@@ -15,7 +15,25 @@ export const GROUPS = [
       { id: "dimpara", label: "並列寸法", icon: "dim", title: "並列寸法(基準点から各点まで)" },
     ],
   },
-  { id: "modify", label: "修正", icon: "modify", direct: "modify" },
+  {
+    id: "modify", label: "修正", icon: "modify",
+    // ツールではなくコマンド(基本パレットには入れられない)。need: sel=図形を選ぶと使える / sel2=2つ以上選ぶと使える
+    commands: [
+      { id: "trim", label: "トリム", icon: "eraser", title: "トリム(交点までを消す)" },
+      { id: "extend", label: "延長", icon: "line", title: "延長(次の図形まで伸ばす)" },
+      { id: "fillet", label: "フィレット", icon: "arc", title: "フィレット(線の角・四角や多角形の角を丸める)" },
+      { id: "roundall", label: "角を丸める", icon: "rect", need: "sel", title: "角を全部丸める(選んだ四角・多角形)" },
+      { id: "chamfer", label: "面取り", icon: "polygon", title: "面取り(角を斜めに切る)" },
+      { id: "break", label: "切断", icon: "line", title: "切断(線を2つに分ける)" },
+      { id: "stretch", label: "ストレッチ", icon: "rect", title: "ストレッチ(窓で囲んだ部分を引き伸ばす)" },
+      { id: "move", label: "移動", icon: "hand", need: "sel", sc: "cmd:move", title: "移動(基点→移動先をタップ)" },
+      { id: "copy", label: "コピー", icon: "copy", need: "sel", sc: "cmd:copy", title: "コピー(基点→コピー先をタップ)" },
+      { id: "mirrorcopy", label: "ミラー複写", icon: "copy", need: "sel", sc: "cmd:mirror", title: "ミラー複写(軸の2点をタップ・元を残す)" },
+      { id: "mirrormove", label: "ミラー", icon: "rotate", need: "sel", sc: "cmd:mirrormove", title: "ミラー(軸の2点をタップ・元を消して反転)" },
+      { id: "join", label: "結合", icon: "polygon", need: "sel2", sc: "cmd:join", title: "結合(つながる線をひとつに)" },
+      { id: "explode", label: "分解", icon: "rect", need: "sel", sc: "cmd:explode", title: "分解(四角・多角形を線にばらす)" },
+    ],
+  },
   { id: "insert", label: "挿入", icon: "stamp", tools: ["text", "sign", "stamp", "camera"] },
 ];
 export const DEFAULT_PALETTE = ["pen", "eraser", "line", "arrow", "rect", "ellipse", "text"];
@@ -42,7 +60,7 @@ export class Toolbar {
    * nav: #tools / tools: TOOLS(id・icon・label) / icon(name,size) / getPalette()・setPalette(list)
    * onPick(id, button): 機能を選んだ / onRender(): 作り直したあと(選択中の強調を付け直す)
    */
-  constructor({ nav, tools, icon, getPalette, setPalette, getShortcut, onPick, onCommand, onRender }) {
+  constructor({ nav, tools, icon, getPalette, setPalette, getShortcut, isDisabled, onPick, onCommand, onRender }) {
     this.nav = nav;
     this.tools = new Map(tools.filter((t) => !t.sep).map((t) => [t.id, t]));
     this.icon = icon;
@@ -50,6 +68,7 @@ export class Toolbar {
     this.setPalette = setPalette;
     this.onPick = onPick;
     this.getShortcut = getShortcut;
+    this.isDisabled = isDisabled;
     this.onCommand = onCommand;
     this.onRender = onRender;
     this.pop = null;
@@ -117,9 +136,14 @@ export class Toolbar {
     const pal = new Set(this.list());
     const pop = document.createElement("div");
     pop.className = "toolgroup";
-    pop.innerHTML = `<div class="tg-title">${esc(def.label)}</div><div class="tg-grid">${def.tools.map((id) => this.tools.get(id)).filter(Boolean).map((t) => this.btn(t, pal.has(t.id) ? " inpal" : "")).join("")}${(def.commands || []).map((c) => `<button class="tool cmd" data-cmd="${c.id}" title="${esc(c.title || c.label)}${this.getShortcut?.(c.id) ? `(${esc(this.getShortcut(c.id).toUpperCase())})` : ""}">${this.icon(c.icon, 24)}<span>${esc(c.label)}</span></button>`).join("")}</div>
-      <div class="tg-note">よく使うものは、基本パレット(左のボタン列)へドラッグして入れられます。基本パレットから外へドラッグすると外せます。</div>
-      <button class="btn tg-reset" type="button">基本パレットを初期に戻す</button>`;
+    const sc = (c) => this.getShortcut?.(c.sc || c.id);
+    const cmdBtn = (c) => `<button class="tool cmd" data-cmd="${c.id}"${this.isDisabled?.(c) ? " disabled" : ""} title="${esc(c.title || c.label)}${sc(c) ? `(${esc(sc(c).toUpperCase())})` : ""}">${this.icon(c.icon, 24)}<span>${esc(c.label)}</span></button>`;
+    const grid = (def.tools || []).map((id) => this.tools.get(id)).filter(Boolean).map((t) => this.btn(t, pal.has(t.id) ? " inpal" : "")).join("") + (def.commands || []).map(cmdBtn).join("");
+    const foot = def.tools
+      ? `<div class="tg-note">よく使うものは、基本パレット(左のボタン列)へドラッグして入れられます。基本パレットから外へドラッグすると外せます。</div>
+      <button class="btn tg-reset" type="button">基本パレットを初期に戻す</button>`
+      : `<div class="tg-note">グレーのものは、先に図形を選ぶと使えます。</div>`;
+    pop.innerHTML = `<div class="tg-title">${esc(def.label)}</div><div class="tg-grid">${grid}</div>${foot}`;
     document.body.appendChild(pop);
     const r = anchor.getBoundingClientRect();
     const w = pop.offsetWidth;
@@ -134,6 +158,7 @@ export class Toolbar {
         return this.openPopup(def, anchor);
       }
       const c = e.target.closest(".tool[data-cmd]");
+      if (c?.disabled) return;
       if (c) {
         this.closePopup();
         return this.onCommand?.(c.dataset.cmd);

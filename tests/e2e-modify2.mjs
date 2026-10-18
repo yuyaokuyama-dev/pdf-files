@@ -25,8 +25,8 @@ const types = async () => (await shapes(page)).map((s) => s.type).join(",");
 
 /* ---- メニュー ---- */
 await page.click('#tools [data-group="modify"]');
-const items = await page.locator("#menu button").allTextContents();
-check("「修正」メニューに各コマンドが並ぶ", ["トリム", "延長", "フィレット", "面取り", "切断", "ストレッチ", "結合", "分解"].every((w) => items.some((t) => t.includes(w))), items.join("|"));
+const items = await page.locator(".toolgroup .tool[data-cmd] span").allTextContents();
+check("「修正」に各コマンドが並ぶ", ["トリム", "延長", "フィレット", "面取り", "切断", "ストレッチ", "結合", "分解"].every((w) => items.some((t) => t.includes(w))), items.join("|"));
 await page.keyboard.press("Escape");
 
 /* ---- トリム ---- */

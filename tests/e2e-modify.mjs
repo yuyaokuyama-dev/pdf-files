@@ -97,19 +97,19 @@ s = (await shapes(page)).at(-1);
 check("鏡像: x=300 で左右反転", nearP(s.pts[0], [500, 100]) && nearP(s.pts[1], [400, 100]), JSON.stringify(s.pts));
 await ed(() => window.__apdf.model.undo());
 
-/* ---- ミラー: 修正メニューから(元を残す/元を消す)とショートカット ---- */
+/* ---- ミラー: 修正グループから(元を残す/元を消す)とショートカット ---- */
 const menuMirror = async (label) => {
   await page.click('#tools [data-group="modify"]');
-  await page.locator("#menu button", { hasText: label }).click();
+  await page.click(`.toolgroup .tool[data-cmd="${label}"]`);
 };
 await reselect([150, 100]);
-await menuMirror("ミラー複写");
+await menuMirror("mirrorcopy");
 await click(page, 0, [300, 50]);
 await click(page, 0, [300, 250]);
 check("ミラー複写(メニュー): 元を残して1本増える", (await count()) === 2, String(await count()));
 await ed(() => window.__apdf.model.undo());
 await reselect([150, 100]);
-await menuMirror("元を消して反転");
+await menuMirror("mirrormove");
 await click(page, 0, [300, 50]);
 await click(page, 0, [300, 250]);
 s = (await shapes(page)).at(-1);
