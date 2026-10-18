@@ -681,18 +681,27 @@ function setDoc(model, { fit = true } = {}) {
 
 /* ---------- 開いているファイル(切り替え) ---------- */
 // 一覧は別ウィンドウと共有しているので、書き込む直前に読み直す
-async function trackOpen(id) {
+// 読み→書きが重なると取りこぼすので、順番に1件ずつ実行する
+let docsQueue = Promise.resolve();
+const serial = (fn) => (docsQueue = docsQueue.then(fn, fn));
+function trackOpen(id) {
+  return serial(async () => {
   if (!id || !S.store) return;
   S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
   if (S.openDocs.includes(id)) return;
   S.openDocs.push(id);
   await S.store.setSetting("openDocs", S.openDocs);
+  });
 }
-async function untrackOpen(id) {
-  if (!S.store) return;
-  S.openDocs = ((await S.store.getSetting("openDocs", [])) || []).filter((x) => x !== id);
-  await S.store.setSetting("openDocs", S.openDocs);
+function untrackOpen(id) {
+  return serial(async () => {
+    if (!S.store) return;
+    S.openDocs = ((await S.store.getSetting("openDocs", [])) || []).filter((x) => x !== id);
+    await S.store.setSetting("openDocs", S.openDocs);
+  });
 }
+S.trackOpen = trackOpen; // 動作確認用
+S.untrackOpen = untrackOpen;
 
 /* ---------- タブ ---------- */
 function renderTabs() {
