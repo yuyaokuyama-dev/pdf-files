@@ -69,4 +69,5 @@ jobs:
           node tests/e2e-multi.mjs
           node tests/e2e-multifill.mjs
           node tests/e2e-snap.mjs
+          node tests/e2e-movedist.mjs
           node tests/e2e-keep.mjs

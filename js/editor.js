@@ -712,6 +712,74 @@ export class Editor {
     el.svg.addEventListener("pointercancel", cancel);
   }
 
+  /* ---------- 移動・コピーの距離を数字で固定 ---------- */
+  /** 数字を受け付ける対象: ドラッグ移動の途中、または移動・コピーで基点を指したあと */
+  moveDistTarget() {
+    if (this.g?.kind === "move" && this.g.moved) return this.g;
+    const c = this.cmd;
+    if (c && (c.name === "move" || c.name === "copy") && c.pts.length === 1) return c;
+    return null;
+  }
+  /** 打った距離(縮尺があれば実寸)に固定した点。向きは target(スナップなどで決まった点)の向き */
+  fixedByTyped(t, base, target, pageId) {
+    if (t.typed == null) return target;
+    const v = parseFloat(t.typed);
+    if (!(v > 0)) return target;
+    const k = this.model.page(pageId)?.scale?.ptsPerUnit || 1;
+    const d = [target[0] - base[0], target[1] - base[1]];
+    const L = Math.hypot(d[0], d[1]);
+    const u = L > 1e-6 ? [d[0] / L, d[1] / L] : [1, 0];
+    return [base[0] + u[0] * v * k, base[1] + u[1] * v * k];
+  }
+  /** 数字・小数点・Backspace・Enter・Esc を処理する。処理したら true */
+  moveDistKey(e) {
+    const t = this.moveDistTarget();
+    if (!t || e.ctrlKey || e.metaKey || e.altKey) return false;
+    const k = e.key;
+    const redraw = () => (t === this.g ? t.reapply?.() : this.cmd === t && (this.cmdRefresh(), true));
+    if (/^[0-9.]$/.test(k)) {
+      t.typed = (t.typed ?? "") + k;
+      redraw();
+      return true;
+    }
+    if (t.typed == null) return false;
+    if (k === "Backspace") {
+      t.typed = t.typed.slice(0, -1) || null;
+      redraw();
+      return true;
+    }
+    if (k === "Escape") {
+      t.typed = null;
+      redraw();
+      return true;
+    }
+    if (k === "Enter") {
+      if (t === this.g) t.finish?.();
+      else this.commitMoveCmd(t);
+      return true;
+    }
+    return false;
+  }
+  /** 移動・コピーのコマンド: 打った距離で2点目を決めて実行する */
+  commitMoveCmd(c) {
+    const base = c.pts[0];
+    const q = this.fixedByTyped(c, base, c.hover || [base[0] + 1, base[1]], c.pageId);
+    c.typed = null;
+    c.pts.push(q);
+    if (this.applyMoveCopy(c)) return;
+    this.emit("cmd", { text: c.prompts[1] });
+    this.drawCmdDraft();
+  }
+  /** コマンド中の表示を、いまの入力に合わせて描き直す */
+  cmdRefresh() {
+    const c = this.cmd;
+    if (!c?.hover) return this.drawCmdDraft();
+    const base = c.pts[c.pts.length - 1];
+    if (base && c.typed != null) c.hoverFixed = this.fixedByTyped(c, base, c.hover, c.pageId);
+    else c.hoverFixed = null;
+    this.drawCmdDraft();
+  }
+
   cancelGesture() {
     const g = this.g;
     if (!g) return;
@@ -1430,20 +1498,32 @@ export class Editor {
     const by0 = Math.min(...bs.map((b) => b.y));
     const bx1 = Math.max(...bs.map((b) => b.x + b.w));
     const by1 = Math.max(...bs.map((b) => b.y + b.h));
+    // Ctrl でスナップ・Shift で直交・Alt で極トラッキング(作図と同じ)。基点はつかんだ点
+    const snapPts = this.aid.pointsFor(pageId, new Set(shapes.map((s) => s.id)));
+    const base = this.aid.resolve(p0, { pts: snapPts, ev: e, polar: false }).p;
     const move = (ev) => {
       if (ev.pointerId !== e.pointerId) return;
-      const q = this.pt(ev, pageId);
-      let dx = q[0] - p0[0];
-      let dy = q[1] - p0[1];
-      if (!this.g.moved && Math.hypot(dx, dy) * this.zoom < 3) return;
+      const raw = this.pt(ev, pageId);
+      if (!this.g.moved && Math.hypot(raw[0] - p0[0], raw[1] - p0[1]) * this.zoom < 3) return;
       this.g.moved = true;
-      dx = Math.max(-bx1 + 8, Math.min(page.w - bx0 - 8, dx));
-      dy = Math.max(-by1 + 8, Math.min(page.h - by0 - 8, dy));
+      this.g.lastEv = ev;
+      const r = this.aid.resolve(raw, { pts: snapPts, p0: base, ev });
+      const typed = this.g.typed != null;
+      const t = this.fixedByTyped(this.g, base, r.p, pageId);
+      let dx = t[0] - base[0];
+      let dy = t[1] - base[1];
+      if (!typed) {
+        dx = Math.max(-bx1 + 8, Math.min(page.w - bx0 - 8, dx));
+        dy = Math.max(-by1 + 8, Math.min(page.h - by0 - 8, dy));
+      }
       shapes.forEach((s, i) => {
         s.pts = origins[i].map(([x, y]) => [x + dx, y + dy]);
       });
       this.refreshLayer(page);
       this.renderSelection();
+      el.draft.replaceChildren();
+      this.aid.drawMark(el.draft, r.mark);
+      this.aid.readout(el.draft, "line", base, [base[0] + dx, base[1] + dy], page, r.mark, this.g.typed != null ? `  入力: ${this.g.typed}` : "");
     };
     const up = (ev) => {
       if (ev.pointerId !== e.pointerId) return;
@@ -1452,6 +1532,7 @@ export class Editor {
       el.svg.removeEventListener("pointercancel", up);
       const g = this.g;
       this.g = null;
+      el.draft.replaceChildren();
       if (g?.moved) this.model.commit(g.before);
     };
     this.g.cleanup = () => {
@@ -1462,6 +1543,8 @@ export class Editor {
     el.svg.addEventListener("pointermove", move);
     el.svg.addEventListener("pointerup", up);
     el.svg.addEventListener("pointercancel", up);
+    this.g.reapply = () => this.g?.lastEv && move(this.g.lastEv);
+    this.g.finish = () => up({ pointerId: e.pointerId });
   }
 
   beginHandleDrag(e, pageId, handle) {
@@ -2008,7 +2091,7 @@ export class Editor {
       const r = this.aid.resolve(this.clampToPage(this.pt(ev, this.cmd.pageId), this.cmd.pageId), { pts: this.cmd.snapPts, p0: this.cmd.pts[this.cmd.pts.length - 1] || null, ev });
       this.cmd.hover = r.p;
       this.cmd.mark = r.mark;
-      this.drawCmdDraft();
+      this.cmdRefresh();
     };
     if (items.length) this.bindCmdPage(items[0].page.id);
     this.emit("cmd", { text: prompts[0], done: name === "dimseries" || name === "dimpara" ? true : undefined });
@@ -2036,8 +2119,9 @@ export class Editor {
     el.draft.replaceChildren();
     const z = this.zoom;
     const last = c.pts[c.pts.length - 1];
-    if (last && c.hover && !(c.name === "stretch" && c.pts.length <= 2)) {
-      el.draft.appendChild(sv("line", { x1: last[0], y1: last[1], x2: c.hover[0], y2: c.hover[1], stroke: "#2563eb", "stroke-width": 1.4 / z, "stroke-dasharray": `${5 / z} ${4 / z}`, "pointer-events": "none" }));
+    const hov = (c.typed != null && c.hoverFixed) || c.hover;
+    if (last && hov && !(c.name === "stretch" && c.pts.length <= 2)) {
+      el.draft.appendChild(sv("line", { x1: last[0], y1: last[1], x2: hov[0], y2: hov[1], stroke: "#2563eb", "stroke-width": 1.4 / z, "stroke-dasharray": `${5 / z} ${4 / z}`, "pointer-events": "none" }));
       el.draft.appendChild(sv("circle", { cx: last[0], cy: last[1], r: 3.5 / z, fill: "#2563eb", "pointer-events": "none" }));
     }
     if (c.name === "stretch" && c.pts.length >= 1 && c.pts.length <= 2) {
@@ -2046,6 +2130,7 @@ export class Editor {
       if (b) el.draft.appendChild(sv("rect", { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), width: Math.abs(b[0] - a[0]), height: Math.abs(b[1] - a[1]), fill: "rgba(37,99,235,.08)", stroke: "#2563eb", "stroke-width": 1.2 / z, "stroke-dasharray": `${5 / z} ${4 / z}`, "pointer-events": "none" }));
     }
     this.aid.drawMark(el.draft, c.mark);
+    if ((c.name === "move" || c.name === "copy") && c.pts.length === 1 && hov) this.aid.readout(el.draft, "line", c.pts[0], hov, this.model.page(c.pageId), c.mark, c.typed != null ? `  入力: ${c.typed}` : "");
   }
   cmdDown(e, pageId, p) {
     const c = this.cmd;
@@ -2054,7 +2139,11 @@ export class Editor {
     if (pageId !== c.pageId) return;
     if (PICK_CMDS.has(c.name) && c.name !== "stretch") return this.pickCommandDown(e, pageId, p);
     const r = this.aid.resolve(this.clampToPage(p, pageId), { pts: c.snapPts, p0: c.pts[c.pts.length - 1] || null, ev: e });
-    const q = this.clampToPage(r.p, pageId);
+    let q = this.clampToPage(r.p, pageId);
+    if ((c.name === "move" || c.name === "copy") && c.pts.length === 1 && c.typed != null) {
+      q = this.fixedByTyped(c, c.pts[0], q, pageId); // 打った距離のまま、クリックの向きで確定
+      c.typed = null;
+    }
     const o = c.opts;
     if (c.name === "offset") {
       const f = this.selectedItems()[0];
@@ -2141,7 +2230,12 @@ export class Editor {
       if (this.cmd !== c || c.pts.length !== 1) return;
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) return; // タップ
       const r = this.aid.resolve(this.clampToPage(this.pt(ev, pageId), pageId), { pts: c.snapPts, p0: c.pts[0], ev });
-      c.pts.push(this.clampToPage(r.p, pageId));
+      let q = this.clampToPage(r.p, pageId);
+      if (c.typed != null) {
+        q = this.fixedByTyped(c, c.pts[0], q, pageId);
+        c.typed = null;
+      }
+      c.pts.push(q);
       if (this.applyMoveCopy(c)) return;
       this.emit("cmd", { text: c.prompts[1] });
       this.drawCmdDraft();
@@ -2553,6 +2647,10 @@ export class Editor {
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return this.keys.reset();
     if (document.querySelector("dialog[open]")) return this.keys.reset();
+    if (this.moveDistKey(e)) {
+      e.preventDefault();
+      return;
+    }
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
