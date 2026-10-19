@@ -351,3 +351,11 @@ test("寸法値の引出線: 縦の寸法は文字も縦のまま、接続線は
   const gh = dimensionGeometry([0, 100], [100, 100], 24, 12, opt);
   assert.deepEqual(gh.leader[0], [50, 124], "横寸法も中央から");
 });
+
+test("寸法の黒丸: 寸法が狭くても設定どおりの大きさ", async () => {
+  const { dimensionGeometry } = await import("../js/geometry.js");
+  for (const L of [3, 10, 200]) {
+    const g = dimensionGeometry([0, 100], [L, 100], 24, 12, { endStyle: "dot", endSize: 6 });
+    assert.deepEqual(g.ends.map((e) => e.r), [3, 3], `長さ${L}でも半径は3`);
+  }
+});
