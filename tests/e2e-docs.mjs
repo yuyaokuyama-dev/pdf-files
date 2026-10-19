@@ -13,7 +13,15 @@ const menu = async (label) => { await page.click("#btnFile"); await page.locator
 await menu("白紙から新規作成");
 await page.waitForFunction(() => window.__apdf.model.meta.name === "白紙.pdf");
 check("新しく開いたファイルが表示される", true);
-await page.waitForFunction(() => window.__apdf.openDocs.length === 2, null, { timeout: 15000 }); // 登録は非同期
+await page.waitForFunction(() => window.__apdf.openDocs.length === 2, null, { timeout: 15000 }).catch(async (e) => {
+  // CI でだけ時々ここで止まる。原因を調べられるよう、そのときの状態を残す
+  const st = await page.evaluate(async () => {
+    const S = window.__apdf;
+    return { openDocs: S.openDocs, stored: await S.store.getSetting("openDocs", null), tabs: S.tabs, cur: S.model.meta.projectId, pages: S.model.pages.length };
+  });
+  console.error("DIAG openDocs:", JSON.stringify(st), errors.join(" | "));
+  throw e;
+}); // 登録は非同期
 await menu("開いているファイル");
 await page.waitForSelector("dialog[open] .item");
 const rows = await page.locator("dialog[open] .item").count();
