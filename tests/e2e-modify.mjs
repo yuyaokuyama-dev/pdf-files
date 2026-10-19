@@ -61,6 +61,8 @@ await reselect([150, 100]);
 await cmd("copy");
 await click(page, 0, [100, 100]);
 await click(page, 0, [100, 200]);
+const snapsCopy = await ed(() => (window.__apdf.editor.cmd?.snapPts || []).some((q) => Math.abs((q.p ?? q)[0] - 200) < 0.5 && Math.abs((q.p ?? q)[1] - 200) < 0.5));
+check("コピー直後から、できたコピーの端点にも吸い付く", snapsCopy);
 await click(page, 0, [100, 300]);
 check("コピー: 続けて2つ増える", (await count()) === 3, String(await count()));
 await page.keyboard.press("Escape");

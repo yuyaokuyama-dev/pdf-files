@@ -2122,6 +2122,7 @@ export class Editor {
     this.applyMatrices([moveM(b[0] - a[0], b[1] - a[1])], { copy: c.name === "copy" });
     if (c.name === "copy") {
       c.pts = [a]; // 同じ基点から続けてコピー
+      c.snapPts = this.aid.pointsFor(c.pageId, new Set()); // 作ったコピーにも吸い付くよう、候補を作り直す
       return false;
     }
     this.cancelCommand();
