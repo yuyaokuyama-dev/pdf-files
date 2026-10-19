@@ -252,7 +252,7 @@ export function dimensionGeometry(p0, p1, off, size = 12, opts = {}) {
   const es = Math.max(0.5, endSize);
   const ends = [];
   if (endStyle === "dot") {
-    const rad = Math.min(es / 2, L / 6);
+    const rad = es / 2; // 寸法が狭くても、設定どおりの大きさで表示する
     for (const c of [a0, a1]) ends.push({ type: "dot", c, r: rad });
   } else {
     const hs = Math.min(es * 2, L / 3);
