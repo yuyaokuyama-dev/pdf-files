@@ -334,3 +334,20 @@ test("寸法値の引出線: アンダーラインを付けると、先の水平
   const gn = dimensionGeometry([0, 100], [100, 100], 24, 12, { ul: true, textW: 40 });
   assert.equal(gn.underline, null, "引き出していなければ付かない");
 });
+
+test("寸法値の引出線: 縦の寸法は文字も縦のまま、接続線は寸法線の中央から出る", async () => {
+  const { dimensionGeometry } = await import("../js/geometry.js");
+  const opt = { textOff: [50, -30], textW: 40 };
+  const g = dimensionGeometry([100, 0], [100, 200], 24, 12, { ...opt, ul: true });
+  const mid = [(g.line[0][0] + g.line[1][0]) / 2, (g.line[0][1] + g.line[1][1]) / 2];
+  assert.deepEqual(g.leader[0], mid, "接続線は寸法線の中央から");
+  assert.deepEqual(g.leader[1], g.underline[0]);
+  assert.equal(g.underline[0][0], g.underline[1][0], "アンダーラインは縦");
+  assert.equal(g.textAngle, -90, "文字は縦のまま");
+  assert.ok(g.textPos[0] < g.underline[0][0], "文字はアンダーラインの左");
+  const gt = dimensionGeometry([100, 0], [100, 200], 24, 12, opt);
+  assert.deepEqual(gt.leader[0], mid, "アンダーラインなしでも中央から");
+  assert.equal(gt.textAngle, -90);
+  const gh = dimensionGeometry([0, 100], [100, 100], 24, 12, opt);
+  assert.deepEqual(gh.leader[0], [50, 124], "横寸法も中央から");
+});
