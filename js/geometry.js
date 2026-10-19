@@ -227,21 +227,27 @@ export function dimensionGeometry(p0, p1, off, size = 12, opts = {}) {
   const textPos0 = [base[0] + up[0] * size * 0.6, base[1] + up[1] * size * 0.6];
   let leader = null;
   if (moved) {
-    // 引き出し線: 寸法線上の最寄り点 → 移動した寸法値の下端
-    const lenA = dist(a0, a1) || 1;
-    const t = Math.max(0, Math.min(1, ((base[0] - a0[0]) * (a1[0] - a0[0]) + (base[1] - a0[1]) * (a1[1] - a0[1])) / (lenA * lenA)));
-    leader = [[a0[0] + (a1[0] - a0[0]) * t, a0[1] + (a1[1] - a0[1]) * t], base];
+    // 引き出し線: 寸法線の中央 → 移動した寸法値の下端
+    leader = [m, base];
   }
   // 引出線の先にアンダーラインを引き、その上に(水平に)寸法値をのせる。引出線ツールと同じ形
   let underline = null;
   let textPos = textPos0;
   let textAngle = ang;
   if (moved && ul) {
-    const dir = base[0] >= leader[0][0] ? 1 : -1;
     const W = Math.max(textW, size) + 2 * size * 0.35;
-    underline = [base, [base[0] + dir * W, base[1]]];
-    textPos = [base[0] + (dir * W) / 2, base[1] - size * 0.6];
-    textAngle = 0;
+    if (Math.abs(ang) > 45) {
+      // 縦の寸法: 文字も縦(下から上)のまま、縦のアンダーラインの左にのせる
+      const dir = base[1] >= leader[0][1] ? 1 : -1;
+      underline = [base, [base[0], base[1] + dir * W]];
+      textPos = [base[0] - size * 0.6, base[1] + (dir * W) / 2];
+      textAngle = -90;
+    } else {
+      const dir = base[0] >= leader[0][0] ? 1 : -1;
+      underline = [base, [base[0] + dir * W, base[1]]];
+      textPos = [base[0] + (dir * W) / 2, base[1] - size * 0.6];
+      textAngle = 0;
+    }
   }
   const es = Math.max(0.5, endSize);
   const ends = [];

@@ -56,6 +56,25 @@ check("オフにすると従来の置き方(線が1本減る)に戻る", !s.ul &
 await cb.check();
 check("オンに戻せる", (await shapes(page)).find((x) => x.id === dimId).ul === true);
 
+/* ---- 縦の寸法: 引き出した文字も縦のまま、接続線は寸法線の中央から ---- */
+const vId = await page.evaluate(() => {
+  const m = window.__apdf.model;
+  return m.addShape(m.pages[0].id, { type: "dim", pts: [[450, 100], [450, 300]], off: 24, size: 12, text: "2500", style: { color: "#e11d48", width: 1 } }).id;
+});
+await sel(vId);
+const vb = await page.locator('.handle[data-kind="txt"]').boundingBox();
+await page.mouse.move(vb.x + vb.width / 2, vb.y + vb.height / 2);
+await page.mouse.down();
+await page.mouse.move(vb.x + vb.width / 2 + 40, vb.y + vb.height / 2 - 60, { steps: 8 });
+await page.mouse.up();
+const vd = await page.evaluate((id) => {
+  const g = document.querySelector(`[data-id="${id}"]`);
+  const paths = [...g.querySelectorAll("path:not(.hit)")].map((p) => p.getAttribute("d"));
+  return { rot: g.querySelector("text")?.getAttribute("transform") || "", paths };
+}, vId);
+check("縦寸法を引き出しても文字は縦のまま(-90°)", /rotate\(-90 /.test(vd.rot), vd.rot);
+check("接続線は寸法線の中央(y=200)から出る", vd.paths.some((d) => /^M[0-9.]+ 200 L/.test(d)), JSON.stringify(vd.paths));
+
 /* ---- DXF ---- */
 const dxf = await page.evaluate(async () => {
   const { buildDxf } = await import("/js/dxf.js");
