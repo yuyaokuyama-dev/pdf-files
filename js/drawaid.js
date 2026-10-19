@@ -298,7 +298,7 @@ export class DrawAid {
     const g = this.geometry();
     const pageId = pd.pageId;
     this.cancelPending();
-    if (!(g.len >= 1)) return false;
+    if (!(g.len >= 0.01)) return false; // 実寸で入力すると縮尺しだいで1ptを下回る(例: 1/100 で H30mm)ので、実質ゼロだけ除く
     this.ed.createLinear(g.tool, pageId, g.pts);
     return true;
   }

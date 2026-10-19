@@ -232,6 +232,20 @@ check("100mm = 50pt", near(len(s), 50), String(len(s)));
 await page.keyboard.press("Escape");
 await page.keyboard.press("Escape");
 
+/* ---- 実寸が小さい(縮尺しだいで1ptを下回る)四角も、数値入力で作れる ---- */
+await page.evaluate(() => { const S = window.__apdf; S.model.mutate(() => { S.model.pages[0].scale = { ptsPerUnit: 0.0283, unit: "mm" }; }); }); // 約 1/100
+const nSmall = (await shapes(page)).length;
+await tool(page, "rect");
+await click(page, 0, [100, 400]);
+await page.keyboard.type("900");
+await page.keyboard.press("Enter");
+await page.keyboard.type("30"); // 30mm = 約0.85pt
+await page.keyboard.press("Enter");
+s = await last();
+check("実寸が小さくても四角ができる(W900×H30)", (await shapes(page)).length === nSmall + 1 && s.type === "rect" && near(Math.abs(s.pts[1][1] - s.pts[0][1]), 0.85, 0.05), JSON.stringify(s.pts));
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+
 /* ---- 直前の設定の引き継ぎ: 選んだ線の色・太さを変えると、次に描く線も同じになる ---- */
 await page.keyboard.press("Escape");
 await page.keyboard.press("Escape");
