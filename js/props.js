@@ -108,6 +108,8 @@ export class Props {
         return (sh ? sh.style : ed.style)?.width;
       case "fill":
       case "fillOpacity":
+        if (ctx.multi) return ed.selectedItems().find((f) => FILL_TYPES.has(f.shape.type))?.shape.style?.[key];
+        return (sh ? sh.style : ed.style)?.[key];
       case "opacity":
         return (sh ? sh.style : ed.style)?.[key];
       case "size":
@@ -173,9 +175,11 @@ export class Props {
             if (sh.type === "text") sh.color = value;
             sh.style.color = value;
             break;
-          case "width":
           case "fill":
           case "fillOpacity":
+            if (FILL_TYPES.has(sh.type)) sh.style[key] = value; // 複数選択では塗れる図形だけに反映
+            break;
+          case "width":
           case "dash":
           case "opacity":
             sh.style[key] = value;
@@ -586,6 +590,13 @@ export class Props {
       parts.push(widthField());
       parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
       parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
+      if (ed.selectedItems().some((f) => FILL_TYPES.has(f.shape.type))) {
+        // 塗れる図形(四角・丸・多角形・雲)だけに、同じ色でまとめて塗る
+        const fill = g("fill");
+        const on = fill && fill !== "none";
+        parts.push(`<div class="field"><label class="check"><input type="checkbox" data-k="fillOn"${on ? " checked" : ""}> 塗りつぶし(塗れる図形すべて)</label>${on ? `<div class="row"><input type="color" data-k="fillColor" value="${fill}"></div>` : ""}</div>`);
+        if (on) parts.push(num("fillOpacity", "塗りの濃さ", 0.05, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
+      }
       if (ctx.shape) {
         parts.push(layerSelect("layer", layerIdOf(ctx.shape), "レイヤー(まとめて移す)"));
         parts.push(blBox(ctx.shape));
