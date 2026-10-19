@@ -195,6 +195,21 @@ dialog::backdrop { background: rgba(15, 23, 42, .5); }
   .topbar .btn:not(.icon):not(.zoom) { padding: 0 10px; }
   .tool-hint { bottom: calc(150px + var(--safe-b)); }
 }
+.keypad { order: 2; }
+@media (max-width: 800px) {
+  .keypad { background: var(--panel); border-top: 1px solid var(--line); padding: 4px 8px 6px; }
+  .keypad .kp-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted, #6b7280); }
+  .keypad .kp-out { flex: 1; text-align: right; font-size: 18px; font-weight: 600; color: var(--text, #111827); min-height: 22px; }
+  .keypad .kp-fold { border: 0; background: none; font-size: 18px; width: 36px; height: 28px; }
+  .keypad .kp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+  .keypad.fold .kp-grid, .keypad.fold .kp-out { display: none; }
+  .keypad .kp-k { height: 40px; font-size: 20px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #111827; touch-action: manipulation; }
+  .keypad .kp-k:active { background: #e5e7eb; }
+  .keypad .kp-fn { background: #f3f4f6; }
+  .keypad .kp-0 { grid-column: span 2; }
+  .keypad .kp-k[data-key="↵"] { background: var(--accent, #2563eb); color: #fff; }
+  html.kp-on .tool-hint { bottom: calc(260px + var(--safe-b)); }
+}
 @media (max-width: 480px) { .topbar .logo { display: none; } }
 /* ---------- ボタンの大きさ(設定): iPadなどで押しやすく ---------- */
 html[data-ui="large"] .tool { width: 66px; font-size: 12px; padding: 8px 0 5px; }
