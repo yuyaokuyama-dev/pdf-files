@@ -209,7 +209,7 @@ export class DrawAid {
     box.setAttribute("aria-label", "数値入力");
     box.innerHTML =
       FIELDS[pd.tool]
-        .map((f) => `<label>${f.label}<input type="text" inputmode="decimal" data-k="${f.k}" autocomplete="off" aria-label="${f.label}"><span>${f.unit ?? pd.unit}</span></label>`)
+        .map((f) => `<label>${f.label}<input type="text" inputmode="${document.documentElement.classList.contains("kp-on") ? "none" : "decimal"}" data-k="${f.k}" autocomplete="off" aria-label="${f.label}"><span>${f.unit ?? pd.unit}</span></label>`)
         .join("") + `<small>Enter で確定 / 空欄は画面の位置 / Esc で中止</small>`;
     box.addEventListener("input", (e) => {
       const k = e.target.dataset.k;

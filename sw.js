@@ -10,7 +10,7 @@ const CORE_FILES = [
   "manual.pdf",
   "manifest.webmanifest",
   "css/app.css",
-  "js/account.js", "js/app.js", "js/auth.js", "js/editor.js", "js/export.js", "js/geometry.js", "js/modify.js", "js/dimx.js", "js/dxf.js", "js/pdfvec.js", "js/toolbar.js", "js/shortcuts.js", "js/leader.js", "js/google.js", "js/drivebrowse.js", "js/filekey.js",
+  "js/account.js", "js/app.js", "js/auth.js", "js/editor.js", "js/keypad.js", "js/export.js", "js/geometry.js", "js/modify.js", "js/dimx.js", "js/dxf.js", "js/pdfvec.js", "js/toolbar.js", "js/shortcuts.js", "js/leader.js", "js/google.js", "js/drivebrowse.js", "js/filekey.js",
   "js/icons.js", "js/layerpanel.js", "js/layers.js", "js/model.js", "js/pad.js", "js/props.js", "js/raster.js", "js/select.js", "js/snap.js", "js/drawaid.js", "js/editdata.js", "js/version.js", "js/render.js",
   "js/store.js", "js/tabs.js", "js/thumbs.js", "js/ui.js",
   "vendor/pdf.min.mjs", "vendor/pdf.worker.min.mjs", "vendor/pdf-lib.esm.min.js",
