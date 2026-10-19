@@ -34,6 +34,9 @@ const PDF_OPTS = {
   wasmUrl: new URL("../vendor/wasm/", import.meta.url).href,
 };
 
+// 読み→書きが重なると取りこぼすので、順番に1件ずつ実行する
+let docsQueue = Promise.resolve();
+const serial = (fn) => (docsQueue = docsQueue.then(fn, fn));
 const S = { user: null, store: null, model: null, editor: null, thumbs: null, props: null, settings: { level: "small", palm: false, notify: false, sticky: true, uiSize: "auto" }, savedSrc: new Set(), openDocs: [], deferredInstall: null,
   // タブ(このウィンドウで開いているファイル)と、別ウィンドウで開いた場合の対象ファイル
   tabs: [], tabNames: new Map(), tabBar: null, win: null, winId: uid(), popupDoc: new URLSearchParams(location.search).get("doc") };
@@ -262,8 +265,11 @@ async function enterApp(user) {
   const resumed = !S.popupDoc && sessionResumed(user);
   if (!S.popupDoc && !resumed) {
     // 別のウィンドウでまだ開いているものと、待っている間に開いたものだけ残す
-    S.openDocs = ((await S.store.getSetting("openDocs", [])) || []).filter((id) => elsewhere(id) || S.tabs.includes(id));
-    await S.store.setSetting("openDocs", S.openDocs);
+    // 起動の片づけも、ファイルを開いたときの登録(trackOpen)と順番に実行する(読み→書きの間に割り込まれると登録が消える)
+    await serial(async () => {
+      S.openDocs = ((await S.store.getSetting("openDocs", [])) || []).filter((id) => elsewhere(id) || S.tabs.includes(id));
+      await S.store.setSetting("openDocs", S.openDocs);
+    });
     await S.store.setSetting("lastProject", null);
   }
   // 別ウィンドウ(タブを外へドラッグ)ならそのファイルだけ、再読み込みなら前回の続きを開く
@@ -681,9 +687,6 @@ function setDoc(model, { fit = true } = {}) {
 
 /* ---------- 開いているファイル(切り替え) ---------- */
 // 一覧は別ウィンドウと共有しているので、書き込む直前に読み直す
-// 読み→書きが重なると取りこぼすので、順番に1件ずつ実行する
-let docsQueue = Promise.resolve();
-const serial = (fn) => (docsQueue = docsQueue.then(fn, fn));
 function trackOpen(id) {
   return serial(async () => {
   if (!id || !S.store) return;
