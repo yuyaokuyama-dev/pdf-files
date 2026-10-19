@@ -140,7 +140,7 @@ export class DrawAid {
   }
 
   /** 作図中に点の横へ出す寸法表示(長さ・角度、幅×高さ、半径) */
-  readout(layer, tool, p0, p1, page, mark) {
+  readout(layer, tool, p0, p1, page, mark, extra = "") {
     if (!this.cfg.dyn || !p1) return;
     let text = "";
     if (tool === "line" || tool === "arrow" || tool === "dim" || tool === "measure" || tool === "calib") {
@@ -154,6 +154,7 @@ export class DrawAid {
       text = `半径 ${this.fmtLen(dist(p0, p1), page)}`;
     } else return;
     if (mark && mark.kind !== "polar") text += `  [${SNAP_LABELS[mark.kind] || ""}]`;
+    text += extra;
     const z = this.ed.zoom;
     const fs = 12 / z;
     const x = p1[0] + 12 / z;
