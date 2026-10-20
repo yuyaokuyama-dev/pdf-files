@@ -314,6 +314,7 @@ const TOOLS = [
   { id: "ellipse", icon: "ellipse", label: "丸", hint: "ドラッグで丸(楕円)を描きます。パネルで「円(中心→半径)」にもできます" },
   { id: "arc", icon: "arc", label: "円弧", hint: "中心から外へドラッグして半径と始まりの向きを決めます。パネルで「3点」に切り替えると、通る3点をタップして描けます" },
   { id: "polygon", icon: "polygon", label: "多角形", hint: "角をタップして点を打ち、最初の点をタップまたは「完了」で閉じます。パネルでポリライン(開いた線)・正多角形にも切り替えられます" },
+  { id: "polyline", icon: "polyline", label: "ポリライン", hint: "タップで点を足して連続した線を描きます。「完了」・Enter・ダブルタップで開いたまま確定、最初の点をタップするか「閉じる」で閉じます(Ctrlでスナップ、Shiftで直交、Altで極トラッキング)" },
   { id: "cloud", icon: "cloud", label: "雲", hint: "ドラッグで雲マークを描きます。ピッチは右のパネルで変更" },
   { id: "text", icon: "text", label: "文字", hint: "入れたい場所をタップして文字を入力します" },
   { sep: true },
@@ -538,9 +539,12 @@ function wireEditorEvents() {
     const def = TOOLS.find((x) => x.id === t);
     if (ed.returnTool) showHint(`色や太さなどを調整できます。何もない所をタップすると確定して「${TOOLS.find((x) => x.id === ed.returnTool)?.label || ""}」に戻ります`, 3800);
     else if (t === "polygon") showHint(def.hint, 0, [{ label: "完了", primary: true, onClick: () => ed.finishPolygon() }, { label: "取消", onClick: () => ed.cancelPolygon() }]);
+    else if (t === "polyline") showHint(def.hint, 0, polylineButtons());
     else showHint(def?.hint || "", 3800);
   });
+  const polylineButtons = () => [{ label: "完了", primary: true, onClick: () => ed.finishPolygon() }, { label: "閉じる", onClick: () => ed.finishPolygon(true) }, { label: "取消", onClick: () => ed.cancelPolygon() }];
   ed.on("polygon-state", (n) => {
+    if (ed.tool === "polyline" && n === 0) return showHint(TOOLS.find((x) => x.id === "polyline").hint, 0, polylineButtons());
     if (ed.tool !== "polygon") return;
     if (n === 0) showHint(TOOLS.find((x) => x.id === "polygon").hint, 0, [{ label: "完了", primary: true, onClick: () => ed.finishPolygon() }, { label: "取消", onClick: () => ed.cancelPolygon() }]);
   });

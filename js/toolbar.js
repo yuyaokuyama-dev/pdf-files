@@ -3,7 +3,7 @@
 
 /** グループ(案B): 作図 / 寸法・計測 / 修正 / 挿入 */
 export const GROUPS = [
-  { id: "draw", label: "作図", icon: "polygon", tools: ["pen", "eraser", "line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud"] },
+  { id: "draw", label: "作図", icon: "polygon", tools: ["pen", "eraser", "line", "arrow", "rect", "ellipse", "arc", "polygon", "polyline", "cloud"] },
   {
     id: "dim", label: "寸法・計測", icon: "dim", tools: ["leader", "dim", "calib", "measure"],
     // 図形を選ばずに点を指して入れる寸法(ツールではなくコマンド。基本パレットには入れられない)
