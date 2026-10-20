@@ -17,7 +17,7 @@ const NS = "http://www.w3.org/2000/svg";
 const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "leader", "dim", "calib", "measure", "sign", "stamp"]);
 const LINE_TOOLS = new Set(["line", "arrow", "arc", "dim", "calib", "measure"]);
 const MAX_PIXELS = 16_000_000;
-const MAX_ZOOM = 20; // 表示倍率の上限(2000%)。ページ全体を描ききれない倍率では、見えている範囲だけを描き直す
+const MAX_ZOOM = 99.99; // 表示倍率の上限(9999%)。ページ全体を描ききれない倍率では、見えている範囲だけを描き直す
 
 export const isDrawTool = (t) => DRAW_TOOLS.has(t);
 /** 選択系のツール。marquee=範囲選択(窓・交差)、lasso=投げ縄。どれも選択した図形を動かせる */
