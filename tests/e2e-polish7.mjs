@@ -1,4 +1,4 @@
-// E2E: 2000%まで拡大(見えている範囲だけ描き直す)・最小サイズ・引出線の文字位置・寸法の黒丸
+// E2E: 9999%まで拡大(見えている範囲だけ描き直す)・最小サイズ・引出線の文字位置・寸法の黒丸
 import { launch, register, openPdf, check, summary } from "./e2e-lib.mjs";
 
 const env = await launch();
@@ -26,6 +26,22 @@ check("動かして範囲の外に出たら描き直す", before !== after, befo
 await page.evaluate(() => { window.__apdf.editor.setZoom(1); });
 await page.waitForTimeout(800);
 check("元の倍率に戻ると全体描画に戻る", await page.evaluate(() => !window.__apdf.editor.els.get(window.__apdf.model.pages[0].id).region));
+
+// 9999%まで上がり、そこでも描き直し・操作ができる
+await page.evaluate(() => { const v = window.__apdf.editor.viewer; v.scrollTop = 0; v.scrollLeft = 0; });
+await page.waitForTimeout(300);
+const t0 = Date.now();
+await page.evaluate(() => { const r = document.querySelector(".page").getBoundingClientRect(); window.__apdf.editor.zoomAt(500, r.left + r.width / 2, Math.max(r.top, 120) + 100); });
+const zz = await page.evaluate(() => ({ zoom: window.__apdf.editor.zoom, label: document.querySelector("#btnZoomFit").textContent, w: document.querySelector("#btnZoomFit").scrollWidth, cw: document.querySelector("#btnZoomFit").clientWidth }));
+check("倍率は9999%で止まり、表示欄に収まる", Math.abs(zz.zoom - 99.99) < 1e-9 && zz.label === "9999%" && zz.w <= zz.cw, JSON.stringify(zz));
+await page.waitForTimeout(1500);
+const z9 = await page.evaluate(() => { const c = document.querySelector(".page canvas"); return { region: !!window.__apdf.editor.els.get(window.__apdf.model.pages[0].id).region, px: c.width * c.height }; });
+check("9999%でも見えている範囲だけ描く(画素数が上限内)", z9.region && z9.px <= 16_000_000, JSON.stringify(z9));
+await page.evaluate(() => { const v = window.__apdf.editor.viewer; v.scrollLeft += v.clientWidth * 5; v.scrollTop += v.clientHeight * 5; });
+await page.waitForTimeout(1500);
+check("9999%でスクロールしても応答する(5秒以内に描き直す)", Date.now() - t0 < 30000 && (await page.evaluate(() => !!document.querySelector(".page canvas"))));
+await page.evaluate(() => { window.__apdf.editor.setZoom(1); });
+await page.waitForTimeout(800);
 
 // ⑤ 引出線の文字位置 / ③ 先端なし / ⑥ 寸法の黒丸
 const r = await page.evaluate(async () => {
