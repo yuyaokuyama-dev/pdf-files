@@ -14,7 +14,7 @@ import { LEADER_DEFAULT } from "./leader.js";
 import { moveM, rotateM, scaleM, mirrorM, applyM, transformShape, rectArray, polarArray, offsetShape, trimPolyline, trimRing, trimArc, extendPolyline, filletLines, chamferLines, stretchShape, roundCorners, splitPolyline, joinChains, explodeShape } from "./modify.js";
 
 const NS = "http://www.w3.org/2000/svg";
-const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "text", "leader", "dim", "calib", "measure", "sign", "stamp"]);
+const DRAW_TOOLS = new Set(["pen", "line", "arrow", "rect", "ellipse", "arc", "cloud", "polygon", "polyline", "text", "leader", "dim", "calib", "measure", "sign", "stamp"]);
 const LINE_TOOLS = new Set(["line", "arrow", "arc", "dim", "calib", "measure"]);
 const MAX_PIXELS = 16_000_000;
 const MAX_ZOOM = 99.99; // 表示倍率の上限(9999%)。ページ全体を描ききれない倍率では、見えている範囲だけを描き直す
@@ -23,7 +23,7 @@ export const isDrawTool = (t) => DRAW_TOOLS.has(t);
 /** 選択系のツール。marquee=範囲選択(窓・交差)、lasso=投げ縄。どれも選択した図形を動かせる */
 const SELECT_TOOLS = new Set(["select", "marquee", "lasso"]);
 const COMMAND_SHORTCUTS = new Set(["trim", "extend", "break", "stretch", "dimradius", "dimdiameter", "dimangle", "dimseries", "dimpara"]); // 図形を選ばずに始めるコマンド
-const SNAP_HOVER_TOOLS = new Set(["line", "arrow", "rect", "ellipse", "arc", "polygon", "cloud", "leader", "dim", "calib", "measure"]);
+const SNAP_HOVER_TOOLS = new Set(["line", "arrow", "rect", "ellipse", "arc", "polygon", "polyline", "cloud", "leader", "dim", "calib", "measure"]);
 export const isSelectTool = (t) => SELECT_TOOLS.has(t);
 
 const sv = (name, attrs = {}) => {
@@ -421,7 +421,7 @@ export class Editor {
    * ツール
    * ======================================================= */
   setTool(t) {
-    if (this.poly && t !== "polygon") this.cancelPolygon();
+    if (this.poly && t !== "polygon" && t !== "polyline") this.cancelPolygon();
     if (t !== "arc") this.cancelArc3();
     this.aid.cancelPending();
     this.cancelCommand();
@@ -556,7 +556,7 @@ export class Editor {
       }
       this.aid.cancelPending();
     }
-    if (tool === "polygon" && this.modes.poly !== "regular") return this.polygonDown(e, pageId, p);
+    if (tool === "polyline" || (tool === "polygon" && this.modes.poly !== "regular")) return this.polygonDown(e, pageId, p);
     if (tool === "arc" && this.modes.arc === "three") return this.arc3Down(e, pageId, p);
     if (tool === "text") return this.beginText(pageId, p);
     if (tool === "stamp") return this.placeStamp(pageId, p);
@@ -1021,7 +1021,7 @@ export class Editor {
     const dbl = this.isDoubleTap(e, "polygon");
     if (!this.poly || this.poly.pageId !== pageId) {
       this.cancelPolygon();
-      this.poly = { pageId, pts: [], hover: null, snapPts: this.aid.pointsFor(pageId), mark: null, open: this.modes.poly === "polyline" };
+      this.poly = { pageId, pts: [], hover: null, snapPts: this.aid.pointsFor(pageId), mark: null, open: this.tool === "polyline" || this.modes.poly === "polyline", closable: this.tool === "polyline" };
       this.polyMoveFn = (ev) => {
         if (!this.poly) return;
         const raw = this.clampToPage(this.pt(ev, this.poly.pageId), this.poly.pageId);
@@ -1036,6 +1036,7 @@ export class Editor {
     const first = pts[0];
     const closeR = 12 / this.zoom;
     if (this.poly.open) {
+      if (this.poly.closable && pts.length >= 3 && dist(p, first) < closeR) return this.finishPolygon(true); // 最初の点をタップ → 閉じる
       if (pts.length >= 2 && dbl) return this.finishPolygon();
     } else if (pts.length >= 3 && (dbl || dist(p, first) < closeR)) return this.finishPolygon();
     p = this.clampToPage(this.aid.resolve(p, { pts: this.poly.snapPts, p0: pts[pts.length - 1] || null, ev: e }).p, pageId);
@@ -1065,10 +1066,17 @@ export class Editor {
     const r = 5 / this.zoom;
     poly.pts.forEach((q, i) => el.draft.appendChild(sv("circle", { cx: q[0], cy: q[1], r: i === 0 ? r * 1.5 : r, fill: i === 0 ? "#2563eb" : "#fff", stroke: "#2563eb", "stroke-width": 1.5 / this.zoom })));
   }
-  finishPolygon() {
+  /** 点打ちを確定する。close=true なら、ポリラインを閉じた線(塗りなしの多角形)にする */
+  finishPolygon(close = false) {
     const poly = this.poly;
     if (!poly) return;
     if (poly.pts.length < (poly.open ? 2 : 3)) return this.cancelPolygon();
+    if (close && poly.open && poly.pts.length >= 3) {
+      const { pageId } = poly, pts = poly.pts.slice();
+      this.lastTap = { t: 0, x: 0, y: 0, key: null };
+      this.cancelPolygon();
+      return this.addAndSelect(pageId, { type: "polygon", pts, style: { ...this.style, fill: "none" } });
+    }
     const { pageId } = poly;
     const pts = poly.pts.slice();
     this.lastTap = { t: 0, x: 0, y: 0, key: null };
@@ -2680,6 +2688,9 @@ export class Editor {
       this.aid.setConfig({ polar: !this.aid.cfg.polar });
     } else if (!mod && !e.altKey && !this.editingId && this.keys.feed(e.key)) {
       e.preventDefault();
+    } else if (e.key === "Enter" && this.poly && !this.editingId) {
+      e.preventDefault();
+      this.finishPolygon();
     } else if (e.key === "Escape") {
       this.keys.reset();
       if (this.cmd) this.cancelCommand();

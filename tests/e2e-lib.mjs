@@ -72,7 +72,7 @@ export async function click(page, pi, p, opts = {}) {
   const [x, y] = await toScreen(page, pi, p[0], p[1]);
   await page.mouse.click(x, y, opts);
 }
-const TOOL_GROUP = { pen: "draw", eraser: "draw", line: "draw", arrow: "draw", rect: "draw", ellipse: "draw", arc: "draw", polygon: "draw", cloud: "draw", leader: "dim", dim: "dim", calib: "dim", measure: "dim", text: "insert", sign: "insert", stamp: "insert", camera: "insert" };
+const TOOL_GROUP = { pen: "draw", eraser: "draw", line: "draw", arrow: "draw", rect: "draw", ellipse: "draw", arc: "draw", polygon: "draw", polyline: "draw", cloud: "draw", leader: "dim", dim: "dim", calib: "dim", measure: "dim", text: "insert", sign: "insert", stamp: "insert", camera: "insert" };
 /** ツールを選ぶ。基本パレットになければ、グループを開いて選ぶ */
 export async function tool(page, id) {
   const direct = `#tools .tool[data-tool="${id}"]`;
