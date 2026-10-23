@@ -1306,6 +1306,7 @@ function saveMenu(anchor) {
   const has = S.model.pages.length > 0;
   showMenu(anchor, [
     { label: saveOriginalLabel(S.model.meta), icon: "download", onClick: () => saveOriginal(S.model.meta.projectId), disabled: !has },
+    { label: "別名で保存(保存先を選ぶ)…", icon: "download", onClick: saveAs, disabled: !has },
     { label: S.model.meta.driveId ? "Googleドライブに保存(上書き/別名)" : "Googleドライブに保存", icon: "drive", onClick: saveToDrive, disabled: !has },
     { label: "PDFを端末に保存(最適化)", icon: "download", onClick: downloadPdf, disabled: !has },
     { label: "DXFで書き出す(描いた図形・CAD用)", icon: "download", onClick: exportDxf, disabled: !has },
@@ -2253,18 +2254,62 @@ const lastFolder = () => {
   }
 };
 
-async function saveToDrive() {
+/**
+ * 別名で保存: ファイル名と保存先(この端末のフォルダ / Googleドライブのフォルダ)を選んで、新しいファイルとして保存する。
+ * 保存したあとは、このファイルの保存先が新しい場所に変わる(次の「上書き保存」はそこへ)。元のファイルはそのまま残る。
+ */
+async function saveAs() {
+  const m = S.model;
+  if (!m.pages.length) return;
+  const where = await dialog({
+    title: "別名で保存",
+    body: `<p class="note">新しいファイルとして保存します。元のファイルはそのまま残り、これ以降の「上書き保存」は新しいファイルへ保存されます。</p>`,
+    buttons: [
+      { label: "キャンセル", value: null },
+      { label: "Googleドライブ", value: "drive", primary: !!m.meta.driveId && !realHandle(m.meta.fileHandle) },
+      { label: "この端末", value: "device", primary: !m.meta.driveId || !!realHandle(m.meta.fileHandle) },
+    ],
+  });
+  if (!where) return;
+  if (where === "drive") return saveToDrive({ asNew: true });
+  const v = await promptDialog({ title: "別名で保存(この端末)", label: "ファイル名", value: m.meta.name.replace(/\.pdf$/i, ""), ok: typeof window.showSaveFilePicker === "function" ? "保存先を選ぶ" : "保存" });
+  if (!v || !v.trim()) return;
+  const name = v.trim().replace(/[\\/:*?"<>|]/g, "_").replace(/\.pdf$/i, "") + ".pdf";
+  const target = await pickSaveTarget(name); // 最初は今のファイルと同じフォルダ
+  if (target === "cancel") return;
+  const res = await runExport("standard", { embedEdit: true, editImages: !!S.settings.editImages });
+  if (!res) return;
+  try {
+    if (!(await writePicked(target, res.bytes, name))) return;
+  } catch (e) {
+    console.error(e);
+    return toast(`保存できませんでした: ${e.message}`, { error: true });
+  }
+  m.meta.name = target?.name || name;
+  if (target) {
+    m.meta.fileHandle = target;
+    m.meta.fileKey = await contentKey(res.bytes);
+    m.meta.driveId = null; // 次の上書きはこのファイルへ
+  }
+  m.meta.unsaved = false;
+  updateEmpty();
+  await saveProjectNow();
+  refreshUnsavedNote();
+  toast(`「${m.meta.name}」(${fmtBytes(res.bytes.length)})として保存しました`);
+}
+
+async function saveToDrive({ asNew = false } = {}) {
   if (!G.isConfigured() && !(await ensureGoogle())) return;
   const m = S.model;
   // 保存先: このPDFで選んだフォルダ > Driveから開いた場所 > 前回の選択 > マイドライブ
   let folder = m.meta.driveFolder ? { id: m.meta.driveFolder, name: m.meta.driveFolderName || "元のフォルダ" } : lastFolder();
-  const extra = `${m.meta.driveId
+  const extra = `${m.meta.driveId && !asNew
     ? `<div class="opts" style="margin-bottom:6px"><label class="opt"><input type="radio" name="exMode" value="overwrite" checked><div><b>上書き保存</b><span>Driveの元のファイルを更新します(保存先は元の場所のまま)</span></div></label><label class="opt"><input type="radio" name="exMode" value="new"><div><b>別のファイルとして保存</b><span>新しいファイルを作ります</span></div></label></div>`
     : ""}
     <div class="field">保存先フォルダ: <b id="dfName"></b></div>
     <div class="actions" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn" id="dfPick">フォルダを選ぶ…</button><button type="button" class="btn" id="dfRoot">マイドライブに戻す</button></div>`;
   const o = await askExport({
-    title: "Googleドライブに保存",
+    title: asNew ? "Googleドライブに別名で保存" : "Googleドライブに保存",
     ok: "保存",
     extraHtml: extra,
     extraRead: (d) => ({ mode: d.querySelector('input[name="exMode"]:checked')?.value || "new", folder }),
@@ -2308,7 +2353,7 @@ async function saveToDrive() {
   }
   const res = await runExport(o.level, { embedEdit: true, editImages: !!S.settings.editImages });
   if (!res) return;
-  const fileId = o.extra.mode === "overwrite" ? m.meta.driveId : null;
+  const fileId = !asNew && o.extra.mode === "overwrite" ? m.meta.driveId : null;
   m.meta.name = o.name;
   updateEmpty();
   if (!online) {
@@ -2328,6 +2373,7 @@ async function saveToDrive() {
       } else throw e;
     }
     m.meta.driveId = r.id;
+    if (asNew) m.meta.fileHandle = null; // 別名で保存したら、次の上書きはこのDriveのファイルへ
     m.meta.unsaved = false;
     await saveProjectNow();
     toast(r.fellBack ? `選んだフォルダには保存できないため、マイドライブ直下に保存しました(${fmtBytes(res.bytes.length)})` : `Googleドライブに保存しました(${fmtBytes(res.bytes.length)})`);
