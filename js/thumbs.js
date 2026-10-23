@@ -10,14 +10,17 @@ import { renderShapes } from "./render.js";
 import { confirmDialog, toast } from "./ui.js";
 
 const TW = 128; // サムネイル幅(px)
+const XPAGE_MIME = "application/x-pdffiles-xpages"; // 別ウィンドウのページ一覧へ渡す(どのウィンドウの・どのページか)
 const PAGE_MIME = "application/x-pdffiles-page"; // ページ一覧内のドラッグを他のドラッグ(ファイル等)と見分ける
 
 export class Thumbs {
-  constructor({ el, editor, getPdfPage, onAdd, onExport, makePdf, pdfKey }) {
+  constructor({ el, editor, getPdfPage, onAdd, onExport, makePdf, pdfKey, getWin, onForeign }) {
     this.el = el;
     this.editor = editor;
     this.getPdfPage = getPdfPage;
     this.onAdd = onAdd;
+    this.getWin = getWin; // () → このウィンドウの識別子
+    this.onForeign = onForeign; // (payload{win,ids}, 挿入位置, 移動か) 別ウィンドウのページをここへ入れる
     this.onExport = onExport; // (pageIds) そのページだけのPDFを作る
     this.makePdf = makePdf; // (pageIds) → {bytes, name} ドロップした場所に保存するPDF(画面表示なしで作る)
     this.pdfKey = pdfKey; // (pageIds) → 中身が変わると変わる文字列
@@ -68,6 +71,7 @@ export class Thumbs {
       dragIds = this.dragSet(t.dataset.id);
       dropSave = null;
       e.dataTransfer.setData(PAGE_MIME, dragIds.join(","));
+      if (this.getWin) e.dataTransfer.setData(XPAGE_MIME, JSON.stringify({ win: this.getWin(), ids: dragIds }));
       e.dataTransfer.effectAllowed = "copyMove";
       const r = this.ready;
       if (this.canDropSave && r && r.key === this.pdfKey(dragIds)) {
@@ -94,10 +98,11 @@ export class Thumbs {
       const live = ids.filter((id) => this.model.page(id));
       if (outside && live.length) this.onExport?.(live);
     });
+    const foreign = (e) => !dragIds && !!this.onForeign && [...(e.dataTransfer?.types || [])].includes(XPAGE_MIME); // 別ウィンドウから運ばれてきたページ
     ["dragenter", "dragover"].forEach((type) => this.el.addEventListener(type, (e) => {
-      if (!dragIds) return;
+      if (!dragIds && !foreign(e)) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
+      e.dataTransfer.dropEffect = "move"; // 見た目の指定だけ(コピーか移動かは Shift の有無で決める)
       const slot = this.slot(e.clientY);
       if (!slot) return hide();
       if (!line) {
@@ -114,7 +119,17 @@ export class Thumbs {
     this.el.addEventListener("drop", (e) => {
       hide();
       const ids = dragIds;
-      if (!ids) return;
+      if (!ids) {
+        if (!foreign(e)) return;
+        e.preventDefault();
+        let payload = null;
+        try { payload = JSON.parse(e.dataTransfer.getData(XPAGE_MIME)); } catch {}
+        if (!payload?.win || !Array.isArray(payload.ids) || !payload.ids.length || payload.win === this.getWin?.()) return;
+        const at = this.slot(e.clientY);
+        // 既定はコピー(元のファイルはそのまま)。Shift を押して離すと移動
+        this.onForeign(payload, at ? at.index : this.model.pages.length, e.shiftKey);
+        return;
+      }
       e.preventDefault();
       dragIds = dropSave = null; // 並べ替えで一覧を作り直すと、元の要素に dragend が届かないことがある
       const slot = this.slot(e.clientY);

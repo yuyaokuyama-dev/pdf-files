@@ -143,8 +143,10 @@ export class TabBar {
  * 同じファイルを2つのウィンドウで同時に編集すると自動保存が上書きし合うため、
  * 「どのウィンドウがどのファイルを開いているか」を BroadcastChannel で共有する。
  */
-export function createWindowSync({ user, winId, getIds, onRemoteChange, onFocusRequest }) {
+export function createWindowSync({ user, winId, getIds, onRemoteChange, onFocusRequest, onRequest }) {
   const remote = new Map(); // winId → Set(ids)
+  const waiting = new Map(); // 返事待ちの頼みごと
+  let reqSeq = 0;
   const ch = typeof BroadcastChannel === "function" ? new BroadcastChannel(`apdf-win-${(user || "guest").toLowerCase()}`) : null;
   const post = (msg) => ch?.postMessage({ ...msg, win: winId });
   const announce = () => post({ t: "held", ids: getIds() });
@@ -155,6 +157,12 @@ export function createWindowSync({ user, winId, getIds, onRemoteChange, onFocusR
       if (m.t === "held") { remote.set(m.win, new Set(m.ids)); onRemoteChange({ type: "held", win: m.win, ids: m.ids }); return; }
       if (m.t === "bye") { const ids = [...(remote.get(m.win) || [])]; remote.delete(m.win); onRemoteChange({ type: "bye", win: m.win, ids }); return; }
       if (m.t === "focus" && getIds().includes(m.id)) onFocusRequest(m.id);
+      // 別ウィンドウへの頼みごと(ページのドラッグ&ドロップなど): 頼まれたウィンドウが処理して返事をする
+      if (m.t === "req" && m.to === winId && onRequest) {
+        Promise.resolve(onRequest(m.msg)).then((data) => post({ t: "res", to: m.win, id: m.id, data }), () => post({ t: "res", to: m.win, id: m.id, data: null }));
+        return;
+      }
+      if (m.t === "res" && m.to === winId) { const w = waiting.get(m.id); if (w) { waiting.delete(m.id); clearTimeout(w.timer); w.done(m.data); } return; }
     };
     window.addEventListener("pagehide", () => post({ t: "bye" }));
   }
@@ -166,6 +174,15 @@ export function createWindowSync({ user, winId, getIds, onRemoteChange, onFocusR
     announce,
     heldElsewhere: (id) => [...remote.values()].some((s) => s.has(id)),
     requestFocus: (id) => post({ t: "focus", id }),
+    /** 別ウィンドウ(win)に頼みごとをして、返事(なければ null)を待つ */
+    ask: (win, msg, timeout = 60000) =>
+      new Promise((done) => {
+        if (!ch) return done(null);
+        const id = `${winId}-${++reqSeq}`;
+        const timer = setTimeout(() => { waiting.delete(id); done(null); }, timeout);
+        waiting.set(id, { done, timer });
+        post({ t: "req", to: win, id, msg });
+      }),
   };
 }
 

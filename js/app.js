@@ -258,7 +258,7 @@ async function enterApp(user) {
   S.openDocs = (await S.store.getSetting("openDocs", [])) || [];
   for (const r of await S.store.getAll("recents")) S.tabNames.set(r.id, r.name);
   G.preloadGoogle();
-  S.win = createWindowSync({ user, winId: S.winId, getIds: () => S.tabs, onRemoteChange: remoteWindowChange, onFocusRequest: () => window.focus() });
+  S.win = createWindowSync({ user, winId: S.winId, getIds: () => S.tabs, onRemoteChange: remoteWindowChange, onFocusRequest: () => window.focus(), onRequest: remoteRequest });
   await S.win.ready;
   const elsewhere = (id) => S.win.heldElsewhere(id);
   // アプリを閉じて開き直したときは、タブも含めて全て閉じた状態から始める(閉じたファイルは「履歴から開く」へ)。
@@ -363,6 +363,8 @@ function initUI() {
     getPdfPage,
     onAdd: (anchor) => addPageMenu(anchor),
     onExport: (ids) => exportPages(ids),
+    getWin: () => S.winId,
+    onForeign: (payload, index, move) => insertForeignPages(payload, index, move),
     makePdf: (ids) => buildPagesPdf(ids),
     pdfKey: (ids) => pagesPdfKey(ids),
   });
@@ -1959,6 +1961,48 @@ function pagesPdfKey(ids) {
     return p && [p.srcId, p.srcIndex, p.rot, p.w, p.h, p.shapes];
   })]);
 }
+/** 別ウィンドウからの頼みごと: 指定ページのPDFを渡す / 移動されたページを消す */
+async function remoteRequest(msg) {
+  const ids = (msg?.ids || []).filter((id) => S.model.page(id));
+  if (!ids.length) return null;
+  if (msg.k === "getpages") {
+    S.editor.finishTextEdit?.();
+    const { bytes, name } = await buildPagesPdf(ids);
+    return { bytes, name };
+  }
+  if (msg.k === "delpages") {
+    if (ids.length >= S.model.pages.length) return { ok: false }; // 全ページ移すとファイルが空になる → 残す
+    S.model.deletePages(ids);
+    return { ok: true };
+  }
+  return null;
+}
+/** 別ウィンドウのページ一覧からドラッグされたページを、この一覧の index 番目へ入れる(move なら元のファイルから外す) */
+async function insertForeignPages(payload, index, move) {
+  const b = busy("ページを取り込み中…");
+  try {
+    const res = await S.win.ask(payload.win, { k: "getpages", ids: payload.ids });
+    if (!res?.bytes) return toast("ページを取り込めませんでした(元のウィンドウが閉じたか、応答がありません)", { error: true });
+    const bytes = new Uint8Array(res.bytes);
+    const pdf = await loadPdf(bytes);
+    const m = S.model;
+    const before = m.snapshot();
+    const added = await m.addSource({ name: res.name, bytes, pdf }, Math.min(index, m.pages.length));
+    m.commit(before);
+    let msg = `${added.length}ページを追加しました`;
+    if (move) {
+      const r = await S.win.ask(payload.win, { k: "delpages", ids: payload.ids });
+      msg += r?.ok ? "(元のファイルから移動)" : "(元のファイルが空になるため、移動ではなくコピーにしました)";
+    } else msg += "(コピー。Shift を押しながら離すと移動)";
+    toast(msg);
+  } catch (e) {
+    console.error(e);
+    toast(e.message, { error: true });
+  } finally {
+    b.close();
+  }
+}
+
 /** 指定したページだけのPDFを作る(画面表示なし) */
 async function buildPagesPdf(ids, onProgress) {
   const m = S.model;
