@@ -73,4 +73,5 @@ jobs:
           node tests/e2e-keypad.mjs
           node tests/e2e-polyline.mjs
           node tests/e2e-saveas.mjs
+          node tests/e2e-xpages.mjs
           node tests/e2e-keep.mjs
