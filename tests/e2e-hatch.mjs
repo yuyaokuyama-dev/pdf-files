@@ -22,16 +22,17 @@ const sty = async (i = 0) => (await shapes(page)).find((s) => s.id === ids[i]).s
 const segs = (id) => page.evaluate((id) => document.querySelectorAll(`.shape[data-id="${id}"] path.hatch`).length, id);
 
 // ① 塗りつぶしチェックの下に「塗りつぶしスタイル」が出る
-check("塗りなしのときはスタイルの欄が出ない", (await page.locator('#props select[data-k="fillStyle"]').count()) === 0);
+check("塗りなしのときはスタイルの欄が出ない", (await page.locator('#props button.fs').count()) === 0);
 await page.locator('#props input[type=checkbox][data-k="fillOn"]').check();
-const sel = page.locator('#props select[data-k="fillStyle"]');
-check("塗りつぶしにするとスタイルの欄(べた塗り・斜線・格子)が出る", (await sel.count()) === 1 && (await sel.locator("option").allTextContents()).join() === "べた塗り,斜線,格子");
-const order = await page.evaluate(() => { const p = document.querySelector("#props"); const a = p.querySelector('[data-k="fillOn"]'), b = p.querySelector('[data-k="fillStyle"]'); return !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); });
+const fsBtn = (v) => page.locator(`#props button.fs[data-fs="${v}"]`);
+check("塗りつぶしにするとスタイルの見本(べた塗り・斜線・格子)が出る", (await page.locator("#props button.fs").count()) === 3 && (await fsBtn("lines").locator("svg").count()) === 1 && (await page.locator("#props button.fs").allTextContents()).join() === "べた塗り,斜線,格子");
+check("塗りの色にも基本色のパレットが出る", (await page.locator('#props .sw[data-for="fillColor"]').count()) === 9 && (await page.locator('#props input[type=color][data-k="fillColor"]').count()) === 1);
+const order = await page.evaluate(() => { const p = document.querySelector("#props"); const a = p.querySelector('[data-k="fillOn"]'), b = p.querySelector('button.fs'); return !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); });
 check("スタイルの欄は塗りつぶしチェックの下にある", order);
 check("べた塗りのあいだは「塗りの濃さ」を出し、ハッチングの欄は出さない", (await page.locator('#props [data-k="fillOpacity"]').count()) > 0 && (await page.locator('#props input[data-k="hatchAngle"]').count()) === 0);
 
 // ② 斜線
-await sel.selectOption("lines");
+await fsBtn("lines").click();
 check("斜線にするとハッチングの角度・間隔・太さの欄が出る", (await page.locator('#props input[data-k="hatchAngle"]').count()) === 1 && (await page.locator('#props input[data-k="hatchGap"]').count()) === 1 && (await page.locator('#props input[data-k="hatchWidth"]').count()) === 1);
 check("「塗りの濃さ」は出なくなる", (await page.locator('#props [data-k="fillOpacity"]').count()) === 0);
 check("画面に斜線が描かれ、べた塗りはされない", (await segs(ids[0])) === 1 && (await page.evaluate((id) => !document.querySelector(`.shape[data-id="${id}"] path[fill-opacity]`), ids[0])));
@@ -53,19 +54,18 @@ let st = await sty();
 check("設定が図形に保存される", st.fillStyle === "lines" && st.hatchAngle === 0 && st.hatchGap === 3 && st.hatchWidth === 2, JSON.stringify(st));
 
 // ③ 格子
-await sel.selectOption("cross");
+await fsBtn("cross").click();
 await setNum("hatchAngle", "45");
 const nx = await page.evaluate((id) => document.querySelector(`.shape[data-id="${id}"] path.hatch`).getAttribute("d").split("M").length - 1, ids[0]);
 check("格子にすると斜線の約2倍の本数になる", nx > n45 * 1.6, `${n45} -> ${nx}`);
 
 // ④ 複数選択でまとめて設定
 await page.evaluate(([a, b]) => { const S = window.__apdf; S.editor.setMultiSelection(S.model.pages[0].id, [a, b]); }, ids);
-const ms = page.locator('#props select[data-k="fillStyle"]');
-check("複数選択にも塗りつぶしスタイルが出る(塗れる図形があるとき)", (await ms.count()) === 1);
+check("複数選択にも塗りつぶしスタイルが出る(塗れる図形があるとき)", (await page.locator("#props button.fs").count()) === 3);
 // 先頭の四角は塗り済みなのでチェックは付いている。いったん外してから付け直すと、全部が同じ色で塗られる
 await page.locator('#props input[type=checkbox][data-k="fillOn"]').uncheck();
 await page.locator('#props input[type=checkbox][data-k="fillOn"]').check();
-await ms.selectOption("lines");
+await fsBtn("lines").click();
 await setNum("hatchGap", "4");
 check("複数選択でまとめて斜線・同じ間隔になる", (await sty(0)).fillStyle === "lines" && (await sty(1)).fillStyle === "lines" && (await sty(1)).hatchGap === 4 && (await segs(ids[1])) === 1);
 check("丸の中だけに線が引かれる(線が丸の外接矩形に収まる)", await page.evaluate((id) => { const d = document.querySelector(`.shape[data-id="${id}"] path.hatch`).getAttribute("d"); return [...d.matchAll(/([\d.-]+) ([\d.-]+)/g)].every((m) => +m[1] >= 239.9 && +m[1] <= 360.1 && +m[2] >= 59.9 && +m[2] <= 160.1); }, ids[1]));
@@ -85,6 +85,17 @@ const back = await page.evaluate(async () => {
 });
 check("PDFが作られ、編集用データにハッチングの設定が残る", back.size > 1000 && back.shapes?.length >= 2 && back.shapes.every((s) => s.fillStyle === "lines" && s.hatchGap === 4), JSON.stringify(back).slice(0, 300));
 
+// ⑤ 基本色パレット(塗りの色・レイヤーの色)
+await page.evaluate(([a]) => { const S = window.__apdf; S.editor.setSelection?.(S.model.pages[0].id, a); }, ids).catch(() => {});
+await page.evaluate(([a, b]) => { const S = window.__apdf; S.editor.setMultiSelection(S.model.pages[0].id, [a, b]); }, ids);
+await page.locator('#props .sw[data-for="fillColor"][data-c="#2563eb"]').click();
+check("塗りの基本色をクリックすると塗りの色が変わる", (await sty(0)).fill === "#2563eb" && (await sty(1)).fill === "#2563eb", JSON.stringify([await sty(0), await sty(1)]));
+check("線の色にも基本色のパレットが出る", (await page.locator('#props .sw[data-for="color"]').count()) === 9);
+await page.click("#btnLayers");
+const lsw = page.locator('#layers .lp-row .sw[data-act="swatch"]');
+check("レイヤーの行にも基本色のパレットが出る", (await lsw.count()) >= 9);
+await lsw.nth(3).click();
+check("レイヤーの基本色をクリックすると色が変わる", await page.evaluate(() => window.__apdf.model.layers[0].color === "#16a34a"));
 check("コンソールエラーなし", errors.length === 0, errors.join("\n"));
 await env.close();
 const r = summary();

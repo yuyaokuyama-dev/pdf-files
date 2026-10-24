@@ -4,6 +4,8 @@ import { esc } from "./ui.js";
 import { DASH_TYPES, normDash } from "./geometry.js";
 import { BASE_LAYER_ID } from "./layers.js";
 
+const LP_COLORS = ["#e11d48", "#f97316", "#eab308", "#16a34a", "#2563eb", "#7c3aed", "#111827", "#6b7280", "#ffffff"];
+
 export class LayerPanel {
   constructor({ el, editor, onToast, onConfirm, onClose }) {
     this.el = el;
@@ -61,6 +63,7 @@ export class LayerPanel {
             <input type="text" class="lp-name" data-k="name" value="${esc(l.name)}" aria-label="レイヤー名" maxlength="40">
             <span class="lp-n" title="図形の数">${n}</span>
           </div>
+          <div class="lp-sub lp-sw" aria-label="${esc(l.name)}の基本色">${LP_COLORS.map((c) => `<button class="sw${c === String(l.color).toLowerCase() ? " on" : ""}" data-act="swatch" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}</div>
           <div class="lp-sub">
             <label>太さ<input type="number" data-k="width" min="0.1" max="24" step="0.1" value="${l.width}"></label>
             <select data-k="dash" aria-label="線種">${DASH_TYPES.map((d) => `<option value="${d.id}"${normDash(l.dash) === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select>
@@ -91,6 +94,12 @@ export class LayerPanel {
       case "close":
         this.setOpen(false);
         this.onClose?.();
+        break;
+      case "swatch":
+        if (l) {
+          m.updateLayer(id, { color: b.dataset.c });
+          this.refresh();
+        }
         break;
       case "add": {
         const nl = m.addLayer();
