@@ -453,10 +453,29 @@ export class Props {
   }
 
   async onClick(e) {
-    const b = e.target.closest("[data-act], .sw, .st");
+    const b = e.target.closest("[data-act], .sw, .st, .fs");
     if (!b) return;
     const ctx = this.context();
     const ed = this.ed;
+    if (b.classList.contains("fs")) {
+      if (ctx) {
+        this.apply(ctx, "fillStyle", b.dataset.fs, true);
+        ed.commitLive();
+        this.carryOver(ctx);
+        this.refresh();
+      }
+      return;
+    }
+    if (b.classList.contains("sw") && b.dataset.for === "fillColor") {
+      if (ctx) {
+        this.fillMemo = b.dataset.c;
+        this.apply(ctx, "fill", b.dataset.c, true);
+        ed.commitLive();
+        this.carryOver(ctx);
+        this.refresh();
+      }
+      return;
+    }
     if (b.classList.contains("sw")) {
       if (ctx) {
         this.apply(ctx, "color", b.dataset.c, false);
@@ -603,12 +622,22 @@ export class Props {
     const blBox = (shape) =>
       `<label class="check field" style="display:flex"><input type="checkbox" data-k="bl"${BL_KEYS.every((k) => shape?.bl?.includes(k)) ? " checked" : ""}> 色・太さ・線種をレイヤーに従う</label>`;
     // 塗りつぶしスタイル(べた塗り・斜線・格子)と、ハッチングの角度・間隔・線の太さ。色は塗りの色
+    const paletteField = (label, key, cur) =>
+      `<div class="field">${label}<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" data-for="${key}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="${key}" value="${cur}" aria-label="色を選ぶ"></div></div>`;
+    // 塗りつぶしスタイル(べた塗り・斜線・格子)を見本の絵から選ぶ。ハッチングの角度・間隔・線の太さは続けて出す。線の色は塗りの色
     const fillStyleBox = () => {
       const fs = g("fillStyle") || "solid";
-      const opts = FILL_STYLES.map(([v, l]) => `<option value="${v}"${v === fs ? " selected" : ""}>${l}</option>`).join("");
+      const col = /^#[0-9a-f]{6}$/i.test(g("fill") || "") ? g("fill") : "#6b7280";
+      const sample = (v) => {
+        const ln = (a, b, c, d) => `<line x1="${a}" y1="${b}" x2="${c}" y2="${d}"/>`;
+        const diag = [ln(-2, 22, 22, -2), ln(-2, 30, 30, -2), ln(4, 34, 34, 4), ln(10, 34, 34, 10), ln(-2, 14, 14, -2), ln(-2, 6, 6, -2)].join("");
+        const back = [ln(-2, 6, 6, 30), ln(-2, 14, 14, 30)].join("");
+        const inner = v === "solid" ? `<rect x="3" y="3" width="26" height="26" rx="3" fill="${col}"/>` : v === "lines" ? `<g stroke="${col}" stroke-width="2" clip-path="url(#c${v})">${diag}</g>` : `<g stroke="${col}" stroke-width="2" clip-path="url(#c${v})">${diag}${[ln(-2, 8, 34, 44), ln(-2, 16, 34, 52), ln(-2, 0, 34, 36), ln(-2, -8, 34, 28)].join("")}</g>`;
+        return `<svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><defs><clipPath id="c${v}"><rect x="3" y="3" width="26" height="26" rx="3"/></clipPath></defs>${inner}<rect x="3" y="3" width="26" height="26" rx="3" fill="none" stroke="#6b7280" stroke-width="1"/></svg>`;
+      };
       const hv = (k, d) => (Number.isFinite(g(k)) ? g(k) : d);
       const nf = (k, label, val, unit, min, step) => `<label class="field">${label}<div class="row"><input type="number" data-k="${k}"${min !== "" ? ` min="${min}"` : ""} step="${step}" value="${val}" style="width:80px;height:34px"> <span class="val">${unit}</span></div></label>`;
-      return `<label class="field">塗りつぶしスタイル<select data-k="fillStyle">${opts}</select></label>` + (fs === "solid" ? "" :
+      return `<div class="field">塗りつぶしスタイル<div class="fstyles">${FILL_STYLES.map(([v, l]) => `<button class="fs${v === fs ? " on" : ""}" data-fs="${v}" title="${l}" aria-label="${l}" aria-pressed="${v === fs}">${sample(v)}<span>${l}</span></button>`).join("")}</div></div>` + (fs === "solid" ? "" :
         nf("hatchAngle", "線の角度", hv("hatchAngle", HATCH_DEFAULT.angle), "度", "", 1) +
         nf("hatchGap", "線の間隔(用紙上)", hv("hatchGap", HATCH_DEFAULT.gap), "mm", 0.3, "any") +
         nf("hatchWidth", "線の太さ", hv("hatchWidth", HATCH_DEFAULT.width), "pt", 0.1, 0.1));
@@ -618,7 +647,7 @@ export class Props {
 
     if (t === "multi") {
       const cur = (g("color") || "#e11d48").toLowerCase();
-      parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
+      parts.push(paletteField("色", "color", cur));
       parts.push(widthField());
       parts.push(`<label class="field">線の種類<select data-k="dash">${DASH_TYPES.map((d) => `<option value="${d.id}"${g("dash") === d.id ? " selected" : ""}>${d.label}</option>`).join("")}</select></label>`);
       parts.push(num("opacity", "不透明度", 0.1, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
@@ -626,7 +655,8 @@ export class Props {
         // 塗れる図形(四角・丸・多角形・雲)だけに、同じ色でまとめて塗る
         const fill = g("fill");
         const on = fill && fill !== "none";
-        parts.push(`<div class="field"><label class="check"><input type="checkbox" data-k="fillOn"${on ? " checked" : ""}> 塗りつぶし(塗れる図形すべて)</label>${on ? `<div class="row"><input type="color" data-k="fillColor" value="${fill}"></div>` : ""}</div>`);
+        parts.push(`<div class="field"><label class="check"><input type="checkbox" data-k="fillOn"${on ? " checked" : ""}> 塗りつぶし(塗れる図形すべて)</label></div>`);
+        if (on) parts.push(paletteField("塗りの色", "fillColor", String(fill).toLowerCase()));
         if (on) {
           parts.push(fillStyleBox());
           if ((g("fillStyle") || "solid") === "solid") parts.push(num("fillOpacity", "塗りの濃さ", 0.05, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
@@ -667,7 +697,7 @@ export class Props {
 
     if (LINE_TYPES.has(t) || t === "text") {
       const cur = (g("color") || "#e11d48").toLowerCase();
-      parts.push(`<div class="field">色<div class="swatches">${COLORS.map((c) => `<button class="sw${c === cur ? " on" : ""}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<input type="color" data-k="color" value="${cur}" aria-label="色を選ぶ"></div></div>`);
+      parts.push(paletteField("色", "color", cur));
     }
     if (LINE_TYPES.has(t)) parts.push(widthField());
     if (!ctx.sel) {
@@ -685,7 +715,8 @@ export class Props {
     if (FILL_TYPES.has(t)) {
       const fill = g("fill");
       const on = fill && fill !== "none";
-      parts.push(`<div class="field"><label class="check"><input type="checkbox" data-k="fillOn"${on ? " checked" : ""}> 塗りつぶし</label>${on ? `<div class="row"><input type="color" data-k="fillColor" value="${fill}"></div>` : ""}</div>`);
+      parts.push(`<div class="field"><label class="check"><input type="checkbox" data-k="fillOn"${on ? " checked" : ""}> 塗りつぶし</label></div>`);
+        if (on) parts.push(paletteField("塗りの色", "fillColor", String(fill).toLowerCase()));
       if (on) {
         parts.push(fillStyleBox());
         if ((g("fillStyle") || "solid") === "solid") parts.push(num("fillOpacity", "塗りの濃さ", 0.05, 1, 0.05, (v) => `${Math.round(v * 100)}%`));
