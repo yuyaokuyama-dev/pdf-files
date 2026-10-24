@@ -25,7 +25,7 @@ jobs:
           npm i playwright pdf-lib
           npx playwright install --with-deps chromium
       - name: 単体テスト
-        run: node --test tests/geometry.test.mjs tests/auth.test.mjs tests/google.test.mjs tests/auth-api.test.mjs tests/account.test.mjs tests/version.test.mjs tests/manual.test.mjs tests/layers.test.mjs tests/select.test.mjs tests/snap.test.mjs tests/editdata.test.mjs tests/modify.test.mjs tests/leader.test.mjs tests/dimx.test.mjs tests/dxf.test.mjs tests/pdfvec.test.mjs tests/toolbar.test.mjs tests/shortcuts.test.mjs
+        run: node --test tests/geometry.test.mjs tests/auth.test.mjs tests/google.test.mjs tests/auth-api.test.mjs tests/account.test.mjs tests/version.test.mjs tests/manual.test.mjs tests/layers.test.mjs tests/select.test.mjs tests/snap.test.mjs tests/editdata.test.mjs tests/modify.test.mjs tests/leader.test.mjs tests/dimx.test.mjs tests/dxf.test.mjs tests/pdfvec.test.mjs tests/toolbar.test.mjs tests/shortcuts.test.mjs tests/hatch.test.mjs
       - name: 画面操作テスト(E2E)
         run: |
           node tests/smoke.mjs
@@ -73,5 +73,6 @@ jobs:
           node tests/e2e-keypad.mjs
           node tests/e2e-polyline.mjs
           node tests/e2e-saveas.mjs
+          node tests/e2e-hatch.mjs
           node tests/e2e-xpages.mjs
           node tests/e2e-keep.mjs
