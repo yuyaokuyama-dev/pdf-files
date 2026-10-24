@@ -1822,7 +1822,7 @@ export class Editor {
   /** 選択中の図形の線・色・文字の設定を、新規作成時の初期設定にする */
   setDefaultsFrom(sh) {
     const st = sh.style || {};
-    if (sh.type !== "text") for (const k of ["color", "width", "fill", "fillOpacity", "dash", "opacity"]) if (st[k] !== undefined) this.style[k] = st[k];
+    if (sh.type !== "text") for (const k of ["color", "width", "fill", "fillOpacity", "fillStyle", "hatchAngle", "hatchGap", "hatchWidth", "dash", "opacity"]) if (st[k] !== undefined) this.style[k] = st[k];
     if (sh.type === "text") Object.assign(this.textStyle, { size: sh.size, font: sh.font || "gothic", bold: !!sh.bold, color: sh.color || st.color });
     if (sh.type === "dim" || sh.type === "dimang" || sh.type === "measure") {
       this.dimSize = sh.size;

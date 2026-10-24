@@ -6,6 +6,7 @@ import {
   arcPath, arcBounds, arcGeometry,
 } from "./geometry.js";
 import { visibleShapes } from "./layers.js";
+import { hatchSegments, hatchWidth, segmentsPath, isHatch } from "./hatch.js";
 import { leaderGeometry, stadiumPath, LEADER_DEFAULT } from "./leader.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -144,10 +145,17 @@ export function renderShape(shape, parent, opts = {}) {
     opacity: s.opacity != null && s.opacity < 1 ? s.opacity : null,
   };
   const fill = s.fill && s.fill !== "none" ? s.fill : "none";
-  const fillAttrs = { fill, "fill-opacity": fill !== "none" ? (s.fillOpacity ?? 0.25) : null };
+  const hatching = isHatch(s);
+  const fillAttrs = { fill: hatching ? "none" : fill, "fill-opacity": fill !== "none" && !hatching ? (s.fillOpacity ?? 0.25) : null };
   // 当たり判定用の太い透明線(細い線でも指で選びやすい)
   const hit = (d, filled) =>
     el("path", { d, class: "hit", fill: filled ? "transparent" : "none", stroke: "transparent", "stroke-width": Math.max(14, width + 10), "pointer-events": filled ? "all" : "stroke" }, g);
+
+  // ハッチング(斜線・格子): 図形の内側に、塗りの色で線を引く(外形線の下に描く)
+  if (hatching && fill !== "none") {
+    const hs = hatchSegments(shape);
+    if (hs.length) el("path", { d: segmentsPath(hs), class: "hatch", fill: "none", stroke: fill, "stroke-width": hatchWidth(s), "stroke-linecap": "butt", opacity: common.opacity, "pointer-events": "none" }, g);
+  }
 
   switch (shape.type) {
     case "line": {

@@ -5,6 +5,7 @@ import {
   linePath, polygonPath, ellipsePath, cloudPath, arrowHead, arrowShaft, arrowSizeOf, thinWidth, smoothPath,
   dimensionGeometry, rectPoints, rectHiddenEdges, rectRuns, dashArray, dimOpts, arcPath,
 } from "./geometry.js";
+import { hatchSegments, hatchWidth, segmentsPath, isHatch } from "./hatch.js";
 import { textMetrics, labelFor, serializeOverlay, arcLines } from "./render.js";
 import { TEXT_LINE } from "./render.js";
 import { renderTextPng, recompressImage, renderPageJpeg } from "./raster.js";
@@ -194,12 +195,16 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
       const st = sh.style || {};
       const color = hexToRgb(st.color || "#e11d48");
       const width = st.width ?? 2;
-      const hasFill = st.fill && st.fill !== "none";
+      const hasFill = st.fill && st.fill !== "none" && !isHatch(st);
       const strokeOpts = {
         borderColor: color, borderWidth: width, borderOpacity: st.opacity ?? 1,
         ...(dashArray(st.dash, width) ? { borderDashArray: dashArray(st.dash, width) } : {}),
       };
       const fillOpts = hasFill ? { color: hexToRgb(st.fill), opacity: st.fillOpacity ?? 0.25 } : {};
+      if (isHatch(st) && st.fill && st.fill !== "none") {
+        const hs = hatchSegments(sh); // ハッチング: 図形の内側に塗りの色で線を引く(外形線の下)
+        if (hs.length) path(segmentsPath(hs), { borderColor: hexToRgb(st.fill), borderWidth: hatchWidth(st), borderOpacity: st.opacity ?? 1, borderLineCap: LineCapStyle.Butt });
+      }
       switch (sh.type) {
         case "line":
           path(linePath(sh.pts), strokeOpts);
