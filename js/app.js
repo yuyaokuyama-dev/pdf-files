@@ -13,6 +13,7 @@ import { buildDxf } from "./dxf.js";
 import { extractVectorPaths } from "./pdfvec.js";
 import { Toolbar, GROUPS } from "./toolbar.js";
 import { initKeypad } from "./keypad.js";
+import { initPanMargin } from "./panmargin.js";
 const MODIFY_CMDS = new Set(GROUPS.find((g) => g.id === "modify").commands.map((c) => c.id));
 import { textMetrics, serializeOverlay } from "./render.js";
 import * as G from "./google.js";
@@ -376,6 +377,7 @@ function initUI() {
     onClose: () => $("#btnLayers").classList.remove("on"),
   });
   initKeypad({ editor: S.editor });
+  initPanMargin({ viewer: $("#viewer"), pagesEl: $("#pages") });
   S.props = new Props({
     el: $("#props"),
     editor: S.editor,
