@@ -585,6 +585,9 @@ export class Props {
     const ctx = this.context();
     const show = !!ctx && !this.dismissed;
     this.el.hidden = !show;
+    // パネルが出ている間は、PDFの端をパネルの外までスクロールして出せるよう余白を足す(css/app.css)
+    document.documentElement.classList.toggle("props-open", show);
+    document.dispatchEvent(new Event("props-visibility"));
     if (!show) return;
     const t = ctx.type;
     const g = (k) => this.get(ctx, k);

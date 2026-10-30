@@ -72,6 +72,7 @@ jobs:
           node tests/e2e-movedist.mjs
           node tests/e2e-keypad.mjs
           node tests/e2e-polyline.mjs
+          node tests/e2e-panmargin.mjs
           node tests/e2e-saveas.mjs
           node tests/e2e-hatch.mjs
           node tests/e2e-xpages.mjs
