@@ -265,7 +265,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
             path(stadiumPath(geo.box), strokeOpts);
             path(linePath(geo.box.stub), strokeOpts);
           }
-          if (m) await placeText({ lines: m.lines, size: sz, font: sh.font, bold: !!sh.bold, color: sh.color || color, bg: null, w: m.w, h: m.h }, geo.textTL, 0);
+          if (m) await placeText({ lines: m.lines, size: sz, font: sh.font, bold: !!sh.bold, color: sh.color || st.color || "#e11d48", bg: null, w: m.w, h: m.h }, geo.textTL, 0);
           break;
         }
         case "dim":
