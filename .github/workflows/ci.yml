@@ -38,6 +38,7 @@ jobs:
           node tests/e2e-opendocs-race.mjs
           node tests/e2e-scalebox.mjs
           node tests/e2e-leader.mjs
+          node tests/e2e-leadercolor.mjs
           node tests/e2e-dimx.mjs
           node tests/e2e-polish.mjs
           node tests/e2e-dxf.mjs
