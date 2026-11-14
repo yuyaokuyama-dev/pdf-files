@@ -173,7 +173,27 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
       pg.drawImage(emb, { x: ux, y: uy, width: w, height: h, rotate: degrees(R - ang) });
     };
 
-    const placeText = async (spec, tl, ang = 0) => {
+    /** 文字を画像で貼ったうえで、同じ場所に「読める文字」の注釈(非表示の FreeText)を付ける。他のソフトや KEPLER が文字・位置・図形IDを読める */
+    const addTextAnnot = (spec, tl, ang, sh) => {
+      const text = (spec.lines || []).join("\n");
+      if (!text.trim()) return;
+      const a = (ang * Math.PI) / 180;
+      const corners = [[0, 0], [spec.w, 0], [spec.w, spec.h], [0, spec.h]].map(([dx, dy]) => map.toUser(tl[0] + dx * Math.cos(a) - dy * Math.sin(a), tl[1] + dx * Math.sin(a) + dy * Math.cos(a)));
+      const xs = corners.map((c) => c[0]);
+      const ys = corners.map((c) => c[1]);
+      const props = {
+        Type: "Annot", Subtype: "FreeText", F: 2, // 2 = Hidden(画面にも印刷にも出さない。画像の文字と二重にならない)
+        Rect: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
+        Contents: PDFHexString.fromText(text),
+        Subj: PDFHexString.fromText("PDF Files"),
+        DA: PDFHexString.fromText("0 g /Helv 12 Tf"),
+      };
+      if (sh?.id) props.NM = PDFHexString.fromText(String(sh.id));
+      const ref = out.context.register(out.context.obj(props));
+      pg.node.addAnnot(ref);
+    };
+
+    const placeText = async (spec, tl, ang = 0, sh = null) => {
       const key = JSON.stringify(spec);
       let emb = textCache.get(key);
       if (!emb) {
@@ -182,6 +202,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
         textCache.set(key, emb);
       }
       placeImage(emb, tl, spec.w, spec.h, ang);
+      addTextAnnot(spec, tl, ang, sh);
     };
 
     for (const sh of shapes) {
@@ -249,7 +270,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           const m = textMetrics(sh);
           await placeText(
             { lines: m.lines, size: sh.size || 18, font: sh.font, bold: !!sh.bold, color: sh.color || st.color || "#e11d48", bg: sh.bg || null, w: m.w, h: m.h },
-            sh.pts[0], sh.angle || 0,
+            sh.pts[0], sh.angle || 0, sh,
           );
           break;
         }
@@ -265,7 +286,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
             path(stadiumPath(geo.box), strokeOpts);
             path(linePath(geo.box.stub), strokeOpts);
           }
-          if (m) await placeText({ lines: m.lines, size: sz, font: sh.font, bold: !!sh.bold, color: sh.color || st.color || "#e11d48", bg: null, w: m.w, h: m.h }, geo.textTL, 0);
+          if (m) await placeText({ lines: m.lines, size: sz, font: sh.font, bold: !!sh.bold, color: sh.color || st.color || "#e11d48", bg: null, w: m.w, h: m.h }, geo.textTL, 0, sh);
           break;
         }
         case "dim":
@@ -294,7 +315,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
             // 文字ボックスの中心 = textPos + 回転(0, 0.095*size)
             const c = [geo.textPos[0] - Math.sin(a) * size * 0.095, geo.textPos[1] + Math.cos(a) * size * 0.095];
             const tl = [c[0] + (-w / 2) * Math.cos(a) + (h / 2) * Math.sin(a), c[1] + (-w / 2) * Math.sin(a) - (h / 2) * Math.cos(a)];
-            await placeText({ lines: [label], size, font: sh.font, bold: false, color: sh.color || st.color || "#e11d48", bg: null, w, h }, tl, geo.textAngle);
+            await placeText({ lines: [label], size, font: sh.font, bold: false, color: sh.color || st.color || "#e11d48", bg: null, w, h }, tl, geo.textAngle, sh);
           }
           break;
         }
@@ -311,7 +332,7 @@ export async function exportPdf(doc, { level = "small", onProgress, embedEdit = 
           const m = textMetrics({ text: label, size, font: sh.font });
           const h = size * TEXT_LINE;
           const c = [geo.textPos[0], geo.textPos[1] + size * 0.095];
-          await placeText({ lines: [label], size, font: sh.font, bold: false, color: sh.color || st.color || "#e11d48", bg: null, w: m.w, h }, [c[0] - m.w / 2, c[1] - h / 2], 0);
+          await placeText({ lines: [label], size, font: sh.font, bold: false, color: sh.color || st.color || "#e11d48", bg: null, w: m.w, h }, [c[0] - m.w / 2, c[1] - h / 2], 0, sh);
           break;
         }
         case "image": {
