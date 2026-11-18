@@ -392,6 +392,7 @@ function initUI() {
   wireEditorEvents();
   wireTopbar();
   wireDrop();
+  wirePaste();
   wireNetwork();
   $("#viewer").addEventListener("pointerdown", panStart);
   window.addEventListener("pagehide", () => saveProjectNow());
@@ -1196,6 +1197,61 @@ async function openDroppedFiles(files, handles = []) {
   }
 }
 
+/* =========================================================
+ * クリップボードの画像を貼り付け(PCの Print Screen / Win+Shift+S など)
+ * ======================================================= */
+function wirePaste() {
+  document.addEventListener("paste", (e) => {
+    const t = e.target;
+    const tag = (t?.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" || t?.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    const dt = e.clipboardData;
+    if (!dt) return;
+    const file = [...(dt.items || [])].find((it) => it.kind === "file" && /^image\//.test(it.type))?.getAsFile() || [...(dt.files || [])].find((f) => /^image\//.test(f.type));
+    if (!file) return; // 画像でなければ何もしない(図形のコピー&ペーストなど他の動きを邪魔しない)
+    e.preventDefault();
+    pasteImageBlob(file);
+  });
+}
+
+/** メニューから: クリップボードを読んで画像があれば貼り付ける */
+async function pasteFromClipboard() {
+  if (!navigator.clipboard?.read) return alertDialog("このブラウザではメニューからの貼り付けに対応していません。Ctrl+V(Macは⌘V)で貼り付けてください。");
+  let blob = null;
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((ty) => /^image\//.test(ty));
+      if (type) {
+        blob = await item.getType(type);
+        break;
+      }
+    }
+  } catch (err) {
+    return alertDialog("クリップボードを読み取れませんでした。ブラウザの許可を確認するか、Ctrl+V(Macは⌘V)で貼り付けてください。");
+  }
+  if (!blob) return toast("クリップボードに画像がありません");
+  pasteImageBlob(blob);
+}
+
+async function pasteImageBlob(blob) {
+  let r;
+  try {
+    const url = await fileToDataUrl(blob);
+    r = await downscaleToDataUrl(url, 2400, 0.92);
+  } catch (err) {
+    return toast("画像を読み込めませんでした");
+  }
+  const p = { url: r.url, aspect: r.w / r.h };
+  if (!S.model.pages.length) {
+    newDocFromImage(p, "スクリーンショット.pdf");
+    return toast("貼り付けた画像から新しい書類を作りました");
+  }
+  const imgId = S.model.addImage(p.url);
+  S.editor.placePastedImage(imgId, p.aspect, r.w, r.h);
+  toast("画像を貼り付けました。ドラッグで移動、角で拡大縮小できます");
+}
+
 function wireDrop() {
   const v = $("#viewer");
   const th = $("#thumbs");
@@ -1421,6 +1477,7 @@ function photoMenu(anchor) {
     { header: "現在のページに挿入(この上に手書き・図形で書き込めます)" },
     { label: "カメラで撮影して挿入", icon: "camera", onClick: () => insertPhoto("camera"), disabled: !has },
     { label: "画像ファイルを挿入", icon: "image", onClick: () => insertPhoto("file"), disabled: !has },
+    { label: "クリップボードの画像を貼り付け(Ctrl+V)", icon: "image", onClick: pasteFromClipboard, disabled: !has },
     { header: "新しいページとして追加" },
     { label: "カメラで撮影してページ追加", icon: "camera", onClick: () => addPhotoPage("camera") },
     { label: "画像ファイルをページ追加", icon: "image", onClick: () => addPhotoPage("file") },

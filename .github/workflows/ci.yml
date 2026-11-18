@@ -55,6 +55,7 @@ jobs:
           node tests/e2e-style.mjs
           node tests/e2e-dim.mjs
           node tests/e2e-stamp.mjs
+          node tests/e2e-paste.mjs
           node tests/e2e-dnd.mjs
           node tests/e2e-thumbs.mjs
           node tests/e2e-launch.mjs

@@ -219,8 +219,15 @@ export class Editor {
     const el = { wrap, canvas, svg, layer, draft, ui, no, renderedScale: 0, task: null, token: 0 };
     this.els.set(page.id, el);
     svg.addEventListener("pointerdown", (e) => this.onPointerDown(e, page.id));
-    svg.addEventListener("pointermove", (e) => { this.eraserHover(e, page.id); this.snapHover(e, page.id); });
-    svg.addEventListener("pointerleave", () => this.g?.kind !== "erase" && el.draft.replaceChildren());
+    svg.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse") this.mouseAt = { pageId: page.id, clientX: e.clientX, clientY: e.clientY };
+      this.eraserHover(e, page.id);
+      this.snapHover(e, page.id);
+    });
+    svg.addEventListener("pointerleave", () => {
+      if (this.mouseAt?.pageId === page.id) this.mouseAt = null;
+      if (this.g?.kind !== "erase") el.draft.replaceChildren();
+    });
     this.refreshLayer(page, true);
     this.io.observe(wrap);
     this.applyToolClass(el);
@@ -1267,6 +1274,28 @@ export class Editor {
     }
     const cx = pg.w / 2;
     const cy = pg.h / 2;
+    return this.addAndSelect(pageId, { type: "image", kind: "photo", imgId, aspect, pts: [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]], style: {} });
+  }
+
+  /**
+   * 貼り付け画像(スクリーンショットなど)を配置する。マウスがページ上にあればその位置を中心に、
+   * なければ表示中のページ中央に置く。pxW/pxH は元画像のピクセル数で、1px=0.75pt(96dpi)の等倍を上限に
+   * ページの maxFrac 以内へ縮める。ページからはみ出さないよう中心をずらす
+   */
+  placePastedImage(imgId, aspect, pxW, pxH, maxFrac = 0.8) {
+    const at = this.mouseAt && this.model.page(this.mouseAt.pageId) ? this.mouseAt : null;
+    const pageId = at ? at.pageId : this.curPageId;
+    const pg = this.model.page(pageId);
+    if (!pg) return null;
+    let w = Math.min(pxW * 0.75, pg.w * maxFrac);
+    let h = w / aspect;
+    if (h > pg.h * maxFrac) {
+      h = pg.h * maxFrac;
+      w = h * aspect;
+    }
+    let [cx, cy] = at ? this.pt(at, pageId) : [pg.w / 2, pg.h / 2];
+    cx = Math.min(Math.max(cx, w / 2), pg.w - w / 2);
+    cy = Math.min(Math.max(cy, h / 2), pg.h - h / 2);
     return this.addAndSelect(pageId, { type: "image", kind: "photo", imgId, aspect, pts: [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]], style: {} });
   }
 
